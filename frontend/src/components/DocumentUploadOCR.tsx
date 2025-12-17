@@ -1,0 +1,380 @@
+import React, { useState, useRef } from 'react';
+import { Upload, FileImage, X, Loader2, CheckCircle2, AlertCircle, Eye } from 'lucide-react';
+import { Button } from './Button';
+import { Label } from './Label';
+import { cleanOCRText, formatPlaceName, formatBoundaryDescription } from '../utils/textFormatter';
+import { authTokenStorage } from '../utils/secureStorage';
+
+interface OCRResult {
+  success: boolean;
+  extracted_data?: any;
+  overall_confidence?: number;
+  metadata?: any;
+  error?: string;
+}
+
+interface DocumentUploadOCRProps {
+  onDataExtracted: (data: any, confidence: number) => void;
+  onError?: (error: string) => void;
+  disabled?: boolean;
+  documentTypeHint?: 'survey_plan' | 'deed' | 'title_certificate';
+}
+
+export function DocumentUploadOCR({
+  onDataExtracted,
+  onError,
+  disabled = false,
+  documentTypeHint,
+}: DocumentUploadOCRProps) {
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processedResult, setProcessedResult] = useState<OCRResult | null>(null);
+  const [showPreviews, setShowPreviews] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0) return;
+
+    // Validate each file
+    for (const file of files) {
+      if (!file.type.startsWith('image/')) {
+        onError?.(`File "${file.name}" is not an image. Please select only image files (JPEG, PNG, WEBP)`);
+        return;
+      }
+
+      if (file.size > 10 * 1024 * 1024) {
+        onError?.(`File "${file.name}" is too large. Each file must be less than 10MB`);
+        return;
+      }
+    }
+
+    setSelectedFiles(files);
+    setProcessedResult(null);
+
+    // Create preview URLs for all files
+    const urls: string[] = [];
+    let loadedCount = 0;
+
+    files.forEach((file, index) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        urls[index] = reader.result as string;
+        loadedCount++;
+
+        if (loadedCount === files.length) {
+          setPreviewUrls(urls);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleClearFile = () => {
+    setSelectedFiles([]);
+    setPreviewUrls([]);
+    setProcessedResult(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const formatOCRData = (data: any): any => {
+    const formatted = { ...data };
+
+    if (formatted.property_village) {
+      formatted.property_village = formatPlaceName(formatted.property_village);
+    }
+
+    if (formatted.licensed_surveyor_name) {
+      formatted.licensed_surveyor_name = cleanOCRText(formatted.licensed_surveyor_name);
+    }
+
+    if (formatted.land_traditional_name) {
+      formatted.land_traditional_name = cleanOCRText(formatted.land_traditional_name);
+    }
+
+    if (formatted.boundaries) {
+      Object.keys(formatted.boundaries).forEach(direction => {
+        if (formatted.boundaries[direction]?.description) {
+          formatted.boundaries[direction].description = formatBoundaryDescription(
+            formatted.boundaries[direction].description
+          );
+        }
+      });
+    }
+
+    return formatted;
+  };
+
+  const handleProcessDocument = async () => {
+    if (selectedFiles.length === 0) return;
+
+    setIsProcessing(true);
+    setProcessedResult(null);
+
+    try {
+      // Get auth token from secure storage
+      const token = authTokenStorage.getToken();
+      if (!token) {
+        throw new Error('Authentication required. Please log in again.');
+      }
+
+      // Create FormData with all files
+      const formData = new FormData();
+      selectedFiles.forEach((file) => {
+        formData.append('files', file);
+      });
+      if (documentTypeHint) {
+        formData.append('document_type', documentTypeHint);
+      }
+
+      // Call OCR API
+      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const response = await fetch(`${apiUrl}/api/ocr/extract`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'OCR processing failed');
+      }
+
+      const result = await response.json();
+
+      if (result.status === 'success') {
+        const ocrResult: OCRResult = result.data;
+        setProcessedResult(ocrResult);
+
+        if (ocrResult.success && ocrResult.extracted_data) {
+          const formattedData = formatOCRData(ocrResult.extracted_data);
+
+          onDataExtracted(
+            formattedData,
+            ocrResult.overall_confidence || 0.5
+          );
+        }
+      } else {
+        throw new Error('OCR processing failed');
+      }
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown error occurred';
+      setProcessedResult({
+        success: false,
+        error: errorMessage,
+      });
+      onError?.(errorMessage);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const getConfidenceColor = (confidence: number) => {
+    if (confidence >= 0.9) return 'text-green-600 bg-green-50 border-green-200';
+    if (confidence >= 0.7) return 'text-yellow-600 bg-yellow-50 border-yellow-200';
+    return 'text-orange-600 bg-orange-50 border-orange-200';
+  };
+
+  const getConfidenceLabel = (confidence: number) => {
+    if (confidence >= 0.9) return 'High Confidence';
+    if (confidence >= 0.7) return 'Medium Confidence';
+    return 'Low Confidence - Please Verify';
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div>
+        <Label className="text-lg font-semibold">Document Upload & Auto-Fill</Label>
+        <p className="text-sm text-gray-600 mt-1">
+          Upload a survey plan or deed image to automatically extract property data
+        </p>
+      </div>
+
+      {/* File Input */}
+      {selectedFiles.length === 0 ? (
+        <div
+          className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-400 transition-colors cursor-pointer"
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <Upload className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+          <p className="text-sm font-medium text-gray-700 mb-1">
+            Click to upload multiple images
+          </p>
+          <p className="text-xs text-gray-500 mb-2">
+            Select deed pages (3-5 images) + plan pages (1-2 images)
+          </p>
+          <p className="text-xs text-gray-500">
+            JPEG, PNG, or WEBP (max 10MB each)
+          </p>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/jpg,image/png,image/webp"
+            onChange={handleFileSelect}
+            disabled={disabled}
+            multiple
+            className="hidden"
+          />
+        </div>
+      ) : (
+        <div className="border border-gray-300 rounded-lg p-4">
+          {/* Files Info */}
+          <div className="flex items-start justify-between mb-4">
+            <div className="flex items-start gap-3">
+              <FileImage className="h-8 w-8 text-blue-600 flex-shrink-0" />
+              <div>
+                <p className="text-sm font-medium text-gray-900">
+                  {selectedFiles.length} file{selectedFiles.length > 1 ? 's' : ''} selected
+                </p>
+                <div className="mt-1 space-y-1">
+                  {selectedFiles.map((file, index) => (
+                    <p key={index} className="text-xs text-gray-500">
+                      {index + 1}. {file.name} ({(file.size / 1024 / 1024).toFixed(2)} MB)
+                    </p>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleClearFile}
+              disabled={isProcessing}
+              className="text-gray-400 hover:text-red-600 transition-colors"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+          {/* Preview Toggle */}
+          {previewUrls.length > 0 && (
+            <div className="mb-4">
+              <button
+                type="button"
+                onClick={() => setShowPreviews(!showPreviews)}
+                className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800"
+              >
+                <Eye className="h-4 w-4" />
+                {showPreviews ? 'Hide Previews' : 'Show Previews'}
+              </button>
+              {showPreviews && (
+                <div className="mt-3 grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {previewUrls.map((url, index) => (
+                    <div key={index} className="border border-gray-300 rounded-lg p-2 bg-gray-50">
+                      <p className="text-xs text-gray-600 mb-1">Page {index + 1}</p>
+                      <img
+                        src={url}
+                        alt={`Document page ${index + 1}`}
+                        className="w-full h-32 object-cover rounded"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Process Button */}
+          {!processedResult && (
+            <Button
+              type="button"
+              onClick={handleProcessDocument}
+              disabled={isProcessing || disabled}
+              className="w-full"
+            >
+              {isProcessing ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Processing Document...
+                </>
+              ) : (
+                <>
+                  <Upload className="h-4 w-4 mr-2" />
+                  Extract Data from Document
+                </>
+              )}
+            </Button>
+          )}
+
+          {/* Processing Result */}
+          {processedResult && (
+            <div className="mt-4">
+              {processedResult.success ? (
+                <div
+                  className={`flex items-start gap-3 p-4 border rounded-lg ${getConfidenceColor(
+                    processedResult.overall_confidence || 0.5
+                  )}`}
+                >
+                  <CheckCircle2 className="h-5 w-5 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">
+                      Data Extracted Successfully
+                    </p>
+                    <p className="text-xs mt-1">
+                      {getConfidenceLabel(
+                        processedResult.overall_confidence || 0.5
+                      )}{' '}
+                      ({((processedResult.overall_confidence || 0.5) * 100).toFixed(
+                        0
+                      )}
+                      %)
+                    </p>
+                    <p className="text-xs mt-2">
+                      Form fields have been pre-filled. Please review and edit as
+                      needed.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-start gap-3 p-4 bg-red-50 border border-red-200 rounded-lg">
+                  <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-red-800">
+                      Processing Failed
+                    </p>
+                    <p className="text-xs text-red-700 mt-1">
+                      {processedResult.error || 'Unknown error occurred'}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Retry Button */}
+              <Button
+                type="button"
+                onClick={handleProcessDocument}
+                disabled={isProcessing || disabled}
+                variant="outline"
+                className="w-full mt-3"
+              >
+                {isProcessing ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  'Process Again'
+                )}
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Help Text */}
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+        <p className="text-xs text-blue-800">
+          <strong>Tip:</strong> Upload all pages of your deed (usually 3-5 pages) and survey plan (usually 1-2 pages).
+          For best results, use clear, well-lit images. The system will automatically detect and extract plan
+          numbers, dates, land extent, boundaries, and other property details from all pages.
+        </p>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(tree:*)",
+      "Bash(dir:*)",
+      "WebSearch",
+      "WebFetch(domain:www.ivsl.lk)",
+      "WebFetch(domain:www.commonlii.org)",
+      "WebFetch(domain:www.lcbsl.lk)",
+      "Bash(cat:*)",
+      "Bash(findstr:*)",
+      "Bash(find:*)",
+      "Bash(python:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
