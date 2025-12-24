@@ -37,7 +37,8 @@ const registerSchema = z.object({
     .min(8, 'Password must be at least 8 characters')
     .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
     .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
-    .regex(/\d/, 'Password must contain at least one number'),
+    .regex(/\d/, 'Password must contain at least one number')
+    .regex(/[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/, 'Password must contain at least one special character (!@#$%^&*()_+-=[]{}|;:,.<>?)'),
   confirmPassword: z.string().min(1, 'Please confirm your password'),
   fullName: z
     .string()
@@ -116,6 +117,20 @@ const RegisterPage: React.FC = () => {
         break;
       case 2:
         fieldsToValidate = ['password', 'confirmPassword'];
+
+        // Additional check: ensure password meets all criteria
+        if (watchedPassword) {
+          const strength = getPasswordStrength(watchedPassword);
+          const allCriteriaMet = Object.values(strength.checks).every(Boolean);
+
+          if (!allCriteriaMet) {
+            toast.error('Please ensure your password meets all requirements', {
+              duration: 4000,
+              icon: '🔒'
+            });
+            return; // Prevent advancement
+          }
+        }
         break;
       case 3:
         fieldsToValidate = ['termsAccepted'];
@@ -331,6 +346,7 @@ const RegisterPage: React.FC = () => {
                             { key: 'lowercase', text: 'Lowercase' },
                             { key: 'uppercase', text: 'Uppercase' },
                             { key: 'numbers', text: 'Numbers' },
+                            { key: 'special', text: 'Special char' },
                           ].map(({ key, text }) => (
                             <div key={key} className="flex items-center space-x-2">
                               {passwordStrength.checks[key as keyof typeof passwordStrength.checks] ? (
@@ -397,7 +413,13 @@ const RegisterPage: React.FC = () => {
                     <Button
                       type="button"
                       onClick={() => handleStepValidation(2)}
-                      className="flex-1 h-12 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-semibold rounded-2xl shadow-lg shadow-emerald-500/25 transition-all duration-200"
+                      disabled={
+                        !watchedPassword ||
+                        !watchedConfirmPassword ||
+                        !passwordStrength ||
+                        Object.values(passwordStrength.checks).some(check => !check)
+                      }
+                      className="flex-1 h-12 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white font-semibold rounded-2xl shadow-lg shadow-emerald-500/25 disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed transition-all duration-200"
                     >
                       Continue
                     </Button>

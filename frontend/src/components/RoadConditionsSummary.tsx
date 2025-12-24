@@ -9,6 +9,7 @@ interface Props {
 
 const ROAD_TYPES = [
   { value: 'paved_road', label: 'Paved Road / Asphalt' },
+  { value: 'concrete_road', label: 'Concrete Road' },
   { value: 'carpet_road', label: 'Carpet Road' },
   { value: 'gravel_road', label: 'Gravel Road' },
   { value: 'sand_road', label: 'Sand Road' },
@@ -43,6 +44,7 @@ export function RoadConditionsSummary({ roadConditions, onChange }: Props) {
       const newCondition: RoadCondition = {
         road_type: roadType as any,
         condition: 'good',  // Default condition
+        distance_km: undefined,  // Optional distance
         notes: ''
       };
       onChange([...roadConditions, newCondition]);
@@ -52,7 +54,7 @@ export function RoadConditionsSummary({ roadConditions, onChange }: Props) {
   };
 
   // Update condition for a specific road type
-  const updateCondition = (roadType: string, field: 'condition' | 'notes', value: any) => {
+  const updateCondition = (roadType: string, field: 'condition' | 'notes' | 'distance_km', value: any) => {
     const newConditions = roadConditions.map(c =>
       c.road_type === roadType
         ? { ...c, [field]: value }
@@ -69,11 +71,14 @@ export function RoadConditionsSummary({ roadConditions, onChange }: Props) {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-        <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-        <div className="text-sm text-amber-800">
-          <strong>Road Conditions Required:</strong> Select all road types encountered on the route and specify their conditions.
-          This information is legally required for valuation reports.
+      <div className="flex items-start gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+        <AlertCircle className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+        <div className="text-sm text-blue-800">
+          <strong>How it works:</strong> Select the road types you encounter along the route and their conditions.
+          The system will automatically integrate this information with turn-by-turn directions (road names, landmarks, junctions) to create a professional access description.
+          <div className="mt-2 text-xs text-blue-700">
+            <strong>Note:</strong> Distance is optional - you can specify distances for each road type if known, or leave blank.
+          </div>
         </div>
       </div>
 
@@ -124,6 +129,22 @@ export function RoadConditionsSummary({ roadConditions, onChange }: Props) {
                         </button>
                       ))}
                     </div>
+                  </div>
+
+                  {/* Distance Field (Optional) */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Distance <span className="text-gray-400">(optional, in km)</span>
+                    </label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      value={conditionData.distance_km || ''}
+                      onChange={(e) => updateCondition(value, 'distance_km', e.target.value ? parseFloat(e.target.value) : undefined)}
+                      placeholder="e.g., 15.5"
+                      className="w-full max-w-xs px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                    />
                   </div>
 
                   {/* Notes Field */}

@@ -30,7 +30,6 @@ const FIELD_LABELS: Record<string, string> = {
   land_extent_formatted: "Land Extent",
 
   // Step 3: Property Search
-  property_address_full: "Property Location",
   property_latitude: "Latitude",
   property_longitude: "Longitude",
 
@@ -55,8 +54,6 @@ const FIELD_LABELS: Record<string, string> = {
   floor_area: "Floor Area",
   rooms: "Rooms",
   room_type: "Room Type",
-  length: "Length",
-  width: "Width",
   property_photos: "Property Photos",
 
   // Step 7: Legal Aspects

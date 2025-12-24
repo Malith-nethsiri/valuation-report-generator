@@ -108,8 +108,11 @@ export function DocumentUploadOCR({
     return formatted;
   };
 
-  const handleProcessDocument = async () => {
+  const handleProcessDocument = async (retryCount = 0) => {
     if (selectedFiles.length === 0) return;
+
+    const MAX_RETRIES = 2;
+    const RETRY_DELAY = 2000; // 2 seconds
 
     setIsProcessing(true);
     setProcessedResult(null);
@@ -142,7 +145,21 @@ export function DocumentUploadOCR({
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.detail || 'OCR processing failed');
+        const errorDetail = errorData.detail || 'OCR processing failed';
+
+        // Check if error suggests server is reloading (transient error)
+        const isTransientError =
+          errorDetail.includes('server may be reloading') ||
+          errorDetail.includes('returned None') ||
+          (response.status === 500 && retryCount < MAX_RETRIES);
+
+        if (isTransientError) {
+          console.log(`Transient error detected, retrying in ${RETRY_DELAY}ms (attempt ${retryCount + 1}/${MAX_RETRIES})...`);
+          await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+          return handleProcessDocument(retryCount + 1);
+        }
+
+        throw new Error(errorDetail);
       }
 
       const result = await response.json();
@@ -165,11 +182,23 @@ export function DocumentUploadOCR({
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : 'Unknown error occurred';
-      setProcessedResult({
-        success: false,
-        error: errorMessage,
-      });
-      onError?.(errorMessage);
+
+      // Only show error if we've exhausted retries
+      if (retryCount >= MAX_RETRIES) {
+        setProcessedResult({
+          success: false,
+          error: errorMessage,
+        });
+        onError?.(errorMessage);
+      } else {
+        // This shouldn't happen as we handle retries above, but just in case
+        console.error('Unexpected error during OCR processing:', error);
+        setProcessedResult({
+          success: false,
+          error: errorMessage,
+        });
+        onError?.(errorMessage);
+      }
     } finally {
       setIsProcessing(false);
     }
@@ -235,7 +264,7 @@ export function DocumentUploadOCR({
                 </p>
                 <div className="mt-1 space-y-1">
                   {selectedFiles.map((file, index) => (
-                    <p key={index} className="text-xs text-gray-500">
+                    <p key={`${file.name}-${index}`} className="text-xs text-gray-500">
                       {index + 1}. {file.name} ({(file.size / 1024 / 1024).toFixed(2)} MB)
                     </p>
                   ))}
@@ -266,7 +295,7 @@ export function DocumentUploadOCR({
               {showPreviews && (
                 <div className="mt-3 grid grid-cols-2 md:grid-cols-3 gap-3">
                   {previewUrls.map((url, index) => (
-                    <div key={index} className="border border-gray-300 rounded-lg p-2 bg-gray-50">
+                    <div key={`preview-${index}-${url.substring(0, 20)}`} className="border border-gray-300 rounded-lg p-2 bg-gray-50">
                       <p className="text-xs text-gray-600 mb-1">Page {index + 1}</p>
                       <img
                         src={url}

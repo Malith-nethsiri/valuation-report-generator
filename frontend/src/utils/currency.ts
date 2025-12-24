@@ -8,8 +8,9 @@
  * @param decimals - Number of decimal places (default: 2)
  * @returns Formatted currency string (e.g., "LKR 1,250,000.00")
  */
-export const formatCurrency = (value: number, decimals = 2): string => {
-  return `LKR ${value.toLocaleString('en-US', {
+export const formatCurrency = (value: number | undefined | null, decimals = 2): string => {
+  const numValue = value ?? 0;
+  return `LKR ${numValue.toLocaleString('en-US', {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals
   })}`;
@@ -21,8 +22,9 @@ export const formatCurrency = (value: number, decimals = 2): string => {
  * @param decimals - Number of decimal places (default: 2)
  * @returns Formatted number string (e.g., "1,250,000.00")
  */
-export const formatNumber = (value: number, decimals = 2): string => {
-  return value.toLocaleString('en-US', {
+export const formatNumber = (value: number | undefined | null, decimals = 2): string => {
+  const numValue = value ?? 0;
+  return numValue.toLocaleString('en-US', {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals
   });

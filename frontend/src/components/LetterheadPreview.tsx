@@ -176,7 +176,7 @@ export const LetterheadPreview: React.FC<LetterheadPreviewProps> = ({ userData, 
                 {residentialPhones.length > 0 && (
                   <div className="mt-0.5 space-y-0.5">
                     {residentialPhones.map((phone, index) => (
-                      <div key={index} className="flex items-center gap-0.5 text-black">
+                      <div key={`${phone}-${index}`} className="flex items-center gap-0.5 text-black">
                         <Phone size={8} />
                         <span>{phone}</span>
                       </div>

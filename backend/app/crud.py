@@ -123,6 +123,20 @@ def update_report(db: Session, report_id: int, report_update: schemas.ReportUpda
 
     update_data = report_update.model_dump(exclude_unset=True)
 
+    # Debug logging
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"[UPDATE_REPORT] Report ID: {report_id}, Fields in update: {list(update_data.keys())}")
+    if 'buildings' in update_data:
+        logger.info(f"[UPDATE_REPORT] Buildings data present: {len(update_data['buildings']) if update_data['buildings'] else 0} buildings")
+    else:
+        logger.info(f"[UPDATE_REPORT] Buildings data NOT in update")
+
+    if 'valuation_buildings_data' in update_data:
+        logger.info(f"[UPDATE_REPORT] Valuation buildings data present: {len(update_data['valuation_buildings_data']) if update_data['valuation_buildings_data'] else 0} items")
+    else:
+        logger.info(f"[UPDATE_REPORT] Valuation buildings data NOT in update")
+
     # Validate building photos if buildings are being updated
     if 'buildings' in update_data and update_data['buildings']:
         # Convert Building objects to dicts for validation if needed

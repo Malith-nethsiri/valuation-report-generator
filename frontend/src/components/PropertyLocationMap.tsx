@@ -48,7 +48,6 @@ interface RouteData {
 
 export interface PropertyLocationMapProps {
   onLocationChange: (data: {
-    property_address_full?: string;
     property_village?: string;
     property_district?: string;
     property_province?: string;
@@ -261,7 +260,6 @@ const PropertyLocationMap: React.FC<PropertyLocationMapProps> = ({
   // Update parent component with all data
   const updateParentData = (property: LocationData, starting?: LocationData | null, route?: RouteData | null) => {
     const data: any = {
-      property_address_full: property.formatted_address,
       property_village: property.village,
       property_district: property.district,
       property_province: property.province,

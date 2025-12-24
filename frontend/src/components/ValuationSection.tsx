@@ -6,6 +6,7 @@ import { Input } from './Input';
 import { CalculatedField } from './CalculatedField';
 import { Building, BuildingValuation, ValuationComponent, ValuationAddon, ComparableProperty } from '../types';
 import { formatCurrency, formatNumber } from '../utils/currency';
+import { calculateTotalPerches } from '../utils/extentCalculator';
 
 interface ValuationData {
   // Land valuation
@@ -46,11 +47,62 @@ function generateId(): string {
   return `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }
 
+// Helper function to get default economic life based on building type
+function getDefaultEconomicLife(buildingType?: string): number {
+  if (!buildingType) return 50; // Default for unspecified buildings
+
+  const type = buildingType.toLowerCase();
+
+  // Residential buildings
+  if (type.includes('house') || type.includes('bungalow') || type.includes('villa') ||
+      type.includes('apartment') || type.includes('flat') || type.includes('residential')) {
+    return 60;
+  }
+
+  // Commercial buildings
+  if (type.includes('shop') || type.includes('office') || type.includes('commercial') ||
+      type.includes('store') || type.includes('showroom')) {
+    return 50;
+  }
+
+  // Industrial buildings
+  if (type.includes('factory') || type.includes('warehouse') || type.includes('industrial') ||
+      type.includes('shed') || type.includes('workshop')) {
+    return 40;
+  }
+
+  // Temporary or light structures
+  if (type.includes('temporary') || type.includes('shed') || type.includes('hut') ||
+      type.includes('cabin') || type.includes('kiosk')) {
+    return 20;
+  }
+
+  // Default for any other building type
+  return 50;
+}
+
+// Depreciation Calculation Functions
+function calculateAge(constructionYear: number | null | undefined): number {
+  if (!constructionYear || constructionYear <= 0) return 0;
+  const currentYear = new Date().getFullYear();
+  return Math.max(0, currentYear - constructionYear);
+}
+
+function calculateDepreciationRate(age: number, economicLife: number): number {
+  if (economicLife <= 0) return 0;
+  return Math.min((age / economicLife) * 100, 100);
+}
+
+function calculateDepreciationAmount(replacementCost: number, depreciationRate: number): number {
+  return replacementCost * (depreciationRate / 100);
+}
+
+function calculateDepreciatedValue(replacementCost: number, depreciationAmount: number): number {
+  return Math.max(0, replacementCost - depreciationAmount);
+}
+
 export default function ValuationSection({ data, onChange, buildings = [] }: Props) {
   // Land valuation state
-  const [landExtent, setLandExtent] = useState<number>(
-    data.valuation_land_extent || data.land_extent_perches || 0
-  );
   const [ratePerPerch, setRatePerPerch] = useState<number>(
     data.valuation_rate_per_perch || 0
   );
@@ -73,18 +125,14 @@ export default function ValuationSection({ data, onChange, buildings = [] }: Pro
     data.valuation_manual_overrides || {}
   );
 
-  // Initialize land extent and rate from previous steps
+  // Initialize rate from comparables
   useEffect(() => {
-    if (data.land_extent_perches && !data.valuation_land_extent) {
-      setLandExtent(data.land_extent_perches);
-    }
-
     // Calculate suggested rate from comparables
     if (data.comparable_properties && data.comparable_properties.length > 0 && !data.valuation_rate_per_perch) {
       const avgRate = data.comparable_properties.reduce((sum, c) => sum + c.rate_per_perch, 0) / data.comparable_properties.length;
       setRatePerPerch(avgRate);
     }
-  }, [data.land_extent_perches, data.comparable_properties]);
+  }, [data.comparable_properties]);
 
   // Initialize building valuations from buildings array with auto-populated components
   useEffect(() => {
@@ -199,7 +247,12 @@ export default function ValuationSection({ data, onChange, buildings = [] }: Pro
 
   // CALCULATIONS
   const calculateLandValue = (): number => {
-    return landExtent * ratePerPerch;
+    const totalPerches = calculateTotalPerches(
+      data.land_extent_acres || 0,
+      data.land_extent_roods || 0,
+      data.land_extent_perches || 0
+    );
+    return totalPerches * ratePerPerch;
   };
 
   const calculateComponentValue = (comp: ValuationComponent): number => {
@@ -214,13 +267,30 @@ export default function ValuationSection({ data, onChange, buildings = [] }: Pro
 
   const calculateTotalBuildings = (): number => {
     return Object.keys(buildingValuations).reduce(
-      (sum, buildingId) => sum + calculateBuildingSubtotal(buildingId),
+      (sum, buildingId) => {
+        const valuation = buildingValuations[buildingId];
+        if (!valuation) return sum;
+        // Use depreciated value if available, otherwise use subtotal
+        return sum + (valuation.depreciated_value || valuation.subtotal || 0);
+      },
       0
     );
   };
 
   const calculateTotalAddons = (): number => {
     return addons.reduce((sum, addon) => sum + addon.value, 0);
+  };
+
+  const calculateTotalBuildingsReplacementCost = (): number => {
+    // For insurance value - use replacement cost (undepreciated)
+    return Object.keys(buildingValuations).reduce(
+      (sum, buildingId) => {
+        const valuation = buildingValuations[buildingId];
+        if (!valuation) return sum;
+        return sum + (valuation.subtotal || 0);
+      },
+      0
+    );
   };
 
   const calculateMarketValue = (): number => {
@@ -248,9 +318,8 @@ export default function ValuationSection({ data, onChange, buildings = [] }: Pro
   };
 
   const calculateInsuranceValue = (): number => {
-    const buildingsValue = manualOverrides.buildings_value
-      ? data.valuation_total_buildings_value || 0
-      : calculateTotalBuildings();
+    // Insurance uses REPLACEMENT COST (not depreciated)
+    const buildingsValue = calculateTotalBuildingsReplacementCost();
 
     const addonsValue = manualOverrides.addons_value
       ? data.valuation_total_addons_value || 0
@@ -259,51 +328,6 @@ export default function ValuationSection({ data, onChange, buildings = [] }: Pro
     return buildingsValue + addonsValue; // Excludes land
   };
 
-  // === DEPRECIATION CALCULATION FUNCTIONS ===
-
-  /**
-   * Calculate building age from construction year
-   */
-  const calculateAge = (constructionYear: number): number => {
-    const currentYear = new Date().getFullYear();
-    return currentYear - constructionYear;
-  };
-
-  /**
-   * Get default economic life by building type
-   */
-  const getDefaultEconomicLife = (buildingType: string): number => {
-    const defaults: Record<string, number> = {
-      'Residential': 50,
-      'Commercial': 40,
-      'Industrial': 30,
-      'Warehouse': 30,
-      'Agricultural': 25,
-    };
-    return defaults[buildingType] || 40; // Default to 40 years if not found
-  };
-
-  /**
-   * Calculate depreciation rate (age / economic life * 100), capped at 100%
-   */
-  const calculateDepreciationRate = (age: number, economicLife: number): number => {
-    if (economicLife <= 0) return 0;
-    return Math.min((age / economicLife) * 100, 100);
-  };
-
-  /**
-   * Calculate depreciation amount (subtotal * rate / 100)
-   */
-  const calculateDepreciation = (subtotal: number, rate: number): number => {
-    return subtotal * (rate / 100);
-  };
-
-  /**
-   * Calculate depreciated value (subtotal - depreciation)
-   */
-  const calculateDepreciatedValue = (subtotal: number, depreciation: number): number => {
-    return Math.max(subtotal - depreciation, 0); // Don't go negative
-  };
 
   // HANDLERS
   const handleToggleManualOverride = (field: string) => {
@@ -357,6 +381,21 @@ export default function ValuationSection({ data, onChange, buildings = [] }: Pro
     });
   };
 
+  const handleBuildingValuationUpdate = (buildingId: string, updates: Partial<BuildingValuation>) => {
+    setBuildingValuations(prev => {
+      const building = prev[buildingId];
+      if (!building) return prev;
+
+      return {
+        ...prev,
+        [buildingId]: {
+          ...building,
+          ...updates
+        }
+      };
+    });
+  };
+
   const handleAddAddon = () => {
     const newAddon: ValuationAddon = {
       id: generateId(),
@@ -376,69 +415,14 @@ export default function ValuationSection({ data, onChange, buildings = [] }: Pro
     );
   };
 
-  /**
-   * Handle depreciation field updates for a building
-   */
-  const handleDepreciationChange = (
-    buildingId: string,
-    field: 'construction_year' | 'economic_life_years' | 'depreciation_rate_percent',
-    value: number
-  ) => {
-    setBuildingValuations(prev => {
-      const building = prev[buildingId];
-      if (!building) return prev;
-
-      const updated = { ...building };
-
-      // Update the changed field
-      if (field === 'construction_year') {
-        updated.construction_year = value;
-        updated.age_years = calculateAge(value);
-
-        // Recalculate depreciation rate if economic life exists
-        if (updated.economic_life_years) {
-          updated.depreciation_rate_percent = calculateDepreciationRate(
-            updated.age_years!,
-            updated.economic_life_years
-          );
-        }
-      } else if (field === 'economic_life_years') {
-        updated.economic_life_years = value;
-
-        // Recalculate depreciation rate if age exists
-        if (updated.age_years !== undefined) {
-          updated.depreciation_rate_percent = calculateDepreciationRate(
-            updated.age_years,
-            value
-          );
-        }
-      } else if (field === 'depreciation_rate_percent') {
-        // Manual override of depreciation rate
-        updated.depreciation_rate_percent = value;
-      }
-
-      // Calculate depreciation amount and depreciated value
-      if (updated.depreciation_rate_percent !== undefined) {
-        updated.depreciation_amount = calculateDepreciation(
-          updated.subtotal,
-          updated.depreciation_rate_percent
-        );
-        updated.depreciated_value = calculateDepreciatedValue(
-          updated.subtotal,
-          updated.depreciation_amount
-        );
-      }
-
-      return {
-        ...prev,
-        [buildingId]: updated
-      };
-    });
-  };
-
   const updateParentData = (updates: Partial<ValuationData>) => {
+    const totalPerches = calculateTotalPerches(
+      data.land_extent_acres || 0,
+      data.land_extent_roods || 0,
+      data.land_extent_perches || 0
+    );
     onChange({
-      valuation_land_extent: landExtent,
+      valuation_land_extent: totalPerches,
       valuation_rate_per_perch: ratePerPerch,
       valuation_total_land_value: calculateLandValue(),
       valuation_buildings_data: Object.values(buildingValuations),
@@ -456,7 +440,7 @@ export default function ValuationSection({ data, onChange, buildings = [] }: Pro
   // Update parent whenever state changes
   useEffect(() => {
     updateParentData({});
-  }, [landExtent, ratePerPerch, buildingValuations, addons, forcedSalePercentage, manualOverrides]);
+  }, [data.land_extent_acres, data.land_extent_roods, data.land_extent_perches, ratePerPerch, buildingValuations, addons, forcedSalePercentage, manualOverrides]);
 
   return (
     <div className="space-y-8">
@@ -485,15 +469,43 @@ export default function ValuationSection({ data, onChange, buildings = [] }: Pro
         <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <Label>Land Extent (Perches)</Label>
-              <Input
-                type="number"
-                value={landExtent || ''}
-                onChange={(e) => setLandExtent(parseFloat(e.target.value) || 0)}
-                step="0.01"
-                min="0"
-                className="mt-1"
-              />
+              <Label>Land Extent</Label>
+              <div className="mt-1 bg-gray-50 border border-gray-300 rounded-lg p-3">
+                <div className="grid grid-cols-4 gap-2 mb-2">
+                  <div>
+                    <div className="text-xs text-gray-600">Acres</div>
+                    <div className="text-base font-semibold">{data.land_extent_acres || 0}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-600">Roods</div>
+                    <div className="text-base font-semibold">{data.land_extent_roods || 0}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-600">Perches</div>
+                    <div className="text-base font-semibold">{data.land_extent_perches?.toFixed(2) || '0.00'}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-600">Total Perches</div>
+                    <div className="text-base font-semibold text-indigo-700">
+                      {calculateTotalPerches(
+                        data.land_extent_acres || 0,
+                        data.land_extent_roods || 0,
+                        data.land_extent_perches || 0
+                      ).toFixed(2)}
+                    </div>
+                  </div>
+                </div>
+                <div className="pt-2 border-t border-gray-200">
+                  <div className="text-sm font-medium text-indigo-900">
+                    {data.land_extent_formatted || `${data.land_extent_acres || 0}A-${data.land_extent_roods || 0}R-${data.land_extent_perches?.toFixed(1) || '0.0'}P`}
+                  </div>
+                  {data.land_extent_hectares && (
+                    <div className="text-xs text-gray-600 mt-1">
+                      {data.land_extent_hectares.toFixed(4)} hectares • {data.land_extent_square_meters?.toFixed(2)} m²
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
 
             <div>
@@ -680,106 +692,125 @@ export default function ValuationSection({ data, onChange, buildings = [] }: Pro
                 )}
 
                 {/* Depreciation Section */}
-                <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
-                  <h5 className="text-sm font-semibold text-blue-900 mb-3">Depreciation Details</h5>
+                <div className="border-t pt-4 mt-4">
+                  <h5 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <Calculator className="h-4 w-4 text-indigo-600" />
+                    Depreciation Calculation
+                  </h5>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {/* Construction Year */}
+                  <div className="grid grid-cols-2 gap-4 mb-4">
                     <div>
-                      <Label htmlFor={`construction_year_${building.id}`}>Construction Year</Label>
+                      <Label className="text-sm">Construction Year</Label>
                       <Input
-                        id={`construction_year_${building.id}`}
                         type="number"
                         value={valuation.construction_year || ''}
                         onChange={(e) => {
                           const year = parseInt(e.target.value) || 0;
-                          handleDepreciationChange(building.id, 'construction_year', year);
+                          const age = calculateAge(year);
+                          const economicLife = valuation.economic_life_years || getDefaultEconomicLife(building.building_type || '');
+                          const depRate = calculateDepreciationRate(age, economicLife);
+                          const depAmount = calculateDepreciationAmount(valuation.subtotal, depRate);
+                          const depValue = calculateDepreciatedValue(valuation.subtotal, depAmount);
+
+                          handleBuildingValuationUpdate(building.id, {
+                            construction_year: year,
+                            age_years: age,
+                            depreciation_rate_percent: depRate,
+                            depreciation_amount: depAmount,
+                            depreciated_value: depValue
+                          });
                         }}
                         placeholder="e.g., 2010"
                         min="1900"
                         max={new Date().getFullYear()}
                         className="mt-1"
                       />
-                      {valuation.age_years !== undefined && (
-                        <p className="text-xs text-blue-700 mt-1">
-                          Age: {valuation.age_years} years
-                        </p>
-                      )}
                     </div>
 
-                    {/* Economic Life */}
                     <div>
-                      <Label htmlFor={`economic_life_${building.id}`}>
-                        Economic Life (years)
-                        <span className="text-xs text-gray-500 ml-1">
-                          (Default: {getDefaultEconomicLife(building.building_type)})
-                        </span>
-                      </Label>
+                      <Label className="text-sm">Age (Years)</Label>
+                      <div className="mt-1 px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg font-medium text-gray-700">
+                        {valuation.age_years || calculateAge(valuation.construction_year) || 0} years
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label className="text-sm">Economic Life (Years)</Label>
                       <Input
-                        id={`economic_life_${building.id}`}
                         type="number"
-                        value={valuation.economic_life_years || ''}
+                        value={valuation.economic_life_years || getDefaultEconomicLife(building.building_type || '')}
                         onChange={(e) => {
-                          const life = parseInt(e.target.value) || 0;
-                          handleDepreciationChange(building.id, 'economic_life_years', life);
+                          const economicLife = parseInt(e.target.value) || 50;
+                          const age = valuation.age_years || calculateAge(valuation.construction_year);
+                          const depRate = calculateDepreciationRate(age, economicLife);
+                          const depAmount = calculateDepreciationAmount(valuation.subtotal, depRate);
+                          const depValue = calculateDepreciatedValue(valuation.subtotal, depAmount);
+
+                          handleBuildingValuationUpdate(building.id, {
+                            economic_life_years: economicLife,
+                            depreciation_rate_percent: depRate,
+                            depreciation_amount: depAmount,
+                            depreciated_value: depValue
+                          });
                         }}
-                        placeholder={`Default: ${getDefaultEconomicLife(building.building_type)}`}
                         min="1"
-                        max="200"
+                        max="100"
                         className="mt-1"
                       />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Default: {getDefaultEconomicLife(building.building_type || '')} years
+                      </p>
                     </div>
 
-                    {/* Depreciation Rate */}
                     <div>
-                      <Label htmlFor={`depreciation_rate_${building.id}`}>
-                        Depreciation Rate (%)
-                      </Label>
+                      <Label className="text-sm">Depreciation Rate (%)</Label>
                       <Input
-                        id={`depreciation_rate_${building.id}`}
                         type="number"
-                        value={valuation.depreciation_rate_percent?.toFixed(1) || ''}
+                        value={valuation.depreciation_rate_percent || ''}
                         onChange={(e) => {
-                          const rate = parseFloat(e.target.value) || 0;
-                          handleDepreciationChange(building.id, 'depreciation_rate_percent', rate);
+                          const depRate = parseFloat(e.target.value) || 0;
+                          const depAmount = calculateDepreciationAmount(valuation.subtotal, depRate);
+                          const depValue = calculateDepreciatedValue(valuation.subtotal, depAmount);
+
+                          handleBuildingValuationUpdate(building.id, {
+                            depreciation_rate_percent: depRate,
+                            depreciation_amount: depAmount,
+                            depreciated_value: depValue
+                          });
                         }}
-                        placeholder="Auto-calculated"
                         min="0"
                         max="100"
-                        step="0.1"
+                        step="0.01"
                         className="mt-1"
                       />
-                      <p className="text-xs text-blue-700 mt-1">
-                        {valuation.depreciation_rate_percent !== undefined
-                          ? `Calculated: ${valuation.depreciation_rate_percent.toFixed(1)}%`
-                          : 'Enter construction year and economic life'}
+                      <p className="text-xs text-gray-500 mt-1">
+                        Auto-calculated or enter custom rate
                       </p>
                     </div>
                   </div>
 
                   {/* Depreciation Summary */}
-                  {valuation.depreciation_amount !== undefined && valuation.depreciated_value !== undefined && (
-                    <div className="mt-4 pt-3 border-t border-blue-300 grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-                      <div>
-                        <p className="text-blue-700 font-medium">Replacement Cost:</p>
-                        <p className="text-lg font-semibold text-gray-900">
-                          {formatCurrency(valuation.subtotal, 2)}
-                        </p>
+                  <div className="mt-4 p-4 bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-200 rounded-lg">
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-700">Replacement Cost:</span>
+                        <span className="font-semibold text-gray-900">{formatCurrency(valuation.subtotal, 2)}</span>
                       </div>
-                      <div>
-                        <p className="text-blue-700 font-medium">Depreciation Amount:</p>
-                        <p className="text-lg font-semibold text-red-600">
-                          -{formatCurrency(valuation.depreciation_amount, 2)}
-                        </p>
+                      <div className="flex justify-between text-sm text-red-600">
+                        <span>Less: Depreciation ({(valuation.depreciation_rate_percent || 0).toFixed(2)}%):</span>
+                        <span className="font-semibold">-{formatCurrency(valuation.depreciation_amount || 0, 2)}</span>
                       </div>
-                      <div>
-                        <p className="text-blue-700 font-medium">Depreciated Value:</p>
-                        <p className="text-lg font-semibold text-green-600">
-                          {formatCurrency(valuation.depreciated_value, 2)}
-                        </p>
+                      <div className="flex justify-between pt-2 border-t border-indigo-300 text-base font-bold">
+                        <span className="text-indigo-900">Depreciated Value:</span>
+                        <span className="text-indigo-700">{formatCurrency(valuation.depreciated_value || valuation.subtotal, 2)}</span>
                       </div>
                     </div>
-                  )}
+                  </div>
+
+                  <p className="text-xs text-gray-500 mt-2 italic">
+                    💡 Depreciation is calculated using the straight-line method. The depreciated value is used for market value.
+                    Insurance value uses the replacement cost (without depreciation).
+                  </p>
                 </div>
               </div>
             );

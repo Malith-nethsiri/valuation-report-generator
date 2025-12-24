@@ -13,7 +13,7 @@ from datetime import datetime
 import requests
 
 # Import AI parser for Claude AI integration
-from app.services.ai_parser import parse_with_claude, merge_multi_document_results
+from .ai_parser import parse_with_claude, merge_multi_document_results
 
 
 def detect_document_type(extracted_data: Dict) -> str:
@@ -490,21 +490,42 @@ async def extract_property_data_from_image(
     Example:
         data, confidence = await extract_property_data_from_image(image_bytes, "image/jpeg")
     """
+    import logging
+    import traceback
+    logger = logging.getLogger(__name__)
+
     try:
         # Extract text using Google Vision
+        logger.info("[OCR] Extracting text from image using Google Vision API...")
         extracted_text = extract_text_from_image(image_data)
+        logger.info(f"[OCR] Extracted {len(extracted_text)} characters of text")
 
         if not extracted_text:
+            logger.warning("[OCR] No text extracted from image")
             return {}, 0.0
 
         # Parse structured data using Claude AI
+        logger.info("[OCR] Parsing text with Claude AI...")
         ai_result = parse_with_claude(extracted_text, document_hint)
+        logger.info(f"[OCR] AI parsing result type: {type(ai_result)}")
+
+        # Defensive check: ensure ai_result is not None
+        if ai_result is None:
+            logger.error("[OCR] AI parser returned None - API configuration issue")
+            raise Exception("AI parser returned None - possible API configuration issue")
+
+        # Defensive check: ensure ai_result is a dictionary
+        if not isinstance(ai_result, dict):
+            logger.error(f"[OCR] AI parser returned unexpected type: {type(ai_result)}")
+            raise Exception(f"AI parser returned unexpected type: {type(ai_result)}")
 
         extracted_data = ai_result.get('extracted_data', {})
         confidence_scores = ai_result.get('confidence_scores', {})
         overall_confidence = ai_result.get('overall_confidence', 0.5)
         detected_plans = ai_result.get('detected_plans', [])
         metadata = ai_result.get('metadata', {})
+
+        logger.info(f"[OCR] Successfully extracted {len(extracted_data)} fields with confidence {overall_confidence}")
 
         # Store additional metadata
         extracted_data['_confidence_scores'] = confidence_scores
@@ -515,6 +536,8 @@ async def extract_property_data_from_image(
         return extracted_data, overall_confidence
 
     except Exception as e:
+        logger.error(f"[OCR] Extraction failed: {str(e)}")
+        logger.error(f"[OCR] Full traceback:\n{traceback.format_exc()}")
         raise Exception(f"OCR extraction failed: {str(e)}")
 
 

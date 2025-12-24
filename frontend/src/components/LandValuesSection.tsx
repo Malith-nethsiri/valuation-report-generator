@@ -1,11 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, Plus, Trash2 } from 'lucide-react';
+import { TrendingUp, Plus, Trash2, FileText, Sparkles } from 'lucide-react';
 import { Button } from './Button';
 import { Label } from './Label';
 import { Input } from './Input';
 import { Textarea } from './Textarea';
 import { ComparableProperty } from '../types';
 import { formatCurrency, formatNumber } from '../utils/currency';
+import {
+  MARKET_ANALYSIS_TEMPLATES,
+  MarketAnalysisTemplate,
+  suggestTemplate,
+  fillTemplate,
+  getTemplatesByPropertyType
+} from '../utils/marketAnalysisTemplates';
 
 interface LandValuesData {
   comparable_properties?: ComparableProperty[];
@@ -32,12 +39,29 @@ export default function LandValuesSection({ data, onChange }: Props) {
     data.comparable_properties || []
   );
 
+  // Template selection state
+  const [showTemplateSelector, setShowTemplateSelector] = useState(false);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
+
   // Sync local state with parent data
   useEffect(() => {
     if (data.comparable_properties) {
       setComparables(data.comparable_properties);
     }
   }, [data.comparable_properties]);
+
+  // Auto-suggest template on mount if no market analysis exists
+  useEffect(() => {
+    if (!data.land_market_analysis || data.land_market_analysis.trim() === '') {
+      const suggested = suggestTemplate(data);
+      const filled = fillTemplate(suggested.template, {
+        ...data,
+        comparable_properties: comparables
+      });
+      onChange({ land_market_analysis: filled });
+      setSelectedTemplateId(suggested.id);
+    }
+  }, []); // Only run on mount
 
   const calculateTotalValue = (extent: number, rate: number): number => {
     return extent * rate;
@@ -68,6 +92,20 @@ export default function LandValuesSection({ data, onChange }: Props) {
     const updated = comparables.filter(c => c.id !== id);
     setComparables(updated);
     onChange({ comparable_properties: updated });
+  };
+
+  const handleApplyTemplate = (templateId: string) => {
+    const template = MARKET_ANALYSIS_TEMPLATES.find(t => t.id === templateId);
+    if (!template) return;
+
+    const filled = fillTemplate(template.template, {
+      ...data,
+      comparable_properties: comparables
+    });
+
+    onChange({ land_market_analysis: filled });
+    setSelectedTemplateId(templateId);
+    setShowTemplateSelector(false);
   };
 
   const handleComparableChange = (
@@ -392,14 +430,59 @@ export default function LandValuesSection({ data, onChange }: Props) {
         </div>
       )}
 
-      {/* Market Analysis Text */}
+      {/* Market Analysis Text with Templates */}
       <div>
-        <Label>Market Analysis</Label>
+        <div className="flex items-center justify-between mb-2">
+          <Label>Market Analysis</Label>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setShowTemplateSelector(!showTemplateSelector)}
+            className="flex items-center gap-2"
+          >
+            <FileText className="h-4 w-4" />
+            {showTemplateSelector ? 'Hide Templates' : 'Use Template'}
+          </Button>
+        </div>
+
+        {/* Template Selector */}
+        {showTemplateSelector && (
+          <div className="mb-3 p-4 bg-indigo-50 border border-indigo-200 rounded-lg space-y-3">
+            <div className="flex items-center gap-2 text-indigo-700 mb-2">
+              <Sparkles className="h-5 w-5" />
+              <span className="font-semibold">Select a Template</span>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2 max-h-60 overflow-y-auto">
+              {MARKET_ANALYSIS_TEMPLATES.map((template) => (
+                <button
+                  key={template.id}
+                  type="button"
+                  onClick={() => handleApplyTemplate(template.id)}
+                  className={`text-left p-3 rounded-lg border transition-all ${
+                    selectedTemplateId === template.id
+                      ? 'bg-indigo-100 border-indigo-400 shadow-sm'
+                      : 'bg-white border-gray-200 hover:border-indigo-300 hover:bg-indigo-50'
+                  }`}
+                >
+                  <div className="font-medium text-sm text-gray-900">{template.name}</div>
+                  <div className="text-xs text-gray-600 mt-1">{template.description}</div>
+                </button>
+              ))}
+            </div>
+
+            <p className="text-xs text-indigo-600 mt-2">
+              💡 Templates are auto-filled with your property data. You can edit the text after applying.
+            </p>
+          </div>
+        )}
+
         <Textarea
           value={data.land_market_analysis || ''}
           onChange={(e) => onChange({ land_market_analysis: e.target.value })}
           placeholder="Provide additional market analysis, trends, and factors affecting property values in this area..."
-          rows={5}
+          rows={6}
           className="mt-2"
         />
         <p className="text-xs text-gray-500 mt-1">

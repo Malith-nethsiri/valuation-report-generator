@@ -32,6 +32,7 @@ import {
 import { Button } from './Button';
 import { Input } from './Input';
 import { Label } from './Label';
+import { AutocompleteInput } from './AutocompleteInput';
 import type { DeedInfo, Report } from '../types';
 import { PropertyLocationSection } from './PropertyLocationSection';
 import { AccessDirectionsSection } from './AccessDirectionsSection';
@@ -48,6 +49,25 @@ import ValuationSection from './ValuationSection';
 import CertificationSection from './CertificationSection';
 import { DatePicker } from './DatePicker';
 import { LoadingOverlay } from './LoadingOverlay';
+import { validateSriLankanNIC, validatePassport, useFieldValidation } from '../utils/validators';
+
+// Common deed types in Sri Lanka
+const COMMON_DEED_TYPES = [
+  'Transfer Deed',
+  'Gift Deed',
+  'Mortgage Deed',
+  'Lease Deed',
+  'Partition Deed',
+  'Exchange Deed',
+  'Deed of Sale',
+  'Deed of Donation',
+  'Release Deed',
+  'Reconveyance Deed',
+  'Deed of Assignment',
+  'Usufructuary Mortgage Deed',
+  'Power of Attorney Deed',
+  'Certificate of Sale',
+];
 
 // Validation schemas for each step
 const propertyPlanSchema = z.object({
@@ -148,7 +168,8 @@ const propertyPlanSchema = z.object({
     }
 });
 
-const applicantPurposeSchema = z.object({
+// Base schema without refinement (for merging)
+const baseApplicantPurposeSchema = z.object({
     applicant_title: z.string().min(1, 'Please select a title'),
     applicant_full_name: z.string().min(2, 'Please enter the applicant full name'),
     applicant_id_type: z.string().min(1, 'Please select ID type'),
@@ -163,18 +184,100 @@ const applicantPurposeSchema = z.object({
     property_ownership: z.string().optional(),
     property_type_valued: z.string().min(1, 'Please enter the property type'),
     has_additional_owner: z.string().optional(),
-    additional_owner_names: z.string().optional(),
+    additional_owner_names: z.string().nullable().optional(),
 });
 
-const additionalDetailsSchema = z.object({
-    has_deed_info: z.string().optional(),
+// Schema with ID format validation (for step validation)
+const applicantPurposeSchema = baseApplicantPurposeSchema
+    .refine(
+        (data) => {
+            // Only validate if both ID type and number are provided
+            if (!data.applicant_id_type || !data.applicant_id_number) {
+                return true; // Let individual field validations handle empty values
+            }
+
+            const idType = data.applicant_id_type;
+            const idNumber = data.applicant_id_number;
+
+            // Validate based on ID type
+            if (idType === 'NIC') {
+                const result = validateSriLankanNIC(idNumber);
+                return result.isValid;
+            } else if (idType === 'Passport') {
+                const result = validatePassport(idNumber);
+                return result.isValid;
+            } else if (idType === 'Other') {
+                // For "Other", just check minimum length
+                return idNumber.length >= 3;
+            }
+
+            return true;
+        },
+        (data) => {
+            // Dynamic error message based on ID type
+            const idType = data.applicant_id_type;
+            const idNumber = data.applicant_id_number;
+
+            if (idType === 'NIC') {
+                const result = validateSriLankanNIC(idNumber);
+                return {
+                    message: result.error || 'Invalid NIC format. Use old format (9 digits + V/X) or new format (12 digits)',
+                    path: ['applicant_id_number'],
+                };
+            } else if (idType === 'Passport') {
+                const result = validatePassport(idNumber);
+                return {
+                    message: result.error || 'Invalid passport format. Expected: 1-2 letters followed by 6-9 digits',
+                    path: ['applicant_id_number'],
+                };
+            } else if (idType === 'Other') {
+                return {
+                    message: 'ID number must be at least 3 characters long',
+                    path: ['applicant_id_number'],
+                };
+            }
+
+            return {
+                message: 'Invalid ID number',
+                path: ['applicant_id_number'],
+            };
+        }
+    )
+    .refine(
+        (data) => {
+            // Validate additional owner names only if "yes" is selected
+            if (data.has_additional_owner === 'yes') {
+                return data.additional_owner_names && data.additional_owner_names.trim().length > 0;
+            }
+            return true; // No validation needed if "no" or not selected
+        },
+        {
+            message: 'Please enter the additional owner names',
+            path: ['additional_owner_names'],
+        }
+    );
+
+// Base schema without refinement (for merging)
+const baseAdditionalDetailsSchema = z.object({
     submission_organization: z.string().optional(),
     submission_address: z.string().optional(),
     inspection_date: z.string().min(1, 'Please enter the inspection date (DD-MM-YYYY)'),
     has_special_note: z.string().optional(),
-    special_note_text: z.string().optional(),
+    special_note_text: z.string().nullish(),
     report_reference: z.string().min(1, 'Please enter a reference number'),
     report_date: z.string().min(1, 'Please enter the report date'),
+});
+
+// Schema with refinement (for step validation)
+const additionalDetailsSchema = baseAdditionalDetailsSchema.superRefine((data, ctx) => {
+    // Validate special note text is required when has_special_note is "yes"
+    if (data.has_special_note === 'yes' && !data.special_note_text) {
+        ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'Special note text is required when you select "Yes"',
+            path: ['special_note_text']
+        });
+    }
 });
 
 // Step 2 - Extent & Boundaries validation
@@ -188,15 +291,14 @@ const extentBoundariesSchema = z.object({
 const propertySearchSchema = z.object({
     property_latitude: z.number().optional(),
     property_longitude: z.number().optional(),
-    property_address_full: z.string().optional(),
 }).refine(
     (data) => {
-        // At least address or coordinates should be provided
-        return data.property_address_full || (data.property_latitude && data.property_longitude);
+        // Coordinates should be provided
+        return data.property_latitude && data.property_longitude;
     },
     {
         message: "Please select a property location on the map",
-        path: ["property_address_full"],
+        path: ["property_latitude"],
     }
 );
 
@@ -204,7 +306,7 @@ const propertySearchSchema = z.object({
 const propertyDetailsSchema = z.object({
     property_village: z.string().min(2, 'Village/Town is required'),
     property_district: z.string().min(2, 'District is required'),
-    grama_niladari_division: z.string().optional(),
+    grama_niladari_division: z.string().nullish(),
 });
 
 // Step 6 - Property Description validation
@@ -222,8 +324,6 @@ const propertyDescriptionSchema = z.object({
             rooms: z.array(z.object({
                 room_type: z.string().optional(),
                 count: z.number().optional(),
-                length: z.number().gt(0, 'Length must be greater than 0').optional(),
-                width: z.number().gt(0, 'Width must be greater than 0').optional(),
             })),
         })),
     })).optional(),
@@ -250,9 +350,17 @@ const basePropertyPlanSchema = z.object({
     certificate_notary_district: z.string().optional(),
 });
 
+// Certification schema (for final submission validation)
+const baseCertificationSchema = z.object({
+    certificate_identity_confirmed: z.boolean().refine(val => val === true, {
+        message: "You must confirm the certificate of identity"
+    })
+});
+
 const completeFormSchema = basePropertyPlanSchema
-    .merge(applicantPurposeSchema)
-    .merge(additionalDetailsSchema);
+    .merge(baseApplicantPurposeSchema)
+    .merge(baseAdditionalDetailsSchema)
+    .merge(baseCertificationSchema);
 
 type FormData = z.infer<typeof completeFormSchema> & {
     // Single deed fields (like plan info)
@@ -265,7 +373,6 @@ type FormData = z.infer<typeof completeFormSchema> & {
     use_property_address_as_applicant?: boolean; // Reversed: applicant uses property address
     property_name?: string;
     assessment_number?: string;
-    property_address_full?: string;
     property_village?: string;
     property_divisional_secretariat?: string;
     property_district?: string;
@@ -803,16 +910,18 @@ const PropertyPlanStep: React.FC<StepComponentProps> = ({ register, errors, setV
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-2">
-                            <Label htmlFor="deed_type" className="text-gray-700 font-medium">
-                                Deed Type
-                            </Label>
-                            <Input
-                                id="deed_type"
-                                type="text"
-                                placeholder="e.g., Gift deed, Transfer deed"
-                                className="h-14 bg-white/50 border-gray-200/50 rounded-2xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200"
-                                {...register('deed_type')}
+                            <AutocompleteInput
+                                label="Deed Type"
+                                value={watch('deed_type') || ''}
+                                onChange={(value) => setValue('deed_type', value)}
+                                suggestions={COMMON_DEED_TYPES}
+                                placeholder="Select or type deed type (e.g., Gift Deed, Transfer Deed)"
+                                allowCustom={true}
+                                className="w-full"
                             />
+                            <p className="text-xs text-gray-500 mt-1">
+                                Select from common deed types or type your own
+                            </p>
                         </div>
 
                         <div className="space-y-2">
@@ -1027,16 +1136,18 @@ const PropertyPlanStep: React.FC<StepComponentProps> = ({ register, errors, setV
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="space-y-2">
-                                <Label htmlFor="deed_type" className="text-gray-700 font-medium">
-                                    Deed Type
-                                </Label>
-                                <Input
-                                    id="deed_type"
-                                    type="text"
-                                    placeholder="e.g., Gift deed, Transfer deed"
-                                    className="h-14 bg-white/50 border-gray-200/50 rounded-2xl focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all duration-200"
-                                    {...register('deed_type')}
+                                <AutocompleteInput
+                                    label="Deed Type"
+                                    value={watch('deed_type') || ''}
+                                    onChange={(value) => setValue('deed_type', value)}
+                                    suggestions={COMMON_DEED_TYPES}
+                                    placeholder="Select or type deed type (e.g., Gift Deed, Transfer Deed)"
+                                    allowCustom={true}
+                                    className="w-full"
                                 />
+                                <p className="text-xs text-gray-500 mt-1">
+                                    Select from common deed types or type your own
+                                </p>
                             </div>
 
                             <div className="space-y-2">
@@ -1176,22 +1287,6 @@ const PropertySearchStep: React.FC<StepComponentProps & { getValues: any }> = ({
         });
     };
 
-    // Handle property selection from Google Maps
-    const handlePropertySelected = async (place: any) => {
-        setSearchingProperty(true);
-
-        // Update property location data
-        updateFormData({
-            property_address_full: place.formattedAddress,
-            property_latitude: place.latitude,
-            property_longitude: place.longitude,
-        });
-
-        // TODO: Call geocoding API to get district, province, etc.
-        // For now, just mark as searched
-        setSearchingProperty(false);
-    };
-
     return (
         <div className="space-y-6">
             <div className="bg-gradient-to-r from-blue-50 to-cyan-50 border-2 border-blue-300 rounded-2xl p-6">
@@ -1211,7 +1306,6 @@ const PropertySearchStep: React.FC<StepComponentProps & { getValues: any }> = ({
                         console.log('[MultiStepForm] Property selected:', data);
                     }
                     updateFormData({
-                        property_address_full: data.formattedAddress,
                         property_latitude: data.latitude,
                         property_longitude: data.longitude,
                         // Save geocoding data for auto-fill in next step
@@ -1261,7 +1355,6 @@ const PropertySearchStep: React.FC<StepComponentProps & { getValues: any }> = ({
                         nearest_railway_distance_km: data.transport?.railway_station?.distance_km,
                     });
                 }}
-                initialPropertyAddress={formData.property_address_full}
                 initialStartingPoint={formData.access_starting_point_name}
                 // Pass saved data to restore state when navigating back
                 initialRouteData={formData.access_route_data}
@@ -1304,14 +1397,6 @@ const PropertyLocationNewStep: React.FC<StepComponentProps & { getValues: any }>
 
     return (
         <div className="space-y-6">
-            {/* Show what was found from Google Maps */}
-            {formData.property_address_full && (
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                    <h4 className="font-medium text-blue-900 mb-2">From Google Maps:</h4>
-                    <p className="text-sm text-blue-800">{formData.property_address_full}</p>
-                </div>
-            )}
-
             <PropertyLocationSection
                 formData={formData}
                 updateFormData={updateFormData}
@@ -1335,6 +1420,39 @@ const PropertyLocationNewStep: React.FC<StepComponentProps & { getValues: any }>
 // Step 3: Applicant Information & Purpose (moved from step 2, with reversed checkbox)
 const ApplicantPurposeStep: React.FC<StepComponentProps & { getValues: any }> = ({ register, errors, watch, setValue, getValues }) => {
     const hasAdditionalOwner = watch('has_additional_owner');
+    const idType = watch('applicant_id_type');
+    const idNumber = watch('applicant_id_number');
+
+    // Clear additional owner names when "No" is selected
+    useEffect(() => {
+        if (hasAdditionalOwner === 'no') {
+            setValue('additional_owner_names', undefined);
+        }
+    }, [hasAdditionalOwner, setValue]);
+
+    // Dynamic validator function based on ID type
+    const getIdValidator = () => {
+        if (idType === 'NIC') {
+            return validateSriLankanNIC;
+        } else if (idType === 'Passport') {
+            return validatePassport;
+        }
+        // For "Other", return a simple validator
+        return (value: string) => {
+            if (!value || value.length < 3) {
+                return { isValid: false, error: 'ID number must be at least 3 characters' };
+            }
+            return { isValid: true };
+        };
+    };
+
+    // Real-time validation with 500ms debounce
+    const idValidation = useFieldValidation(
+        idNumber,
+        getIdValidator(),
+        500
+    );
+
     return (
         <div className="space-y-6">
 
@@ -1354,11 +1472,10 @@ const ApplicantPurposeStep: React.FC<StepComponentProps & { getValues: any }> = 
                                 const propertyVillage = watch('property_village') || '';
                                 const propertyDistrict = watch('property_district') || '';
                                 const propertyProvince = watch('property_province') || '';
-                                const propertyAddressFull = watch('property_address_full') || '';
 
-                                // Parse property address or use village as address line 2
-                                setValue('applicant_address_line1', propertyAddressFull || 'Property Address');
-                                setValue('applicant_address_line2', propertyVillage);
+                                // Use village and district as address
+                                setValue('applicant_address_line1', propertyVillage || 'Property Address');
+                                setValue('applicant_address_line2', propertyDistrict || '');
                                 setValue('applicant_district', propertyDistrict);
                                 setValue('applicant_province', propertyProvince);
 
@@ -1448,12 +1565,33 @@ const ApplicantPurposeStep: React.FC<StepComponentProps & { getValues: any }> = 
                     <Input
                         id="applicant_id_number"
                         type="text"
-                        placeholder="ID number"
+                        placeholder={
+                            idType === 'NIC'
+                                ? 'e.g., 912345678V or 199212345678'
+                                : idType === 'Passport'
+                                    ? 'e.g., N1234567'
+                                    : 'ID number'
+                        }
                         className="h-14 bg-white/50 border-gray-200/50 rounded-2xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200"
                         {...register('applicant_id_number')}
                     />
+                    {/* Form validation errors take precedence (red) */}
                     {errors.applicant_id_number && (
                         <p className="text-red-500 text-sm">{errors.applicant_id_number.message}</p>
+                    )}
+                    {/* Real-time validation warnings (amber) - only show if no form errors */}
+                    {!errors.applicant_id_number && idValidation.error && idNumber && idType && (
+                        <p className="text-amber-600 text-sm flex items-center gap-1">
+                            <span className="text-xs">⚠</span>
+                            {idValidation.error}
+                        </p>
+                    )}
+                    {/* Success indicator (green) - only show if valid and no form errors */}
+                    {!errors.applicant_id_number && idValidation.isValid && idNumber && idType && (
+                        <p className="text-emerald-600 text-sm flex items-center gap-1">
+                            <span className="text-xs">✓</span>
+                            Valid {idType} format
+                        </p>
                     )}
                 </div>
             </div>
@@ -1551,13 +1689,18 @@ const ApplicantPurposeStep: React.FC<StepComponentProps & { getValues: any }> = 
                         <Label htmlFor="valuation_type" className="text-gray-700 font-medium">
                             Valuation Type *
                         </Label>
-                        <Input
+                        <select
                             id="valuation_type"
-                            type="text"
-                            placeholder="e.g., Market Value, Present Market Value"
-                            className="h-14 bg-white/50 border-gray-200/50 rounded-2xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200"
+                            className="w-full h-14 bg-white/50 border border-gray-200/50 rounded-2xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200 px-4"
                             {...register('valuation_type')}
-                        />
+                        >
+                            <option value="">Select valuation type...</option>
+                            <option value="Market value">Market value</option>
+                            <option value="Present Market Value">Present Market Value</option>
+                            <option value="Forced Sale Value">Forced Sale Value</option>
+                            <option value="Rental Value">Rental Value</option>
+                            <option value="Insurance Value">Insurance Value</option>
+                        </select>
                         {errors.valuation_type && (
                             <p className="text-red-500 text-sm">{errors.valuation_type.message}</p>
                         )}
@@ -1567,13 +1710,19 @@ const ApplicantPurposeStep: React.FC<StepComponentProps & { getValues: any }> = 
                         <Label htmlFor="property_type_valued" className="text-gray-700 font-medium">
                             Property Type *
                         </Label>
-                        <Input
+                        <select
                             id="property_type_valued"
-                            type="text"
-                            placeholder="e.g., immovable property"
-                            className="h-14 bg-white/50 border-gray-200/50 rounded-2xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200"
+                            className="w-full h-14 bg-white/50 border border-gray-200/50 rounded-2xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200 px-4"
                             {...register('property_type_valued')}
-                        />
+                        >
+                            <option value="">Select property type...</option>
+                            <option value="immovable property">immovable property</option>
+                            <option value="Residential Property">Residential Property</option>
+                            <option value="Commercial Property">Commercial Property</option>
+                            <option value="Agricultural Property">Agricultural Property</option>
+                            <option value="Land">Land</option>
+                            <option value="Mixed Use Property">Mixed Use Property</option>
+                        </select>
                         {errors.property_type_valued && (
                             <p className="text-red-500 text-sm">{errors.property_type_valued.message}</p>
                         )}
@@ -1692,6 +1841,19 @@ const AdditionalDetailsStep: React.FC<StepComponentProps> = ({
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Submission Destination</h3>
 
                 <div className="space-y-4">
+                    <div className="space-y-2">
+                        <Label htmlFor="submission_recipient_position" className="text-gray-700 font-medium">
+                            Recipient Position <span className="text-gray-400">(Optional)</span>
+                        </Label>
+                        <Input
+                            id="submission_recipient_position"
+                            type="text"
+                            placeholder="e.g., Manager, Credit Officer, Branch Manager"
+                            className="h-14 bg-white/50 border-gray-200/50 rounded-2xl focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-200"
+                            {...register('submission_recipient_position')}
+                        />
+                    </div>
+
                     <div className="space-y-2">
                         <Label htmlFor="submission_organization" className="text-gray-700 font-medium">
                             Organization <span className="text-gray-400">(Optional)</span>
@@ -1871,7 +2033,6 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({ onSubmit, isSubmitting = 
         reValidateMode: 'onChange', // Re-validate on change after first validation
         defaultValues: {
             // Initialize all optional fields with undefined so they're tracked by react-hook-form
-            property_address_full: undefined,
             property_village: undefined,
             property_district: undefined,
             property_province: undefined,
@@ -1898,6 +2059,18 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({ onSubmit, isSubmitting = 
             access_road_type: undefined,
             location_map_image_data: undefined,
             use_property_address_as_applicant: false,
+            // DEED DATA FIX: Register deed fields in defaultValues so react-hook-form tracks them
+            deed_type: '',
+            deed_number: '',
+            deed_date: '',
+            notary_name: '',
+            notary_location: '',
+            certificate_number: '',
+            certificate_date: '',
+            certificate_notary_name: '',
+            certificate_notary_district: '',
+            // Certification checkbox
+            certificate_identity_confirmed: false,
         } as Partial<FormData>,
     });
 
@@ -1905,7 +2078,71 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({ onSubmit, isSubmitting = 
     // Load initial data for edit mode
     useEffect(() => {
         if (isEditMode && initialData) {
-            reset(initialData);
+            console.log('[MultiStepForm] Loading initial data for editing:', initialData);
+
+            // Convert boolean values to strings for backward compatibility
+            const convertedData = {
+                ...initialData,
+                has_deed_info: typeof initialData.has_deed_info === 'boolean'
+                    ? (initialData.has_deed_info ? 'yes' : 'no')
+                    : initialData.has_deed_info,
+                has_special_note: typeof initialData.has_special_note === 'boolean'
+                    ? (initialData.has_special_note ? 'yes' : 'no')
+                    : initialData.has_special_note,
+                has_additional_owner: typeof initialData.has_additional_owner === 'boolean'
+                    ? (initialData.has_additional_owner ? 'yes' : 'no')
+                    : initialData.has_additional_owner,
+                // Ensure arrays are properly initialized
+                buildings: initialData.buildings || [],
+                property_photos: initialData.property_photos || [],
+                comparable_properties: initialData.comparable_properties || [],
+                deeds: initialData.deeds || [],
+                valuation_addons: initialData.valuation_addons || [],
+                // Ensure nested objects are preserved
+                valuation_buildings_data: initialData.valuation_buildings_data || [],
+            };
+
+            console.log('[MultiStepForm] Converted data for form:', convertedData);
+            console.log('[MultiStepForm] Buildings data:', convertedData.buildings);
+            console.log('[MultiStepForm] Valuation data:', convertedData.valuation_buildings_data);
+
+            reset(convertedData);
+
+            // DEED DATA FIX: Unpack deeds array into individual form fields
+            // Backend stores deeds as JSON array, but form uses individual fields
+            if (convertedData.deeds && Array.isArray(convertedData.deeds) && convertedData.deeds.length > 0) {
+                console.log('[MultiStepForm] Unpacking deed data from array:', convertedData.deeds);
+                const firstDeed = convertedData.deeds[0];
+
+                if (firstDeed.deed_type === 'Certificate of Sale') {
+                    // Certificate of Sale mode
+                    setValue('property_identification_type', 'certificate_of_sale');
+                    setValue('certificate_number', firstDeed.deed_number || '');
+                    setValue('certificate_date', firstDeed.deed_date || '');
+                    setValue('certificate_notary_name', firstDeed.notary_name || '');
+                    setValue('certificate_notary_district', firstDeed.notary_location || '');
+                    console.log('[MultiStepForm] Set certificate fields');
+                } else if (convertedData.plan_number) {
+                    // Hybrid mode (plan + deed)
+                    setValue('property_identification_type', 'plan_and_deed');
+                    setValue('deed_type', firstDeed.deed_type || '');
+                    setValue('deed_number', firstDeed.deed_number || '');
+                    setValue('deed_date', firstDeed.deed_date || '');
+                    setValue('notary_name', firstDeed.notary_name || '');
+                    setValue('notary_location', firstDeed.notary_location || '');
+                    console.log('[MultiStepForm] Set hybrid plan+deed fields');
+                } else {
+                    // Deed only mode
+                    setValue('property_identification_type', 'deed');
+                    setValue('deed_type', firstDeed.deed_type || '');
+                    setValue('deed_number', firstDeed.deed_number || '');
+                    setValue('deed_date', firstDeed.deed_date || '');
+                    setValue('notary_name', firstDeed.notary_name || '');
+                    setValue('notary_location', firstDeed.notary_location || '');
+                    console.log('[MultiStepForm] Set deed-only fields');
+                }
+            }
+
             toast.success('Report loaded for editing', { duration: 2000 });
         }
     }, [isEditMode, initialData, reset]);
@@ -1962,7 +2199,10 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({ onSubmit, isSubmitting = 
                 setShowErrorPanel(true);
 
                 // Trigger validation to show inline errors
-                await trigger(Object.keys(stepSchema.shape) as any);
+                // Ensure stepSchema.shape is an object before calling Object.keys
+                if (stepSchema && stepSchema.shape) {
+                    await trigger(Object.keys(stepSchema.shape) as any);
+                }
 
                 // Scroll to first error and focus
                 setTimeout(() => {
@@ -2040,9 +2280,9 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({ onSubmit, isSubmitting = 
         }
 
         // Check property location
-        if (!formData.property_address_full && !formData.property_latitude) {
+        if (!formData.property_latitude) {
             warnings.push({
-                field: 'property_address_full',
+                field: 'property_latitude',
                 message: 'Property location is not set. Use the Property Search step to add location.',
                 severity: 'warning'
             });
@@ -2158,6 +2398,13 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({ onSubmit, isSubmitting = 
 
 
     const handleFormSubmit = async (validatedData: FormData) => {
+        // CERTIFICATION STEP ENFORCEMENT: Only allow submission from step 12
+        if (currentStep !== 12) {
+            toast.error('Please complete the Certification step before submitting the report');
+            setCurrentStep(12);
+            return;
+        }
+
         // Check data quality for warnings (non-blocking)
         const warnings = checkDataQuality();
 
@@ -2190,7 +2437,6 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({ onSubmit, isSubmitting = 
             console.log('[MultiStepForm] Property location fields:', {
                 property_village: allFormData.property_village,
                 property_district: allFormData.property_district,
-                property_address_full: allFormData.property_address_full,
                 property_latitude: allFormData.property_latitude,
                 property_longitude: allFormData.property_longitude,
                 grama_niladari_division: allFormData.grama_niladari_division,
@@ -2249,6 +2495,31 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({ onSubmit, isSubmitting = 
         }
         // If identificationType === 'plan', deedData stays undefined (no deed needed)
 
+        // Transform comparable properties from frontend format to backend format
+        let transformedComparableProperties = undefined;
+        if (allFormData.comparable_properties && Array.isArray(allFormData.comparable_properties)) {
+            // Filter out items without location_description and transform the rest
+            const validComparableProps = allFormData.comparable_properties
+                .filter((comp: any) => comp.location_description && comp.location_description.trim() !== '')
+                .map((comp: any) => ({
+                    property_address: comp.location_description,  // Required field: location_description → property_address
+                    property_type: comp.property_type || null,
+                    land_extent_acres: comp.extent ? comp.extent / 40 : null,  // Convert perches to acres (40 perches = 1 acre)
+                    price_per_perch: comp.rate_per_perch || null,  // rate_per_perch → price_per_perch
+                    sale_price: comp.total_value || null,  // total_value → sale_price
+                    sale_date: null,
+                    sale_year: null,
+                    location: comp.location_description || null,  // Keep original for reference
+                    description: null,
+                    source: null,
+                    adjustments: null,
+                    distance_km: null
+                }));
+
+            // Only set transformedComparableProperties if there are valid items
+            transformedComparableProperties = validComparableProps.length > 0 ? validComparableProps : undefined;
+        }
+
         // Merge validated data with ALL form data to ensure nothing is lost
         const submissionData = {
             ...validatedData,  // Fields validated by Zod schema
@@ -2256,6 +2527,7 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({ onSubmit, isSubmitting = 
             property_identification_type: identificationType,
             deeds: deedData,   // Transform to array for backend
             has_deed_info: deedData ? 'yes' : 'no',
+            comparable_properties: transformedComparableProperties,  // Use transformed data
         };
 
         if (import.meta.env.DEV) {
@@ -2455,7 +2727,7 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({ onSubmit, isSubmitting = 
                                             <div className="space-y-2">
                                                 {dataQualityWarnings.map((warning, index) => (
                                                     <div
-                                                        key={index}
+                                                        key={`${warning.field}-${warning.message}-${index}`}
                                                         className={`flex items-start gap-3 p-3 rounded-lg ${warning.severity === 'warning' ? 'bg-amber-100' : 'bg-blue-50'
                                                             }`}
                                                     >

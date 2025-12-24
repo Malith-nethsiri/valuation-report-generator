@@ -218,8 +218,6 @@ interface Floor {
 interface Room {
   room_type: string;
   count: number; // How many rooms of this type
-  length?: number;
-  width?: number;
   has_attached_bathroom?: boolean;
 }
 
@@ -1163,7 +1161,7 @@ export const PropertyDescriptionStep: React.FC<PropertyDescriptionStepProps> = (
                             <Label>Building Name</Label>
                             <Input
                               value={building.building_name}
-                              onChange={(e) => updateBuilding(building.id, 'building_name', e.target.value)}
+                              onChange={(e) => updateBuilding(building.id, 'building_name', e.target.value.toUpperCase())}
                               placeholder="e.g., Main Residence"
                             />
                           </div>

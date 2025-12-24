@@ -4,49 +4,25 @@ Letterhead template registry.
 
 from typing import List
 from .base import TemplateMetadata, BaseLetterheadTemplate
+from .classic import ClassicTemplate
+from .modern import ModernTemplate
+from .minimal import MinimalTemplate
+from .executive import ExecutiveTemplate
+from .compact import CompactTemplate
+from .premium import PremiumTemplate
 
 # Default template ID
 DEFAULT_TEMPLATE = "classic"
 
-# Hardcoded template metadata for now
-_TEMPLATE_METADATA = [
-    TemplateMetadata(
-        template_id="classic",
-        name="Classic Professional",
-        description="Traditional centered layout with dual borders",
-        category="traditional"
-    ),
-    TemplateMetadata(
-        template_id="modern",
-        name="Modern Professional",
-        description="Contemporary left-aligned design with clean lines",
-        category="modern"
-    ),
-    TemplateMetadata(
-        template_id="minimal",
-        name="Minimal Elegant",
-        description="Ultra-clean centered design without borders",
-        category="minimal"
-    ),
-    TemplateMetadata(
-        template_id="executive",
-        name="Executive Bold",
-        description="Bold centered layout with double-line borders",
-        category="executive"
-    ),
-    TemplateMetadata(
-        template_id="compact",
-        name="Compact Professional",
-        description="Space-efficient layout with smaller fonts",
-        category="compact"
-    ),
-    TemplateMetadata(
-        template_id="premium",
-        name="Premium Signature",
-        description="Sophisticated left-aligned with decorative elements",
-        category="premium"
-    ),
-]
+# Template instances registry
+_TEMPLATE_INSTANCES = {
+    'classic': ClassicTemplate(),
+    'modern': ModernTemplate(),
+    'minimal': MinimalTemplate(),
+    'executive': ExecutiveTemplate(),
+    'compact': CompactTemplate(),
+    'premium': PremiumTemplate(),
+}
 
 
 def get_all_templates() -> List[TemplateMetadata]:
@@ -56,7 +32,7 @@ def get_all_templates() -> List[TemplateMetadata]:
     Returns:
         List of TemplateMetadata objects
     """
-    return _TEMPLATE_METADATA
+    return [template.get_metadata() for template in _TEMPLATE_INSTANCES.values()]
 
 
 def get_template_ids() -> List[str]:
@@ -66,24 +42,24 @@ def get_template_ids() -> List[str]:
     Returns:
         List of template ID strings
     """
-    return [t.template_id for t in _TEMPLATE_METADATA]
+    return list(_TEMPLATE_INSTANCES.keys())
 
 
-def get_template(template_id: str) -> str:
+def get_template(template_id: str) -> BaseLetterheadTemplate:
     """
-    Get a template by ID.
-    For now, just returns the template_id if valid, raises exception otherwise.
+    Get a template instance by ID.
 
     Args:
         template_id: The template ID to retrieve
 
     Returns:
-        The template ID (placeholder until full implementation)
+        BaseLetterheadTemplate instance
 
     Raises:
         ValueError: If template_id is not recognized
     """
-    valid_ids = get_template_ids()
-    if template_id not in valid_ids:
-        raise ValueError(f"Template '{template_id}' not found. Valid templates: {valid_ids}")
-    return template_id
+    template = _TEMPLATE_INSTANCES.get(template_id)
+    if template is None:
+        # Default to classic if unknown template
+        return _TEMPLATE_INSTANCES[DEFAULT_TEMPLATE]
+    return template

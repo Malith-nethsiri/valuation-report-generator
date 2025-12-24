@@ -42,15 +42,10 @@ export const useNavigationBlocker = (
 
       // Listen for popstate events (back/forward button clicks)
       window.addEventListener('popstate', handlePopState);
-
-      console.log('[useNavigationBlocker] Navigation blocking activated');
     }
 
     return () => {
       window.removeEventListener('popstate', handlePopState);
-      if (shouldBlock) {
-        console.log('[useNavigationBlocker] Navigation blocking deactivated');
-      }
     };
   }, [shouldBlock, location, onBlock]);
 };
@@ -80,14 +75,10 @@ export const useBeforeUnload = (
 
     if (shouldWarn) {
       window.addEventListener('beforeunload', handleBeforeUnload);
-      console.log('[useBeforeUnload] Unload warning activated');
     }
 
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
-      if (shouldWarn) {
-        console.log('[useBeforeUnload] Unload warning deactivated');
-      }
     };
   }, [shouldWarn, message]);
 };

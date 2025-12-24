@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, field_serializer
 from datetime import datetime
 from typing import Optional, List
 import re
@@ -133,6 +133,14 @@ class DeedInfo(BaseModel):
     notary_name: Optional[str] = Field(None, description="Notary name")
     notary_location: Optional[str] = Field(None, description="Notary location")
 
+# Access and Road Condition Schemas
+class RoadCondition(BaseModel):
+    """Road condition information for access routes"""
+    road_type: str = Field(..., pattern="^(paved_road|concrete_road|carpet_road|gravel_road|sand_road|earth_road)$", description="Type of road surface")
+    condition: str = Field(..., pattern="^(excellent|good|fair|poor)$", description="Road surface condition")
+    distance_km: Optional[float] = Field(None, ge=0, description="Distance of this road type in kilometers (optional)")
+    notes: Optional[str] = Field(None, max_length=500, description="Additional notes about this road segment")
+
 # Building-Related Schemas
 
 # NEW: Enhanced Construction Material Details
@@ -209,8 +217,6 @@ class UtilitiesServices(BaseModel):
 class Room(BaseModel):
     room_type: str = Field(..., description="Room type (Bedroom, Bathroom, Attached Bathroom, Living Room, etc.)")
     count: int = Field(default=1, ge=1, description="Number of rooms of this type")
-    length: Optional[float] = Field(None, gt=0, description="Room length")
-    width: Optional[float] = Field(None, gt=0, description="Room width")
     has_attached_bathroom: Optional[bool] = Field(None, description="Whether room has attached bathroom")
 
 class Floor(BaseModel):
@@ -305,6 +311,7 @@ class ReportBase(BaseModel):
     # Submission Destination
     submission_organization: Optional[str] = Field(None, description="Organization to submit report to")
     submission_address: Optional[str] = Field(None, description="Submission address")
+    submission_recipient_position: Optional[str] = Field(None, max_length=200, description="Recipient position (e.g., Manager, Credit Officer)")
 
     # Date of Inspection
     inspection_date: Optional[str] = Field(None, max_length=50, description="Inspection date (DD-MM-YYYY)")
@@ -323,7 +330,6 @@ class ReportBase(BaseModel):
     use_applicant_address_as_property: Optional[bool] = Field(None, description="Use applicant address as property location")
     property_name: Optional[str] = Field(None, max_length=200, description="Property name (optional)")
     assessment_number: Optional[str] = Field(None, max_length=100, description="Assessment number (optional)")
-    property_address_full: Optional[str] = Field(None, description="Full formatted address from Google Places")
     property_village: Optional[str] = Field(None, max_length=200, description="Village name")
     property_divisional_secretariat: Optional[str] = Field(None, max_length=200, description="Divisional Secretariat division")
     property_district: Optional[str] = Field(None, max_length=100, description="District")
@@ -352,8 +358,9 @@ class ReportBase(BaseModel):
     property_road_position: Optional[str] = Field(None, max_length=100, description="Position relative to road")
     location_map_image_data: Optional[str] = Field(None, description="Static map image URL or base64 data")
     access_road_segments: Optional[dict] = Field(None, description="DEPRECATED: Detailed road segment information (kept for backward compatibility)")
-    access_road_conditions: Optional[List[dict]] = Field(None, description="NEW: Simplified road conditions array [{road_type, condition, notes}]")
+    access_road_conditions: Optional[List[RoadCondition]] = Field(None, description="Road conditions array with road type, condition, optional distance, and notes")
     access_entry_mode: Optional[str] = Field('simple', max_length=20, description="Entry mode for road conditions: 'simple' or 'advanced'")
+    access_road_classes_detected: Optional[dict] = Field(None, description="Auto-detected road classifications for analytics (backend only, not shown in output)")
 
     # ===== PROPERTY HEADER FIELDS (Land Extent, Boundaries, Physical Features) =====
 
@@ -512,6 +519,15 @@ class ReportBase(BaseModel):
     valuation_insurance_value: Optional[float] = Field(None, ge=0, description="Insurance value")
     valuation_manual_overrides: Optional[dict] = Field(None, description="Manual override values")
 
+    # ===== CERTIFICATION =====
+    certification_text: Optional[str] = Field(None, description="Certification statement text")
+    certificate_survey_plan_ref: Optional[str] = Field(None, max_length=200, description="Survey plan reference for certificate of identity")
+    certificate_survey_plan_date: Optional[str] = Field(None, max_length=50, description="Survey plan date for certificate of identity")
+    certificate_identity_confirmed: Optional[bool] = Field(None, description="Certificate of identity confirmation checkbox")
+    certification_valuer_name: Optional[str] = Field(None, max_length=255, description="Valuer name for certification (auto-filled from user profile)")
+    certification_valuer_designation: Optional[str] = Field(None, max_length=200, description="Professional designation for certification")
+    certification_date: Optional[str] = Field(None, max_length=50, description="Certification date")
+
     # ===== FIELD VALIDATORS =====
 
     @field_validator('applicant_full_name')
@@ -594,6 +610,16 @@ class ReportBase(BaseModel):
             raise ValueError('Land extent in acres cannot be negative')
         return v
 
+    @field_validator('has_additional_owner', 'has_deed_info', 'has_special_note')
+    @classmethod
+    def convert_bool_to_string(cls, v):
+        """Convert boolean values to yes/no strings for backward compatibility"""
+        if v is None:
+            return v
+        if isinstance(v, bool):
+            return "yes" if v else "no"
+        return v
+
     # ===== JSON FIELD VALIDATORS =====
 
     @field_validator('boundaries')
@@ -609,13 +635,25 @@ class ReportBase(BaseModel):
     @field_validator('buildings')
     @classmethod
     def validate_buildings_json(cls, v):
-        """Validate buildings JSON structure"""
+        """Validate buildings JSON structure and clean legacy fields"""
         if v is not None:
             # Convert Building objects to dict if needed
             buildings_data = [
                 b.model_dump() if hasattr(b, 'model_dump') else b
                 for b in v
             ] if isinstance(v, list) else v
+
+            # Clean up legacy length/width fields from rooms
+            if isinstance(buildings_data, list):
+                for building in buildings_data:
+                    if isinstance(building, dict) and 'floors' in building:
+                        for floor in building.get('floors', []):
+                            if isinstance(floor, dict) and 'rooms' in floor:
+                                for room in floor.get('rooms', []):
+                                    if isinstance(room, dict):
+                                        # Remove legacy fields
+                                        room.pop('length', None)
+                                        room.pop('width', None)
 
             is_valid, error_msg = validate_buildings(buildings_data)
             if not is_valid:
@@ -669,21 +707,20 @@ class ReportResponse(BaseModel):
     property_ownership: Optional[str] = None
     property_type_valued: Optional[str] = None
     valuation_purpose: Optional[str] = None
-    has_additional_owner: Optional[bool] = None
+    has_additional_owner: Optional[str] = None
     additional_owner_names: Optional[str] = None
-    has_deed_info: Optional[bool] = None
+    has_deed_info: Optional[str] = None
     deeds: Optional[List[dict]] = None
     submission_organization: Optional[str] = None
     submission_address: Optional[str] = None
     inspection_date: Optional[str] = None
-    has_special_note: Optional[bool] = None
+    has_special_note: Optional[str] = None
     special_note_text: Optional[str] = None
     report_reference: Optional[str] = None
     report_date: Optional[str] = None
     use_applicant_address_as_property: Optional[bool] = None
     property_name: Optional[str] = None
     assessment_number: Optional[str] = None
-    property_address_full: Optional[str] = None
     property_village: Optional[str] = None
     property_divisional_secretariat: Optional[str] = None
     property_district: Optional[str] = None
@@ -708,8 +745,9 @@ class ReportResponse(BaseModel):
     property_road_position: Optional[str] = None
     location_map_image_data: Optional[str] = None
     access_road_segments: Optional[List[dict]] = None
-    access_road_conditions: Optional[List[dict]] = None
+    access_road_conditions: Optional[List[RoadCondition]] = None
     access_entry_mode: Optional[str] = None
+    access_road_classes_detected: Optional[dict] = None
     land_extent_acres: Optional[int] = None
     land_extent_roods: Optional[int] = None
     land_extent_perches: Optional[float] = None
@@ -717,7 +755,7 @@ class ReportResponse(BaseModel):
     land_extent_square_meters: Optional[float] = None
     land_extent_formatted: Optional[str] = None
     land_traditional_name: Optional[str] = None
-    boundaries: Optional[List[dict]] = None
+    boundaries: Optional[dict] = None
     physical_boundaries_types: Optional[List[str]] = None
     physical_boundaries_description: Optional[str] = None
     boundary_types_per_direction: Optional[dict] = None
@@ -732,12 +770,12 @@ class ReportResponse(BaseModel):
     land_shape: Optional[str] = None
     land_type: Optional[str] = None
     land_frontage_type: Optional[str] = None
-    land_frontage_width: Optional[str] = None
+    land_frontage_width: Optional[float] = None
     land_frontage_description: Optional[str] = None
     land_level: Optional[str] = None
-    land_level_difference: Optional[str] = None
+    land_level_difference: Optional[float] = None
     soil_type: Optional[str] = None
-    water_table_depth: Optional[str] = None
+    water_table_depth: Optional[float] = None
     flood_risk: Optional[str] = None
     inundation_risk: Optional[str] = None
     earth_slip_risk: Optional[str] = None

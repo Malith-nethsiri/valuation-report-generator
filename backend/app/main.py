@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from dotenv import load_dotenv
 import os
+import logging
 import asyncio
 from datetime import timedelta, datetime
 from typing import Optional, List
@@ -36,6 +37,13 @@ from .middleware.rate_limiting import (
 
 # Load environment variables
 load_dotenv()
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # ===== FILE UPLOAD SECURITY CONSTANTS =====
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB in bytes
@@ -159,8 +167,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With"],
+    expose_headers=["Content-Disposition"],
 )
 
 # Add rate limiting middleware
@@ -201,6 +210,56 @@ async def health_check():
         "status": "success",
         "message": "API is healthy and running"
     }
+
+@app.get("/api/health/detailed")
+async def detailed_health_check():
+    """
+    Detailed health check that validates all critical dependencies
+    Returns status of database, API keys, and critical services
+    """
+    health_status = {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "checks": {}
+    }
+
+    # Check database connection
+    try:
+        from .database import SessionLocal
+        db = SessionLocal()
+        db.execute("SELECT 1")
+        db.close()
+        health_status["checks"]["database"] = {"status": "healthy", "message": "Connected"}
+    except Exception as e:
+        health_status["checks"]["database"] = {"status": "unhealthy", "message": str(e)}
+        health_status["status"] = "unhealthy"
+
+    # Check Anthropic API key
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+    if anthropic_key and len(anthropic_key) > 20:
+        health_status["checks"]["anthropic_api"] = {"status": "configured", "message": "API key present"}
+    else:
+        health_status["checks"]["anthropic_api"] = {"status": "missing", "message": "API key not configured"}
+        health_status["status"] = "degraded"
+
+    # Check Google Vision API key
+    vision_key = os.getenv("GOOGLE_VISION_API_KEY") or os.getenv("GOOGLE_MAPS_API_KEY")
+    if vision_key and len(vision_key) > 20:
+        health_status["checks"]["google_vision_api"] = {"status": "configured", "message": "API key present"}
+    else:
+        health_status["checks"]["google_vision_api"] = {"status": "missing", "message": "API key not configured"}
+        health_status["status"] = "degraded"
+
+    # Check if OCR service can be imported
+    try:
+        from .services.ocr_service import process_multiple_documents
+        from .services.ai_parser import parse_with_claude
+        health_status["checks"]["ocr_service"] = {"status": "healthy", "message": "Modules loaded"}
+    except Exception as e:
+        health_status["checks"]["ocr_service"] = {"status": "unhealthy", "message": f"Import failed: {str(e)}"}
+        health_status["status"] = "unhealthy"
+
+    return health_status
 
 # Authentication Endpoints
 @app.post("/api/auth/register", response_model=schemas.TokenResponse, status_code=status.HTTP_201_CREATED)
@@ -318,34 +377,34 @@ async def create_report(
     db: Session = Depends(get_db)
 ):
     """Create a new report for the authenticated user"""
-    print(f"[CREATE REPORT] Received data from frontend:")
-    print(f"  property_village: {report_data.property_village}")
-    print(f"  property_district: {report_data.property_district}")
-    print(f"  grama_niladari_division: {report_data.grama_niladari_division}")
-    print(f"  property_divisional_secretariat: {report_data.property_divisional_secretariat}")
-    print(f"  korale: {report_data.korale}")
-    print(f"  pradeshiya_sabha: {report_data.pradeshiya_sabha}")
-    print(f"  access_directions_text: {report_data.access_directions_text}")
-    print(f"  location_map_image_data: {report_data.location_map_image_data}")
-    print(f"  property_latitude: {report_data.property_latitude}")
-    print(f"  property_longitude: {report_data.property_longitude}")
+    logger.info(f"[CREATE REPORT] Received data from frontend:")
+    logger.debug(f"  property_village: {report_data.property_village}")
+    logger.debug(f"  property_district: {report_data.property_district}")
+    logger.debug(f"  grama_niladari_division: {report_data.grama_niladari_division}")
+    logger.debug(f"  property_divisional_secretariat: {report_data.property_divisional_secretariat}")
+    logger.debug(f"  korale: {report_data.korale}")
+    logger.debug(f"  pradeshiya_sabha: {report_data.pradeshiya_sabha}")
+    logger.debug(f"  access_directions_text: {report_data.access_directions_text}")
+    logger.debug(f"  location_map_image_data: {report_data.location_map_image_data}")
+    logger.debug(f"  property_latitude: {report_data.property_latitude}")
+    logger.debug(f"  property_longitude: {report_data.property_longitude}")
     # Property Description fields
-    print(f"  === PROPERTY DESCRIPTION FIELDS ===")
-    print(f"  land_shape: {report_data.land_shape}")
-    print(f"  land_type: {report_data.land_type}")
-    print(f"  soil_type: {report_data.soil_type}")
-    print(f"  flood_risk: {report_data.flood_risk}")
-    print(f"  land_description_text: {report_data.land_description_text}")
-    print(f"  buildings: {report_data.buildings}")
-    print(f"  occupier_name: {report_data.occupier_name}")
-    print(f"  property_photos count: {len(report_data.property_photos) if report_data.property_photos else 0}")
+    logger.debug(f"  === PROPERTY DESCRIPTION FIELDS ===")
+    logger.debug(f"  land_shape: {report_data.land_shape}")
+    logger.debug(f"  land_type: {report_data.land_type}")
+    logger.debug(f"  soil_type: {report_data.soil_type}")
+    logger.debug(f"  flood_risk: {report_data.flood_risk}")
+    logger.debug(f"  land_description_text: {report_data.land_description_text}")
+    logger.debug(f"  buildings: {report_data.buildings}")
+    logger.debug(f"  occupier_name: {report_data.occupier_name}")
+    logger.debug(f"  property_photos count: {len(report_data.property_photos) if report_data.property_photos else 0}")
 
     try:
         db_report = crud.create_report(db, report_data, current_user.id)
-        print(f"[CREATE REPORT] Report created with ID: {db_report.id}")
+        logger.info(f"[CREATE REPORT] Report created with ID: {db_report.id}")
         return db_report
     except Exception as e:
-        print(f"[CREATE REPORT] Error: {str(e)}")
+        logger.error(f"[CREATE REPORT] Error: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error creating report: {str(e)}"
@@ -416,28 +475,28 @@ async def generate_report_docx(
     """
     Generate a DOCX file from report data combined with user profile data
     """
-    print(f"[DOCX_GENERATION] Starting generation for report_id={report_id}, user={current_user.email}")
+    logger.info(f"[DOCX_GENERATION] Starting generation for report_id={report_id}, user={current_user.email}")
 
     # Get report data from database
     db_report = crud.get_report(db, report_id, current_user.id)
     if db_report is None:
-        print(f"[DOCX_GENERATION] Report {report_id} not found for user {current_user.id}")
+        logger.warning(f"[DOCX_GENERATION] Report {report_id} not found for user {current_user.id}")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Report with ID {report_id} not found"
         )
 
-    print(f"[DOCX_GENERATION] Report found - status: {db_report.status}, type: {db_report.report_type}")
-    print(f"[DOCX_GENERATION] Has buildings: {bool(db_report.buildings)}, num_buildings: {len(db_report.buildings) if db_report.buildings else 0}")
+    logger.info(f"[DOCX_GENERATION] Report found - status: {db_report.status}, type: {db_report.report_type}")
+    logger.debug(f"[DOCX_GENERATION] Has buildings: {bool(db_report.buildings)}, num_buildings: {len(db_report.buildings) if db_report.buildings else 0}")
 
     try:
         # Generate DOCX file with both report and user data
-        print(f"[DOCX_GENERATION] Calling generate_user_data_docx...")
+        logger.info(f"[DOCX_GENERATION] Calling generate_user_data_docx...")
         docx_stream = generate_user_data_docx(db_report, current_user)
-        print(f"[DOCX_GENERATION] DOCX generated successfully, size: {len(docx_stream.getvalue())} bytes")
+        logger.info(f"[DOCX_GENERATION] DOCX generated successfully, size: {len(docx_stream.getvalue())} bytes")
 
         filename = get_filename_for_user(db_report)
-        print(f"[DOCX_GENERATION] Filename: {filename}")
+        logger.info(f"[DOCX_GENERATION] Filename: {filename}")
 
         # Return as downloadable file
         return StreamingResponse(
@@ -450,9 +509,10 @@ async def generate_report_docx(
     except Exception as e:
         import traceback
         error_trace = traceback.format_exc()
-        print(f"[DOCX_GENERATION_ERROR] Error type: {type(e).__name__}")
-        print(f"[DOCX_GENERATION_ERROR] Error message: {str(e)}")
-        print(f"[DOCX_GENERATION_ERROR] Full traceback:\n{error_trace}")
+        logger.error(f"[DOCX_GENERATION_ERROR] Error type: {type(e).__name__}")
+        logger.error(f"[DOCX_GENERATION_ERROR] Error message: {str(e)}")
+        logger.error(f"[DOCX_GENERATION_ERROR] Full traceback:\n{error_trace}")
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error generating DOCX file: {type(e).__name__}: {str(e)}"
@@ -489,10 +549,29 @@ async def extract_data_from_document(
         # Process all documents
         result = await process_multiple_documents(files, document_type)
 
-        if not result.get('success'):
+        # Comprehensive safety checks
+        if result is None:
+            logger.error("[OCR_ENDPOINT] process_multiple_documents returned None")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=result.get('error', 'OCR processing failed')
+                detail="OCR processing returned None - server may be reloading. Please try again in a few seconds."
+            )
+
+        if not isinstance(result, dict):
+            logger.error(f"[OCR_ENDPOINT] Invalid result type: {type(result)}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"OCR processing returned unexpected type: {type(result)}. Server may be reloading."
+            )
+
+        # Check for success flag (with defensive .get())
+        success = result.get('success') if isinstance(result, dict) else False
+        if not success:
+            error_msg = result.get('error', 'OCR processing failed') if isinstance(result, dict) else 'Unknown error'
+            logger.error(f"[OCR_ENDPOINT] Processing failed: {error_msg}")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=error_msg
             )
 
         # If extent data was extracted, calculate all derived fields
@@ -785,7 +864,7 @@ async def static_map_endpoint(request: dict):
         from .maps_service import maps_service
         import traceback
 
-        print(f"[DEBUG] Received static map request: {request}")
+        logger.debug(f"[DEBUG] Received static map request: {request}")
 
         origin_lat = request.get("origin_lat")
         origin_lng = request.get("origin_lng")
@@ -793,7 +872,7 @@ async def static_map_endpoint(request: dict):
         dest_lng = request.get("dest_lng")
         polyline = request.get("polyline")
 
-        print(f"[DEBUG] Extracted params - origin: ({origin_lat}, {origin_lng}), dest: ({dest_lat}, {dest_lng}), polyline length: {len(polyline) if polyline else 0}")
+        logger.debug(f"[DEBUG] Extracted params - origin: ({origin_lat}, {origin_lng}), dest: ({dest_lat}, {dest_lng}), polyline length: {len(polyline) if polyline else 0}")
 
         if not all([origin_lat, origin_lng, dest_lat, dest_lng, polyline]):
             raise HTTPException(
@@ -808,7 +887,7 @@ async def static_map_endpoint(request: dict):
             origin_lat, origin_lng, dest_lat, dest_lng, polyline, width, height
         )
 
-        print(f"[DEBUG] Generated map URL: {url}")
+        logger.debug(f"[DEBUG] Generated map URL: {url}")
 
         return {"map_url": url}
     except HTTPException:
@@ -816,7 +895,7 @@ async def static_map_endpoint(request: dict):
     except Exception as e:
         import traceback
         error_details = traceback.format_exc()
-        print(f"[ERROR] Static map generation failed: {error_details}")
+        logger.error(f"[ERROR] Static map generation failed: {error_details}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error generating static map: {str(e)}"
@@ -856,14 +935,14 @@ async def transform_access_endpoint(request: dict):
         property_position = request.get("property_position", "right")
 
         # Log received data for debugging
-        print(f"\n[TRANSFORM_ACCESS] Request received:")
-        print(f"  Starting point: {starting_point_name}")
-        print(f"  Steps count: {len(steps)}")
+        logger.info(f"[TRANSFORM_ACCESS] Request received:")
+        logger.debug(f"  Starting point: {starting_point_name}")
+        logger.debug(f"  Steps count: {len(steps)}")
         if steps:
-            print(f"  First step sample: {steps[0]}")
-        print(f"  Road conditions count: {len(road_conditions)}")
-        print(f"  Total distance: {total_distance_km} km")
-        print(f"  Total duration: {total_duration_mins} mins")
+            logger.debug(f"  First step sample: {steps[0]}")
+        logger.debug(f"  Road conditions count: {len(road_conditions)}")
+        logger.debug(f"  Total distance: {total_distance_km} km")
+        logger.debug(f"  Total duration: {total_duration_mins} mins")
 
         if not starting_point_name:
             raise HTTPException(
@@ -883,7 +962,7 @@ async def transform_access_endpoint(request: dict):
                 steps=steps  # Google Maps turn-by-turn steps
             )
         except Exception as ai_error:
-            print(f"[WARN] AI transformation failed, using fallback: {ai_error}")
+            logger.warning(f"[WARN] AI transformation failed, using fallback: {ai_error}")
             # Extract navigation entities for enhanced fallback
             navigation_entities = extract_navigation_entities(steps) if steps else None
 
@@ -903,7 +982,7 @@ async def transform_access_endpoint(request: dict):
     except Exception as e:
         import traceback
         error_details = traceback.format_exc()
-        print(f"[ERROR] Access transformation failed: {error_details}")
+        logger.error(f"[ERROR] Access transformation failed: {error_details}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error transforming access directions: {str(e)}"
@@ -966,7 +1045,7 @@ async def get_nearby_facilities_endpoint(
     except Exception as e:
         import traceback
         error_details = traceback.format_exc()
-        print(f"[ERROR] Nearby facilities fetch failed: {error_details}")
+        logger.error(f"[ERROR] Nearby facilities fetch failed: {error_details}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching nearby facilities: {str(e)}"
@@ -1024,7 +1103,7 @@ async def generate_locality_narrative_endpoint(
     except Exception as e:
         import traceback
         error_details = traceback.format_exc()
-        print(f"[ERROR] Locality narrative generation failed: {error_details}")
+        logger.error(f"[ERROR] Locality narrative generation failed: {error_details}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error generating locality narrative: {str(e)}"
@@ -1073,10 +1152,10 @@ async def generate_building_description_endpoint(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"[API] Building description error: {str(e)}")
+        logger.error(f"[API] Building description error: {str(e)}")
         import traceback
         error_details = traceback.format_exc()
-        print(f"[ERROR] Building description generation failed: {error_details}")
+        logger.error(f"[ERROR] Building description generation failed: {error_details}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error generating building description: {str(e)}"
@@ -1131,7 +1210,7 @@ async def generate_land_description_endpoint(
         raise
     except Exception as e:
         error_details = traceback.format_exc()
-        print(f"[ERROR] Land description generation failed: {error_details}")
+        logger.error(f"[ERROR] Land description generation failed: {error_details}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error generating land description: {str(e)}"

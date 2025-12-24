@@ -18,13 +18,14 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY:
     raise ValueError("SECRET_KEY environment variable is not set")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 240  # 4 hours - sufficient time for complex multi-step forms
+ACCESS_TOKEN_EXPIRE_MINUTES = 60  # 1 hour - with auto-refresh for multi-step forms
 
 # Password hashing context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Security scheme for JWT
 security = HTTPBearer()
+security_optional = HTTPBearer(auto_error=False)  # Don't auto-raise 403, let us handle it
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a plain password against a hashed password."""
@@ -96,7 +97,7 @@ def authenticate_user(db: Session, email: str, password: str) -> Optional[models
     return user
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_optional),
     db: Session = Depends(get_db)
 ) -> models.User:
     """Dependency to get the current authenticated user."""

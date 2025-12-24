@@ -89,8 +89,6 @@ BUILDING_SCHEMA = {
         "floor_area": {"type": ["number", "null"]},
         "floor_area_unit": {"type": ["string", "null"]},
         "num_floors": {"type": ["integer", "null"]},
-        "construction_year": {"type": ["integer", "string", "null"]},
-        "building_age_years": {"type": ["integer", "null"]},
         "building_condition": {"type": ["string", "null"]},
         "construction_quality": {"type": ["string", "null"]},
         "roof_type": {"type": ["string", "null"]},

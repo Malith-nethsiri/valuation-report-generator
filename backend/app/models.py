@@ -97,6 +97,7 @@ class Report(Base):
     # Submission Destination
     submission_organization = Column(Text, nullable=True)
     submission_address = Column(Text, nullable=True)
+    submission_recipient_position = Column(String(200), nullable=True)  # e.g., Manager, Credit Officer
 
     # Date of Inspection
     inspection_date = Column(String(50), nullable=True)  # DD-MM-YYYY format
@@ -115,7 +116,6 @@ class Report(Base):
     use_applicant_address_as_property = Column(Boolean, nullable=True, default=False)  # Checkbox to reuse applicant address
     property_name = Column(String(200), nullable=True)  # Optional property name (e.g., "Searock The Kings Domain")
     assessment_number = Column(String(100), nullable=True)  # Optional assessment number
-    property_address_full = Column(Text, nullable=True)  # Full formatted address from Google Places
     property_village = Column(String(200), nullable=True)  # Village name (from Google or manual)
     property_divisional_secretariat = Column(String(200), nullable=True)  # Divisional Secretariat division
     property_district = Column(String(100), nullable=True)  # District (from Google or manual)
@@ -144,8 +144,9 @@ class Report(Base):
     property_road_position = Column(String(100), nullable=True)  # Position relative to road (e.g., "left side", "right side")
     location_map_image_data = Column(Text, nullable=True)  # Static map image URL or base64 data
     access_road_segments = Column(JSON, nullable=True)  # DEPRECATED: Detailed road segment information (kept for backward compatibility)
-    access_road_conditions = Column(JSON, nullable=True)  # NEW: Simplified road conditions array [{road_type, condition, notes}]
-    access_entry_mode = Column(String(20), nullable=True)  # NEW: Entry mode for road conditions ('simple' or 'advanced')
+    access_road_conditions = Column(JSON, nullable=True)  # Road conditions array [{road_type, condition, distance_km (optional), notes}] - includes paved, concrete, carpet, gravel, sand, earth roads
+    access_entry_mode = Column(String(20), nullable=True)  # Entry mode for road conditions ('simple' or 'advanced')
+    access_road_classes_detected = Column(JSON, nullable=True)  # OPTIONAL: Auto-detected road classifications for analytics (not shown in output) - {main_road: {class, number, name, confidence}, secondary_roads: [...]}
 
     # ===== PROPERTY HEADER FIELDS (Land Extent, Boundaries, Physical Features) =====
 

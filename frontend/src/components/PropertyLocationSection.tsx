@@ -26,7 +26,6 @@ export function PropertyLocationSection({ formData, updateFormData, applicantAdd
       // Copy applicant address to property
       updateFormData({
         use_applicant_address_as_property: true,
-        property_address_full: `${applicantAddress.line1 || ''} ${applicantAddress.line2 || ''}`.trim(),
         property_district: applicantAddress.district,
         property_province: applicantAddress.province,
       });
@@ -81,24 +80,6 @@ export function PropertyLocationSection({ formData, updateFormData, applicantAdd
           </div>
         </div>
       )}
-
-      {/* Property Address Input (Google Maps would go here in full implementation) */}
-      <div className="space-y-2">
-        <label className="block text-sm font-medium text-gray-700">
-          Property Address <span className="text-red-500">*</span>
-        </label>
-        <input
-          type="text"
-          value={formData.property_address_full || ''}
-          onChange={(e) => updateFormData({ property_address_full: e.target.value })}
-          disabled={useSameAddress}
-          placeholder="Enter full property address or search on Google Maps..."
-          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
-        />
-        <p className="text-xs text-gray-500">
-          Future: This will have Google Maps autocomplete integration
-        </p>
-      </div>
 
       {/* Auto-filled Google Maps Data */}
       {formData.property_village && (

@@ -97,9 +97,18 @@ export default function CertificationSection({ data, onChange, userProfile }: Pr
         // Both plan and deed
         const planRef = data.plan_number || '[Plan Reference]';
         const firstDeed = data.deeds?.[0];
-        const deedType = firstDeed?.deed_type || 'Deed';
-        const deedNumber = firstDeed?.deed_number || '[Deed Number]';
-        identificationText = `the land depicted as Plan ${planRef} and described in ${deedType} No. ${deedNumber}`;
+        const deedNumber = firstDeed?.deed_number;
+
+        // Only include deed information if deed number exists
+        if (deedNumber && deedNumber.trim() !== '') {
+          const deedType = firstDeed?.deed_type || 'Deed';
+          identificationText = `the land depicted as Plan ${planRef} and described in ${deedType} No. ${deedNumber}`;
+        } else {
+          // No deed number available - show only plan information
+          const planDate = data.plan_date || '[Plan Date]';
+          const surveyorName = data.licensed_surveyor_name || '[Surveyor Name]';
+          identificationText = `the land depicted as Plan ${planRef} dated ${planDate} made by ${surveyorName}, Licensed Surveyor`;
+        }
       }
 
       if (idType === 'certificate_of_sale') {

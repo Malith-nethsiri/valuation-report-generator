@@ -1,19 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
-import { MapPin, Navigation2, Route as RouteIcon, Loader2, MousePointer, Navigation } from 'lucide-react';
+import { MapPin, Navigation2, Route as RouteIcon, Loader2, MousePointer, Navigation, Info } from 'lucide-react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import type { RoadSegment, RoadCondition } from '../types';
 import { RoadConditionsSummary } from './RoadConditionsSummary';
 import { authTokenStorage } from '../utils/secureStorage';
+import { loadGoogleMapsScript } from '../utils/loadGoogleMaps';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 
 interface Props {
   onPropertySelected: (data: {
-    address: string;
     latitude: number;
     longitude: number;
-    formattedAddress: string;
     district?: string;
     province?: string;
     village?: string;
@@ -26,12 +26,13 @@ interface Props {
   onRouteGenerated: (data: {
     distance: string;
     duration: string;
+    distance_km?: number;  // Add numeric distance
+    duration_minutes?: number;  // Add numeric duration
     accessText: string;
     steps: any[];
     mapImageUrl?: string;
     road_conditions?: RoadCondition[];
-    road_segments?: RoadSegment[];
-    entry_mode?: 'simple' | 'advanced';
+    entry_mode?: 'simple';  // Always 'simple' now - advanced mode removed
   }) => void;
   onFacilitiesFetched?: (data: {
     facilities: any[];
@@ -44,9 +45,7 @@ interface Props {
   initialRouteData?: any;
   initialAccessText?: string;
   initialMapImageUrl?: string;
-  initialEntryMode?: 'simple' | 'advanced';
   initialRoadConditions?: RoadCondition[];
-  initialRoadSegments?: RoadSegment[];
 }
 
 interface GeocodingData {
@@ -66,9 +65,7 @@ export function InteractivePropertyMap({
   initialRouteData,
   initialAccessText = '',
   initialMapImageUrl,
-  initialEntryMode = 'simple',
   initialRoadConditions = [],
-  initialRoadSegments = [],
 }: Props) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<google.maps.Map | null>(null);
@@ -83,6 +80,7 @@ export function InteractivePropertyMap({
   const [startingPointName, setStartingPointName] = useState(''); // Human-friendly name for reports
   const [propertyPosition, setPropertyPosition] = useState<'left' | 'right'>('right');
   const [isLoading, setIsLoading] = useState(true);
+  const [googleMapsLoaded, setGoogleMapsLoaded] = useState(false);
   const [routeData, setRouteData] = useState<any>(null);
   const [generating, setGenerating] = useState(false);
   const [transformingAccess, setTransformingAccess] = useState(false);
@@ -90,18 +88,14 @@ export function InteractivePropertyMap({
   const [clickMode, setClickMode] = useState<'start' | 'property' | null>(null);
   const geocoderRef = useRef<google.maps.Geocoder | null>(null);
 
-  // Road segments state
-  const [roadSegments, setRoadSegments] = useState<RoadSegment[]>([]);
-  const [expandedSegments, setExpandedSegments] = useState<Set<string>>(new Set());
-  const [generatedAccessText, setGeneratedAccessText] = useState<string>(''); // New professional access text
+  // Manual coordinate inputs
+  const [manualLatitude, setManualLatitude] = useState<string>('');
+  const [manualLongitude, setManualLongitude] = useState<string>('');
+  const [coordinateInputMode, setCoordinateInputMode] = useState<'map' | 'manual'>('map');
 
-  // Dual-mode state (NEW)
-  const [entryMode, setEntryMode] = useState<'simple' | 'advanced'>('simple');
+  // Road conditions state (simple/summary mode only)
   const [roadConditions, setRoadConditions] = useState<RoadCondition[]>([]);
-  const [showModeConfirmModal, setShowModeConfirmModal] = useState(false);
-  const [pendingModeSwitch, setPendingModeSwitch] = useState<'simple' | 'advanced' | null>(null);
-  const [showWarningModal, setShowWarningModal] = useState(false);
-  const [warningSegmentCount, setWarningSegmentCount] = useState(0);
+  const [generatedAccessText, setGeneratedAccessText] = useState<string>(''); // New professional access text
 
   // Restore state when props change (navigation back to this step)
   useEffect(() => {
@@ -133,33 +127,44 @@ export function InteractivePropertyMap({
     }
   }, [initialMapImageUrl]);
 
-  // Track if we've initialized the mode (to prevent resetting user's choice)
-  const modeInitializedRef = useRef(false);
-
-  // Restore entry mode and road conditions data (NEW) - only on first mount
+  // Restore road conditions data on mount
   useEffect(() => {
-    // Only run once on initial mount
-    if (modeInitializedRef.current) return;
-    modeInitializedRef.current = true;
-
-    if (initialEntryMode) {
-      console.log('[InteractivePropertyMap] Restoring entry mode:', initialEntryMode);
-      setEntryMode(initialEntryMode);
-    }
-
-    // Restore appropriate data based on mode
-    if (initialEntryMode === 'simple' && initialRoadConditions && initialRoadConditions.length > 0) {
-      console.log('[InteractivePropertyMap] Restoring simple mode road conditions:', initialRoadConditions);
+    if (initialRoadConditions && initialRoadConditions.length > 0) {
+      console.log('[InteractivePropertyMap] Restoring road conditions:', initialRoadConditions);
       setRoadConditions(initialRoadConditions);
-    } else if (initialEntryMode === 'advanced' && initialRoadSegments && initialRoadSegments.length > 0) {
-      console.log('[InteractivePropertyMap] Restoring advanced mode road segments:', initialRoadSegments);
-      setRoadSegments(initialRoadSegments);
     }
-  }, [initialEntryMode, initialRoadConditions, initialRoadSegments]);
+  }, [initialRoadConditions]);
+
+  // Load Google Maps script on mount
+  useEffect(() => {
+    if (!GOOGLE_MAPS_API_KEY) {
+      console.error('[InteractivePropertyMap] Google Maps API key not configured');
+      toast.error('Google Maps API key not configured. Please check your .env file.', {
+        duration: 5000,
+        icon: '⚠️'
+      });
+      setIsLoading(false);
+      return;
+    }
+
+    loadGoogleMapsScript(GOOGLE_MAPS_API_KEY)
+      .then(() => {
+        console.log('[InteractivePropertyMap] Google Maps script loaded successfully');
+        setGoogleMapsLoaded(true);
+      })
+      .catch((error) => {
+        console.error('[InteractivePropertyMap] Failed to load Google Maps script:', error);
+        toast.error('Failed to load Google Maps. Please refresh the page.', {
+          duration: 5000,
+          icon: '❌'
+        });
+        setIsLoading(false);
+      });
+  }, []); // Run once on mount
 
   // Initialize map
   useEffect(() => {
-    if (!mapRef.current || typeof google === 'undefined') return;
+    if (!mapRef.current || !googleMapsLoaded || typeof google === 'undefined') return;
 
     // Create map centered on Sri Lanka
     const map = new google.maps.Map(mapRef.current, {
@@ -252,10 +257,8 @@ export function InteractivePropertyMap({
 
         // Notify parent with geocoding data
         onPropertySelected({
-          address: geocodedData.formattedAddress,
           latitude: lat,
           longitude: lng,
-          formattedAddress: geocodedData.formattedAddress,
           district: geocodedData.district,
           province: geocodedData.province,
           village: geocodedData.village,
@@ -267,10 +270,12 @@ export function InteractivePropertyMap({
     });
 
     setIsLoading(false);
-  }, [clickMode, onPropertySelected, onStartingPointSelected]);
+  }, [googleMapsLoaded, clickMode, onPropertySelected, onStartingPointSelected]);
 
   // Setup property autocomplete
   useEffect(() => {
+    if (!googleMapsLoaded) return;
+
     const input = document.getElementById('property-search-input') as HTMLInputElement;
     if (!input || typeof google === 'undefined') return;
 
@@ -309,10 +314,8 @@ export function InteractivePropertyMap({
 
         // Notify parent with geocoding data
         onPropertySelected({
-          address: place.name || place.formatted_address || '',
           latitude: lat,
           longitude: lng,
-          formattedAddress: place.formatted_address || '',
           district: geocodedData.district,
           province: geocodedData.province,
           village: geocodedData.village,
@@ -323,10 +326,12 @@ export function InteractivePropertyMap({
     });
 
     propertyAutocompleteRef.current = autocomplete;
-  }, [onPropertySelected]);
+  }, [googleMapsLoaded, onPropertySelected]);
 
   // Setup starting point autocomplete
   useEffect(() => {
+    if (!googleMapsLoaded) return;
+
     const input = document.getElementById('starting-point-search-input') as HTMLInputElement;
     if (!input || typeof google === 'undefined') return;
 
@@ -375,7 +380,69 @@ export function InteractivePropertyMap({
     });
 
     startAutocompleteRef.current = autocomplete;
-  }, [onStartingPointSelected]);
+  }, [googleMapsLoaded, onStartingPointSelected]);
+
+  // Sync manual coordinates when property marker is placed
+  useEffect(() => {
+    if (propertyMarkerRef.current) {
+      const position = propertyMarkerRef.current.getPosition();
+      if (position) {
+        setManualLatitude(position.lat().toFixed(6));
+        setManualLongitude(position.lng().toFixed(6));
+      }
+    }
+  }, [propertyMarkerRef.current?.getPosition()]);
+
+  // Handle manual coordinate input and update marker
+  const handleManualCoordinateChange = async (lat: string, lng: string) => {
+    const latNum = parseFloat(lat);
+    const lngNum = parseFloat(lng);
+
+    // Validate coordinates
+    if (isNaN(latNum) || isNaN(lngNum)) {
+      return;
+    }
+
+    if (latNum < -90 || latNum > 90 || lngNum < -180 || lngNum > 180) {
+      toast.error('Invalid coordinates. Latitude: -90 to 90, Longitude: -180 to 180', {
+        duration: 4000,
+        icon: '⚠️'
+      });
+      return;
+    }
+
+    // Update marker on map
+    if (mapInstanceRef.current) {
+      if (propertyMarkerRef.current) {
+        propertyMarkerRef.current.setMap(null);
+      }
+
+      const marker = new google.maps.Marker({
+        position: { lat: latNum, lng: lngNum },
+        map: mapInstanceRef.current,
+        title: 'Property Location',
+        label: 'A',
+        animation: google.maps.Animation.DROP,
+      });
+
+      propertyMarkerRef.current = marker;
+      mapInstanceRef.current.setCenter({ lat: latNum, lng: lngNum });
+      mapInstanceRef.current.setZoom(15);
+
+      // Reverse geocode to get address components
+      const geocodedData = await reverseGeocode(latNum, lngNum);
+      onPropertySelected({
+        latitude: latNum,
+        longitude: lngNum,
+        district: geocodedData.district,
+        province: geocodedData.province,
+        village: geocodedData.village,
+      });
+
+      // Update property address to enable the route generation button
+      setPropertyAddress(geocodedData.formattedAddress);
+    }
+  };
 
   // Reverse geocode to extract address and administrative divisions
   const reverseGeocode = async (lat: number, lng: number): Promise<GeocodingData & { formattedAddress: string }> => {
@@ -438,7 +505,7 @@ export function InteractivePropertyMap({
     }
   };
 
-  // Helper function to extract road names from Google Maps instructions
+  // Helper function - kept for potential future use
   const extractRoadName = (htmlInstruction: string): string => {
     const temp = document.createElement('div');
     temp.innerHTML = htmlInstruction;
@@ -447,262 +514,19 @@ export function InteractivePropertyMap({
     return match ? match[1].trim() : '';
   };
 
-  // Road segment handlers - Removed modal-based editing
-
-  // Inline segment editing handlers
-  const toggleSegmentExpansion = (segmentId: string) => {
-    const newExpanded = new Set(expandedSegments);
-    if (newExpanded.has(segmentId)) {
-      newExpanded.delete(segmentId);
-    } else {
-      newExpanded.add(segmentId);
-    }
-    setExpandedSegments(newExpanded);
-  };
-
-  const updateSegmentField = (segmentId: string, field: string, value: any) => {
-    const newSegments = roadSegments.map(seg => {
-      if (seg.id === segmentId) {
-        const updated = { ...seg, [field]: value };
-        // Auto-update has_details if road_type and surface_condition are set
-        if (updated.road_type && updated.surface_condition) {
-          updated.has_details = true;
-        }
-        // Auto-update distance_text when distance_km changes
-        if (field === 'distance_km') {
-          const km = parseFloat(value) || 0;
-          updated.distance_text = km >= 1 ? `${km.toFixed(1)} km` : `${Math.round(km * 1000)} m`;
-        }
-        return updated;
-      }
-      return seg;
-    });
-    setRoadSegments(newSegments);
-  };
-
-  const handleDeleteSegment = (segmentId: string) => {
-    const newSegments = roadSegments
-      .filter(s => s.id !== segmentId)
-      .map((s, idx) => ({ ...s, order: idx }));
-    setRoadSegments(newSegments);
-  };
-
-  const handleMoveUp = (segmentIndex: number) => {
-    if (segmentIndex === 0) return;
-    const newSegments = [...roadSegments];
-    [newSegments[segmentIndex - 1], newSegments[segmentIndex]] =
-      [newSegments[segmentIndex], newSegments[segmentIndex - 1]];
-    newSegments.forEach((s, idx) => s.order = idx);
-    setRoadSegments(newSegments);
-  };
-
-  const handleMoveDown = (segmentIndex: number) => {
-    if (segmentIndex === roadSegments.length - 1) return;
-    const newSegments = [...roadSegments];
-    [newSegments[segmentIndex], newSegments[segmentIndex + 1]] =
-      [newSegments[segmentIndex + 1], newSegments[segmentIndex]];
-    newSegments.forEach((s, idx) => s.order = idx);
-    setRoadSegments(newSegments);
-  };
-
-  const handleMergeWithNext = (segmentIndex: number) => {
-    if (segmentIndex === roadSegments.length - 1) return;
-
-    const current = roadSegments[segmentIndex];
-    const next = roadSegments[segmentIndex + 1];
-
-    // Combine segments
-    const merged: RoadSegment = {
-      id: current.id,
-      order: segmentIndex,
-      // Combine instructions
-      instruction: current.instruction && next.instruction
-        ? `${current.instruction}, then ${next.instruction}`
-        : current.instruction || next.instruction,
-      // Combine road names
-      road_name: current.road_name && next.road_name
-        ? `${current.road_name} / ${next.road_name}`
-        : current.road_name || next.road_name,
-      // Sum distances
-      distance_km: (current.distance_km || 0) + (next.distance_km || 0),
-      distance_text: `${((current.distance_km || 0) + (next.distance_km || 0)).toFixed(1)} km`,
-      // Keep first non-empty road type
-      road_type: current.road_type || next.road_type,
-      surface_condition: current.surface_condition || next.surface_condition,
-      road_width_meters: current.road_width_meters || next.road_width_meters,
-      additional_notes: current.additional_notes && next.additional_notes
-        ? `${current.additional_notes}; ${next.additional_notes}`
-        : current.additional_notes || next.additional_notes,
-      has_details: current.has_details || next.has_details,
-    };
-
-    // Remove next segment and replace current with merged
-    const newSegments = roadSegments
-      .filter((_, idx) => idx !== segmentIndex + 1)
-      .map((seg, idx) => idx === segmentIndex ? merged : seg)
-      .map((s, idx) => ({ ...s, order: idx }));
-
-    setRoadSegments(newSegments);
-  };
-
-  const handleSplitSegment = (segmentIndex: number) => {
-    const segment = roadSegments[segmentIndex];
-    const halfDistance = (segment.distance_km || 0) / 2;
-
-    // Create two segments from one
-    const firstHalf: RoadSegment = {
-      ...segment,
-      id: segment.id,
-      order: segmentIndex,
-      distance_km: halfDistance,
-      distance_text: halfDistance >= 1 ? `${halfDistance.toFixed(1)} km` : `${Math.round(halfDistance * 1000)} m`,
-      instruction: segment.instruction ? `${segment.instruction} (first half)` : undefined,
-    };
-
-    const secondHalf: RoadSegment = {
-      ...segment,
-      id: `${segment.id}-split-${Date.now()}`,
-      order: segmentIndex + 1,
-      distance_km: halfDistance,
-      distance_text: halfDistance >= 1 ? `${halfDistance.toFixed(1)} km` : `${Math.round(halfDistance * 1000)} m`,
-      instruction: segment.instruction ? `${segment.instruction} (second half)` : undefined,
-      // Clear details for second half so user can fill them in separately
-      road_type: undefined,
-      surface_condition: undefined,
-      road_width_meters: undefined,
-      additional_notes: undefined,
-      has_details: false,
-    };
-
-    // Insert both halves
-    const newSegments = [
-      ...roadSegments.slice(0, segmentIndex),
-      firstHalf,
-      secondHalf,
-      ...roadSegments.slice(segmentIndex + 1),
-    ].map((s, idx) => ({ ...s, order: idx }));
-
-    setRoadSegments(newSegments);
-  };
-
-  const handleAddSegment = () => {
-    // Add a new blank segment
-    const newSegment: RoadSegment = {
-      id: `segment-${Date.now()}`,
-      order: roadSegments.length,
-      has_details: false,
-    };
-    setRoadSegments([...roadSegments, newSegment]);
-  };
-
-  // Helper function to generate road segments from route data
-  const generateSegmentsFromRoute = (): RoadSegment[] => {
-    if (!routeData || !routeData.steps || routeData.steps.length === 0) {
-      return [];
-    }
-
-    return routeData.steps.map((step: any, idx: number) => {
-      const instruction = cleanInstruction(step.instruction || '');
-      const roadNameMatch = instruction.match(/(?:onto|along|on)\s+([A-Z][A-Za-z\s]+(?:Road|Street|Avenue|Lane|Highway|Mawatha|Way))/i);
-      const roadName = roadNameMatch ? roadNameMatch[1] : '';
-
-      // Handle distance - could be string or number
-      let distanceKm = 0;
-      let distanceText = '';
-
-      if (typeof step.distance === 'string') {
-        distanceText = step.distance;
-        distanceKm = parseFloat(step.distance.replace(/[^\d.]/g, '')) || 0;
-      } else if (typeof step.distance === 'number') {
-        distanceKm = step.distance;
-        distanceText = `${step.distance} km`;
-      }
-
-      return {
-        id: `segment-${idx}`,
-        order: idx,
-        instruction: instruction,
-        road_name: roadName,
-        distance_km: distanceKm,
-        distance_text: distanceText,
-        has_details: false,
-      };
-    });
-  };
-
-  // Mode switching handlers (NEW)
-  const handleModeSwitch = (newMode: 'simple' | 'advanced') => {
-    if (newMode === entryMode) return; // Already in this mode
-
-    // Check if user has data in current mode
-    const hasSimpleData = roadConditions.length > 0;
-    const hasAdvancedData = roadSegments.some(s => s.has_details);
-
-    if ((entryMode === 'simple' && hasSimpleData) ||
-        (entryMode === 'advanced' && hasAdvancedData)) {
-      // Show confirmation modal - data will be lost
-      setPendingModeSwitch(newMode);
-      setShowModeConfirmModal(true);
-    } else {
-      // No data, switch freely
-      performModeSwitch(newMode);
-    }
-  };
-
-  const performModeSwitch = (newMode: 'simple' | 'advanced') => {
-    // Clear data when switching modes
-    if (newMode === 'simple') {
-      setRoadConditions([]);  // Start fresh
-      setRoadSegments([]);     // Clear advanced data
-    } else {
-      // Switching to advanced mode - auto-generate segments from route
-      setRoadConditions([]);   // Clear simple data
-      const segments = generateSegmentsFromRoute();
-      if (segments.length > 0) {
-        setRoadSegments(segments);
-        toast.success(`Generated ${segments.length} road segments from route. Expand each to add details.`, {
-          duration: 4000,
-          icon: '⚙️'
-        });
-      } else {
-        setRoadSegments([]);
-        toast.error('No route data available. Please generate a route first.', {
-          duration: 3000
-        });
-      }
-    }
-
-    setEntryMode(newMode);
-    setShowModeConfirmModal(false);
-    setPendingModeSwitch(null);
-  };
-
   const handleGenerateAccessText = () => {
-    // Validation based on mode
-    if (entryMode === 'simple') {
-      // SIMPLE MODE validation
-      if (roadConditions.length === 0) {
-        toast.error('Please select at least one road condition before generating text.', {
-          duration: 4000,
-          icon: '⚠️'
-        });
-        return;
-      }
-      performAccessTextGeneration();
-    } else {
-      // ADVANCED MODE validation
-      const segmentsWithoutDetails = roadSegments.filter(s => !s.has_details);
-      if (segmentsWithoutDetails.length > 0) {
-        setWarningSegmentCount(segmentsWithoutDetails.length);
-        setShowWarningModal(true);
-      } else {
-        performAccessTextGeneration();
-      }
+    // Validation for road conditions
+    if (roadConditions.length === 0) {
+      toast.error('Please select at least one road condition before generating text.', {
+        duration: 4000,
+        icon: '⚠️'
+      });
+      return;
     }
+    performAccessTextGeneration();
   };
 
   const performAccessTextGeneration = async () => {
-    setShowWarningModal(false);
     setTransformingAccess(true);
 
     // Additional validation
@@ -725,56 +549,50 @@ export function InteractivePropertyMap({
     }
 
     try {
-      // Base payload with Google Maps data
+      // DEBUG: Check routeData state
+      console.log('[InteractivePropertyMap] routeData state:', routeData);
+
+      // Payload with Google Maps data and road conditions
       const payload: any = {
         starting_point_name: startingPointName.trim(),
         property_position: propertyPosition,
         total_distance_km: routeData?.distance_km || 0,
         total_duration_mins: routeData?.duration_minutes || 0,
         steps: routeData?.steps || [],  // ALWAYS include Google Maps steps
+        road_conditions: roadConditions,  // Send road conditions summary
       };
 
-      // Add mode-specific data
-      if (entryMode === 'simple') {
-        // Send road_conditions array (simple mode)
-        payload.road_conditions = roadConditions;
-      } else {
-        // Send road_segments array (advanced mode)
-        payload.road_segments = roadSegments.map(seg => ({
-          // Google Maps data (from directions API)
-          google_maps_data: {
-            instruction: seg.instruction || '',
-            road_name: seg.road_name || '',
-            distance_km: seg.distance_km || 0,
-            distance_text: seg.distance_text || '',
-          },
-          // User-entered details (from manual input)
-          user_details: {
-            road_type: seg.road_type,
-            surface_condition: seg.surface_condition,
-            road_width_meters: seg.road_width_meters,
-            additional_notes: seg.additional_notes,
-            has_details: seg.has_details,
-          },
-        }));
-      }
+      // DEBUG: Log the payload being sent
+      console.log('[InteractivePropertyMap] Sending to transform-access API:', {
+        starting_point_name: payload.starting_point_name,
+        total_distance_km: payload.total_distance_km,
+        total_duration_mins: payload.total_duration_mins,
+        steps_count: payload.steps.length,
+        steps_sample: payload.steps.slice(0, 3),  // First 3 steps
+        road_conditions: payload.road_conditions
+      });
 
       // Call backend API
       const transformResponse = await axios.post(`${API_URL}/api/maps/transform-access`, payload);
 
       const professionalText = transformResponse.data.professional_text;
+
+      // DEBUG: Log the response
+      console.log('[InteractivePropertyMap] Received professional text:', professionalText);
+
       setGeneratedAccessText(professionalText);
 
-      // Update parent with all data including mode
+      // Update parent with all data
       onRouteGenerated({
-        distance: routeData?.distance_text || '',
-        duration: routeData?.duration_text || '',
+        distance: routeData?.distance || '',
+        duration: routeData?.duration || '',
+        distance_km: routeData?.distance_km,
+        duration_minutes: routeData?.duration_minutes,
         accessText: professionalText,
         steps: routeData?.steps || [],
         mapImageUrl: mapImageUrl || undefined,
-        road_conditions: entryMode === 'simple' ? roadConditions : undefined,
-        road_segments: entryMode === 'advanced' ? roadSegments : undefined,
-        entry_mode: entryMode,  // NEW: Save mode choice
+        road_conditions: roadConditions,
+        entry_mode: 'simple',  // Always use simple mode now
       });
     } catch (error) {
       console.error('Failed to generate access text:', error);
@@ -839,33 +657,24 @@ export function InteractivePropertyMap({
         const distanceKm = (leg.distance?.value || 0) / 1000;  // Convert meters to km
         const durationMins = Math.round((leg.duration?.value || 0) / 60);  // Convert seconds to mins
 
+        // Transform Google Maps steps to backend format
+        const transformedSteps = (leg.steps || []).map((step: any) => ({
+          instruction: step.instructions || step.html_instructions || '',
+          distance: step.distance?.text || '',
+          duration: step.duration?.text || '',
+          maneuver: step.maneuver || ''
+        }));
+
         const routeInfo = {
           distance: leg.distance?.text || '',
           duration: leg.duration?.text || '',
           distance_km: distanceKm,
           duration_minutes: durationMins,
           accessText: '', // Will be updated after AI transformation
-          steps: leg.steps || [],
+          steps: transformedSteps,  // Use transformed steps instead of raw Google Maps steps
         };
 
         setRouteData(routeInfo);
-
-        // Initialize road segments from Google Maps steps
-        const initialSegments: RoadSegment[] = (leg.steps || []).map((step: any, idx: number) => {
-          const roadName = extractRoadName(step.html_instructions || '');
-          const distanceKm = (step.distance?.value || 0) / 1000;
-
-          return {
-            id: `segment-${Date.now()}-${idx}`,
-            order: idx,
-            instruction: cleanInstruction(step.html_instructions || step.instructions || ''), // Store full turn-by-turn instruction
-            road_name: roadName || '',
-            distance_km: distanceKm,
-            distance_text: step.distance?.text || '',
-            has_details: false,
-          };
-        });
-        setRoadSegments(initialSegments);
 
         // Prefetch nearby facilities data in parallel (non-blocking)
         if (onFacilitiesFetched && propertyMarkerRef.current) {
@@ -1035,9 +844,118 @@ export function InteractivePropertyMap({
 
   return (
     <div className="space-y-6">
-      {/* Search Controls - STARTING POINT FIRST */}
+      {/* Search Controls - REORDERED: Property Location FIRST, Starting Point SECOND */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Starting Point Search - FIRST */}
+        {/* Property Location - FIRST */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            <MapPin className="inline w-4 h-4 mr-1 text-red-600" />
+            Property Location <span className="text-red-500">*</span>
+          </label>
+
+          {/* Toggle between map selection and manual input */}
+          <div className="mb-3 flex gap-2">
+            <button
+              type="button"
+              onClick={() => setCoordinateInputMode('map')}
+              className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                coordinateInputMode === 'map'
+                  ? 'bg-red-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              <MapPin className="inline w-4 h-4 mr-1" />
+              Select on Map
+            </button>
+            <button
+              type="button"
+              onClick={() => setCoordinateInputMode('manual')}
+              className={`flex-1 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                coordinateInputMode === 'manual'
+                  ? 'bg-red-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              <Navigation className="inline w-4 h-4 mr-1" />
+              Enter Coordinates
+            </button>
+          </div>
+
+          {coordinateInputMode === 'map' ? (
+            <>
+              <input
+                id="property-search-input"
+                type="text"
+                value={propertyAddress}
+                onChange={(e) => setPropertyAddress(e.target.value)}
+                placeholder="Search for property address..."
+                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-red-500 focus:border-red-500"
+              />
+              <button
+                type="button"
+                onClick={() => setClickMode('property')}
+                disabled={clickMode === 'property'}
+                className={`mt-2 w-full flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+                  clickMode === 'property'
+                    ? 'bg-red-600 text-white'
+                    : 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-300'
+                }`}
+              >
+                <MousePointer className="w-4 h-4" />
+                {clickMode === 'property' ? 'Click on map to pin...' : 'Click to Pin on Map'}
+              </button>
+            </>
+          ) : (
+            <div className="space-y-3 bg-gradient-to-br from-red-50 to-orange-50 p-4 rounded-xl border-2 border-red-200">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1 uppercase tracking-wide">
+                  Latitude
+                </label>
+                <input
+                  type="number"
+                  step="0.000001"
+                  value={manualLatitude}
+                  onChange={(e) => setManualLatitude(e.target.value)}
+                  placeholder="e.g., 7.234567"
+                  className="w-full px-3 py-2.5 border-2 border-red-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-sm font-mono bg-white"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1 uppercase tracking-wide">
+                  Longitude
+                </label>
+                <input
+                  type="number"
+                  step="0.000001"
+                  value={manualLongitude}
+                  onChange={(e) => setManualLongitude(e.target.value)}
+                  placeholder="e.g., 80.234567"
+                  className="w-full px-3 py-2.5 border-2 border-red-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-sm font-mono bg-white"
+                />
+              </div>
+
+              {/* Pin Location Button */}
+              <button
+                type="button"
+                onClick={() => handleManualCoordinateChange(manualLatitude, manualLongitude)}
+                disabled={!manualLatitude || !manualLongitude}
+                className="w-full mt-2 flex items-center justify-center gap-2 px-4 py-2.5 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+              >
+                <MapPin className="w-4 h-4" />
+                Pin Location on Map
+              </button>
+
+              <div className="flex items-start gap-2 mt-2 text-xs text-gray-600 bg-white/60 p-2 rounded-lg">
+                <Info className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" />
+                <p>
+                  Enter GPS coordinates manually (6 decimal places recommended), then click "Pin Location on Map" to mark the property.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Starting Point - SECOND */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
             <Navigation2 className="inline w-4 h-4 mr-1 text-blue-600" />
@@ -1065,70 +983,9 @@ export function InteractivePropertyMap({
             {clickMode === 'start' ? 'Click on map to pin...' : 'Click to Pin on Map'}
           </button>
         </div>
-
-        {/* Property Location Search - SECOND */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            <MapPin className="inline w-4 h-4 mr-1 text-red-600" />
-            Property Location <span className="text-red-500">*</span>
-          </label>
-          <input
-            id="property-search-input"
-            type="text"
-            value={propertyAddress}
-            onChange={(e) => setPropertyAddress(e.target.value)}
-            placeholder="Search for property address..."
-            className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:ring-red-500 focus:border-red-500"
-          />
-          <button
-            type="button"
-            onClick={() => setClickMode('property')}
-            disabled={clickMode === 'property'}
-            className={`mt-2 w-full flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
-              clickMode === 'property'
-                ? 'bg-red-600 text-white'
-                : 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-300'
-            }`}
-          >
-            <MousePointer className="w-4 h-4" />
-            {clickMode === 'property' ? 'Click on map to pin...' : 'Click to Pin on Map'}
-          </button>
-        </div>
       </div>
 
-      {/* Property Position Selector */}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Property Position (relative to road) - <span className="text-green-600 font-normal">Auto-detected from directions</span>
-        </label>
-        <div className="flex gap-2 max-w-md">
-          <button
-            type="button"
-            onClick={() => setPropertyPosition('left')}
-            className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
-              propertyPosition === 'left'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300'
-            }`}
-          >
-            Left Side
-          </button>
-          <button
-            type="button"
-            onClick={() => setPropertyPosition('right')}
-            className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
-              propertyPosition === 'right'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300'
-            }`}
-          >
-            Right Side
-          </button>
-        </div>
-        <p className="text-xs text-gray-500 mt-1">
-          This will be auto-detected when you generate the route. You can override if needed.
-        </p>
-      </div>
+      {/* REMOVED: Property Position UI - Auto-detection logic remains in background (detectPropertyPosition function at lines 808-846) */}
 
       {/* Generate Route Button */}
       <button
@@ -1220,288 +1077,25 @@ export function InteractivePropertyMap({
             </div>
           )}
 
-          {/* Road Conditions Section - DUAL MODE */}
+          {/* Road Conditions Section - SUMMARY ONLY */}
           {routeData && (
             <div className="bg-white border-2 border-gray-200 rounded-xl p-6 mt-6">
-              {/* Mode Switcher Header */}
+              {/* Header */}
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
                   <Navigation className="w-5 h-5 text-blue-600" />
                   Road Conditions
                 </h3>
-
-                <div className="inline-flex rounded-lg border border-gray-300 bg-gray-100 p-1">
-                  <button
-                    type="button"
-                    onClick={() => handleModeSwitch('simple')}
-                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
-                      entryMode === 'simple'
-                        ? 'bg-white text-blue-700 shadow-sm'
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    🚀 Quick Entry
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleModeSwitch('advanced')}
-                    className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
-                      entryMode === 'advanced'
-                        ? 'bg-white text-blue-700 shadow-sm'
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    ⚙️ Detailed Entry
-                  </button>
-                </div>
               </div>
 
-              {/* SIMPLE MODE: RoadConditionsSummary */}
-              {entryMode === 'simple' && (
-                <div className="mt-4">
-                  <RoadConditionsSummary
-                    roadConditions={roadConditions}
-                    onChange={setRoadConditions}
-                  />
-                </div>
-              )}
+              {/* Road Conditions Summary */}
+              <div className="mt-4">
+                <RoadConditionsSummary
+                  roadConditions={roadConditions}
+                  onChange={setRoadConditions}
+                />
+              </div>
 
-              {/* ADVANCED MODE: Per-Segment Editor */}
-              {entryMode === 'advanced' && (
-                <div className="space-y-3 mb-4">
-                  {roadSegments.length > 0 ? (
-                    roadSegments.map((segment, idx) => {
-                      const isExpanded = expandedSegments.has(segment.id);
-                  const roadTypeOptions = [
-                    { value: '', label: 'Select type...' },
-                    { value: 'paved_road', label: 'Paved Road / Asphalt' },
-                    { value: 'carpet_road', label: 'Carpet Road' },
-                    { value: 'gravel_road', label: 'Gravel Road' },
-                    { value: 'sand_road', label: 'Sand Road' },
-                    { value: 'earth_road', label: 'Earth Road' },
-                  ];
-                  const conditionOptions = ['', 'excellent', 'good', 'fair', 'poor'];
-
-                  return (
-                    <div
-                      key={segment.id}
-                      className={`border-2 rounded-lg overflow-hidden transition-all ${
-                        segment.has_details ? 'border-green-400 bg-green-50/50' : 'border-gray-300 bg-white'
-                      }`}
-                    >
-                      {/* Header */}
-                      <div className="p-4 bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200">
-                        <div className="flex items-center justify-between gap-3 mb-3">
-                          <div className="flex items-center gap-3 flex-1">
-                            <span className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm font-bold shadow-sm">
-                              {idx + 1}
-                            </span>
-                            {segment.instruction && (
-                              <div className="flex-1 bg-blue-50 border-l-4 border-blue-500 px-3 py-2 rounded">
-                                <div className="flex items-start gap-2">
-                                  <Navigation className="w-4 h-4 text-blue-600 mt-0.5 flex-shrink-0" />
-                                  <span className="text-sm text-blue-900 font-medium">{segment.instruction}</span>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-3 flex-1">
-                            <div className="flex-1 min-w-0 ml-11">
-                              <input
-                                type="text"
-                                value={segment.road_name || ''}
-                                onChange={(e) => updateSegmentField(segment.id, 'road_name', e.target.value)}
-                                placeholder="Road name (e.g., Hospital Circular Road)"
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                              />
-                            </div>
-                            {segment.has_details && (
-                              <span className="bg-green-600 text-white px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap">
-                                ✓ Complete
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => toggleSegmentExpansion(segment.id)}
-                              className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-                            >
-                              {isExpanded ? '▲ Less' : '▼ More'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteSegment(segment.id)}
-                              className="px-3 py-1.5 text-sm bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors font-medium"
-                            >
-                              Delete
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleMoveUp(idx)}
-                              disabled={idx === 0}
-                              className="px-2 py-1.5 text-sm bg-gray-300 rounded-lg hover:bg-gray-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-bold"
-                            >
-                              ↑
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleMoveDown(idx)}
-                              disabled={idx === roadSegments.length - 1}
-                              className="px-2 py-1.5 text-sm bg-gray-300 rounded-lg hover:bg-gray-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-bold"
-                            >
-                              ↓
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleMergeWithNext(idx)}
-                              disabled={idx === roadSegments.length - 1}
-                              className="px-3 py-1.5 text-sm bg-purple-500 text-white rounded-lg hover:bg-purple-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
-                              title="Merge with next segment"
-                            >
-                              Merge →
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleSplitSegment(idx)}
-                              className="px-3 py-1.5 text-sm bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition-colors font-medium"
-                              title="Split segment in half"
-                            >
-                              Split
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Expanded Details */}
-                      {isExpanded && (
-                        <div className="p-4 space-y-4 bg-white">
-                          {/* Distance */}
-                          <div className="grid grid-cols-2 gap-4">
-                            <div>
-                              <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                                Distance (km) <span className="text-red-500">*</span>
-                              </label>
-                              <div className="flex gap-2">
-                                <input
-                                  type="number"
-                                  step="0.1"
-                                  min="0"
-                                  value={segment.distance_km || ''}
-                                  onChange={(e) => updateSegmentField(segment.id, 'distance_km', e.target.value)}
-                                  placeholder="2.5"
-                                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                />
-                                <span className="px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-sm font-medium text-gray-700">
-                                  km
-                                </span>
-                              </div>
-                              {segment.distance_text && (
-                                <p className="text-xs text-gray-500 mt-1">Display: {segment.distance_text}</p>
-                              )}
-                            </div>
-
-                            {/* Road Width */}
-                            <div>
-                              <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                                Road Width (meters) <span className="text-gray-400">(optional)</span>
-                              </label>
-                              <input
-                                type="number"
-                                step="0.5"
-                                min="0"
-                                value={segment.road_width_meters || ''}
-                                onChange={(e) => updateSegmentField(segment.id, 'road_width_meters', parseFloat(e.target.value) || undefined)}
-                                placeholder="6.5"
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                              />
-                            </div>
-                          </div>
-
-                          {/* Road Type */}
-                          <div>
-                            <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                              Road Type <span className="text-red-500">*</span>
-                            </label>
-                            <select
-                              value={segment.road_type || ''}
-                              onChange={(e) => updateSegmentField(segment.id, 'road_type', e.target.value)}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            >
-                              {roadTypeOptions.map((option) => (
-                                <option key={option.value} value={option.value}>
-                                  {option.label}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-
-                          {/* Surface Condition */}
-                          <div>
-                            <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                              Surface Condition <span className="text-red-500">*</span>
-                            </label>
-                            <select
-                              value={segment.surface_condition || ''}
-                              onChange={(e) => updateSegmentField(segment.id, 'surface_condition', e.target.value)}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            >
-                              {conditionOptions.map((condition) => (
-                                <option key={condition} value={condition}>
-                                  {condition ? condition.charAt(0).toUpperCase() + condition.slice(1) : 'Select condition...'}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-
-                          {/* Additional Notes */}
-                          <div>
-                            <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                              Additional Notes <span className="text-gray-400">(optional)</span>
-                            </label>
-                            <textarea
-                              rows={2}
-                              value={segment.additional_notes || ''}
-                              onChange={(e) => updateSegmentField(segment.id, 'additional_notes', e.target.value)}
-                              placeholder="Any additional observations..."
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                            />
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Compact Summary when collapsed */}
-                      {!isExpanded && (
-                        <div className="px-4 py-3 bg-white text-sm text-gray-600 border-t border-gray-100">
-                          Distance: {segment.distance_text || 'Not set'}
-                          {segment.has_details && segment.road_type && segment.surface_condition && (
-                            <span className="ml-2">• {segment.road_type.replace(/_/g, ' ')} in {segment.surface_condition} condition</span>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })
-                  ) : (
-                    <div className="text-gray-500 text-sm py-4 text-center">
-                      No road segments yet. Generate a route to create segments automatically.
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Add Segment Button (Advanced Mode Only) */}
-              {entryMode === 'advanced' && (
-                <button
-                  type="button"
-                  onClick={handleAddSegment}
-                  className="w-full px-4 py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-700 hover:border-blue-500 hover:text-blue-600 font-medium transition-colors mb-4"
-                >
-                  + Add Road Segment
-                </button>
-              )}
 
               <button
                 type="button"
@@ -1557,27 +1151,7 @@ export function InteractivePropertyMap({
             </div>
           )}
 
-          {/* Turn-by-Turn Directions */}
-          <div className="bg-white border-2 border-gray-200 rounded-xl p-6">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">
-              Turn-by-Turn Directions
-            </h3>
-            <ol className="space-y-3">
-              {routeData.steps.map((step: any, idx: number) => (
-                <li key={idx} className="flex gap-3">
-                  <span className="flex-shrink-0 w-7 h-7 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-bold">
-                    {idx + 1}
-                  </span>
-                  <div className="flex-1">
-                    <div className="text-gray-900">{cleanInstruction(step.instructions)}</div>
-                    <div className="text-sm text-gray-500 mt-1">
-                      {step.distance?.text} • {step.duration?.text}
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ol>
-          </div>
+          {/* Turn-by-Turn Directions - HIDDEN (data still used for prompt generation) */}
         </div>
       )}
 
@@ -1586,125 +1160,17 @@ export function InteractivePropertyMap({
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
           <h4 className="font-semibold text-blue-900 mb-2">How to use:</h4>
           <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
-            <li>Search for the property location in the first box</li>
-            <li>Click on the suggested location to mark it on the map</li>
+            <li>Set property location first - search on map or enter coordinates manually</li>
+            <li>Click on suggested location or enter precise GPS coordinates</li>
             <li>Search for your starting point in the second box</li>
             <li>Click on the suggested starting point</li>
-            <li>Click "Generate Route & Directions" to see the route</li>
+            <li>Enter a descriptive name for the starting point</li>
+            <li>Click "Generate Route & Fetch Location Data"</li>
+            <li>Select road conditions and generate professional access text</li>
           </ol>
         </div>
       )}
 
-      {/* Mode Switch Confirmation Modal (NEW) */}
-      {showModeConfirmModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 max-w-md shadow-xl">
-            <h3 className="text-lg font-semibold mb-3 text-gray-900">
-              Switch Entry Mode?
-            </h3>
-
-            <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-md">
-              <p className="text-sm text-amber-800">
-                <strong>⚠️ Warning:</strong> Switching to {pendingModeSwitch === 'simple' ? 'Quick Entry' : 'Detailed Entry'} mode will clear your current road condition data. You'll need to re-enter the information in the new format.
-              </p>
-            </div>
-
-            <p className="text-gray-700 mb-4 text-sm">
-              {pendingModeSwitch === 'simple' && (
-                "Quick Entry uses a simplified checkbox-based interface for faster data entry."
-              )}
-              {pendingModeSwitch === 'advanced' && (
-                "Detailed Entry allows you to specify road type, condition, width, and notes for each segment individually."
-              )}
-            </p>
-
-            <div className="flex gap-3 justify-end">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowModeConfirmModal(false);
-                  setPendingModeSwitch(null);
-                }}
-                className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50 text-gray-700 font-medium"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => performModeSwitch(pendingModeSwitch!)}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 font-medium"
-              >
-                Switch Mode
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Warning Modal for Missing Segment Details */}
-      {showWarningModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden transform transition-all">
-            {/* Header */}
-            <div className="bg-gradient-to-r from-amber-500 to-orange-500 px-6 py-4">
-              <div className="flex items-center gap-3">
-                <div className="bg-white rounded-full p-2">
-                  <svg className="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                  </svg>
-                </div>
-                <h3 className="text-xl font-bold text-white">Warning: Missing Details</h3>
-              </div>
-            </div>
-
-            {/* Content */}
-            <div className="p-6 space-y-4">
-              <div className="flex items-start gap-3">
-                <div className="bg-amber-100 rounded-full p-2 mt-1">
-                  <svg className="w-5 h-5 text-amber-600" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                  </svg>
-                </div>
-                <div className="flex-1">
-                  <p className="text-lg font-semibold text-gray-900 mb-2">
-                    {warningSegmentCount} segment{warningSegmentCount > 1 ? 's are' : ' is'} missing surface details.
-                  </p>
-                  <p className="text-sm text-gray-600 mb-3">
-                    The AI will describe {warningSegmentCount > 1 ? 'them' : 'it'} without road type/condition information.
-                  </p>
-                  <div className="bg-blue-50 border-l-4 border-blue-400 p-3 rounded">
-                    <p className="text-sm text-blue-800 font-medium">
-                      For best results, add surface details to all segments before generating.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <p className="text-sm font-semibold text-gray-700 mt-4">
-                Generate anyway?
-              </p>
-            </div>
-
-            {/* Footer */}
-            <div className="bg-gray-50 px-6 py-4 flex items-center justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setShowWarningModal(false)}
-                className="px-5 py-2.5 text-sm font-semibold text-gray-700 bg-white border-2 border-gray-300 rounded-lg hover:bg-gray-100 transition-all shadow-sm"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={performAccessTextGeneration}
-                className="px-5 py-2.5 text-sm font-semibold text-white bg-gradient-to-r from-green-500 to-green-600 rounded-lg hover:from-green-600 hover:to-green-700 transition-all shadow-md"
-              >
-                OK, Generate
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );

@@ -221,9 +221,21 @@ Extract as much data as possible from the provided text. Be thorough and accurat
             "metadata": parsed_result.get("metadata", {})
         }
 
+        # Safety check: ensure result is valid before returning
+        if not isinstance(result, dict):
+            raise Exception("Internal error: Result is not a dictionary")
+
         return result
 
     except Exception as e:
+        # Log the full error for debugging with traceback
+        import logging
+        import traceback
+        logger = logging.getLogger(__name__)
+        logger.error(f"AI parsing failed: {str(e)}")
+        logger.error(f"Full traceback:\n{traceback.format_exc()}")
+
+        # Always raise exception - never return None
         raise Exception(f"AI parsing failed: {str(e)}")
 
 

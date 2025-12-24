@@ -1,12 +1,13 @@
 from docx import Document
 from docx.shared import Pt, Inches, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING, WD_TAB_ALIGNMENT
 from docx.enum.table import WD_TABLE_ALIGNMENT, WD_CELL_VERTICAL_ALIGNMENT
-from docx.oxml.ns import qn
-from docx.oxml import OxmlElement
+from docx.oxml.ns import qn, nsdecls
+from docx.oxml import OxmlElement, parse_xml
 from io import BytesIO
 from datetime import datetime
 from typing import List, Dict, Optional, Any
+from decimal import Decimal
 import requests
 import json
 import logging
@@ -16,6 +17,25 @@ from .letterhead_templates import get_template
 
 # Setup logging
 logger = logging.getLogger(__name__)
+
+# ===== NUMERIC TYPE CONVERTER =====
+def to_float(value: Any) -> float:
+    """
+    Safely convert any numeric type (Decimal, int, float, str) to float.
+    Handles None and returns 0.0.
+    """
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            return 0.0
+    return float(value if value else 0)
 
 # ===== DEFENSIVE DATA ACCESS HELPERS =====
 # These functions prevent crashes from None/missing data in report generation
@@ -111,8 +131,8 @@ def safe_get_nested(obj: Any, *keys, default: Any = None) -> Any:
 # All measurements in inches
 MAP_IMAGE_WIDTH = 3.5           # Google Maps image width (75% of original 4.5")
 MAP_IMAGE_MAX_HEIGHT = 2.75     # Google Maps maximum height
-PROPERTY_PHOTO_WIDTH = 2.5      # Property photo width (uniform sizing)
-PROPERTY_PHOTO_HEIGHT = 2.5     # Property photo height (uniform sizing - square)
+PROPERTY_PHOTO_WIDTH = 2.0      # Property photo width (uniform sizing)
+PROPERTY_PHOTO_HEIGHT = 2.0     # Property photo height (uniform sizing - square)
 IMAGE_SPACING_BEFORE = Pt(6)    # Standard spacing before images
 IMAGE_SPACING_AFTER = Pt(6)     # Standard spacing after images
 
@@ -1002,7 +1022,7 @@ def generate_title_block(report: models.Report) -> str:
         lines.append(plan_info)
     else:
         # Address-based title for deed/certificate (no plan info line)
-        address = report.property_address_full or '[Property Address]'
+        address = generate_smart_address(report) or '[Property Address]'
         prop_desc = f"The Property Depicted as {address}"
         lines.append(prop_desc)
 
@@ -1098,11 +1118,19 @@ def generate_deed_description(deeds: Optional[List[Dict]]) -> Optional[str]:
         return f"requesting a Valuation Report of the immovable properties described in schedules of {deeds_text}."
 
 def generate_submission_statement(report: models.Report) -> Optional[str]:
-    """Generate submission destination statement with optional purpose"""
+    """Generate submission destination statement with optional purpose and recipient position"""
     if not report.submission_organization:
         return None
 
-    org_text = report.submission_organization
+    org_text = ""
+
+    # Add recipient position if available
+    if report.submission_recipient_position:
+        org_text = f"{report.submission_recipient_position}, "
+
+    org_text += report.submission_organization
+
+    # Add address if available
     if report.submission_address:
         org_text += f", {report.submission_address}"
 
@@ -1123,14 +1151,13 @@ def generate_situation_text(report: models.Report) -> Optional[str]:
     print(f"[SITUATION] Report ID: {report.id}")
     print(f"[SITUATION] Village: {report.property_village}")
     print(f"[SITUATION] District: {report.property_district}")
-    print(f"[SITUATION] Address: {report.property_address_full}")
     print(f"[SITUATION] GN Division: {report.grama_niladari_division}")
     print(f"[SITUATION] DS Division: {report.property_divisional_secretariat}")
     print(f"[SITUATION] Korale: {report.korale}")
     print(f"[SITUATION] Pradeshiya Sabha: {report.pradeshiya_sabha}")
 
     # Need at least some basic location info
-    if not (report.property_village or report.property_district or report.property_address_full):
+    if not (report.property_village or report.property_district):
         print("[SITUATION] No location data found, returning None")
         return None
 
@@ -1238,15 +1265,66 @@ def generate_situation_text(report: models.Report) -> Optional[str]:
     # Assemble the complete sentence
     if parts:
         situation_text = prefix + " " + " ".join(parts) + "."
-    elif report.property_address_full:
-        # Fallback to simple address if no detailed location data
-        situation_text = f"The property is situated at {report.property_address_full}."
     else:
-        print("[SITUATION] No situation text could be generated")
-        return None
+        # Fallback to smart address if no detailed location data
+        smart_address = generate_smart_address(report)
+        if smart_address:
+            situation_text = f"The property is situated at {smart_address}."
+        else:
+            print("[SITUATION] No situation text could be generated")
+            return None
 
     print(f"[SITUATION] Generated text: {situation_text}")
     return situation_text
+
+def generate_smart_address(report: models.Report) -> Optional[str]:
+    """
+    Generate formatted property address from address components.
+
+    Format: [Property Number], [Village] Village, [GN Division] Grama Niladari Division,
+            [DS Division] Divisional Secretariat Division, [District] District, [Province]
+
+    Only includes components that are present.
+    """
+    components = []
+
+    # Property number (e.g., "No: 1202")
+    if report.property_number:
+        components.append(report.property_number)
+
+    # Village name
+    if report.property_village:
+        components.append(f"{report.property_village} Village")
+
+    # Grama Niladari Division
+    if report.grama_niladari_division:
+        components.append(f"{report.grama_niladari_division} Grama Niladari Division")
+
+    # Divisional Secretariat (if available)
+    if hasattr(report, 'property_divisional_secretariat') and report.property_divisional_secretariat:
+        components.append(f"{report.property_divisional_secretariat} Divisional Secretariat Division")
+
+    # Korale (if available)
+    if report.korale:
+        components.append(report.korale)
+
+    # Pradeshiya Sabha (if available)
+    if report.pradeshiya_sabha:
+        components.append(report.pradeshiya_sabha)
+
+    # District (usually required)
+    if report.property_district:
+        components.append(f"{report.property_district} District")
+
+    # Province
+    if report.property_province:
+        components.append(report.property_province)
+
+    if not components:
+        return None
+
+    # Join with commas
+    return ", ".join(components)
 
 def generate_access_text(report: models.Report) -> Optional[str]:
     """Generate ACCESS section text from access directions data"""
@@ -1684,13 +1762,27 @@ def render_construction_details(doc, building: Dict) -> None:
 
         if parts:
             construction_text = "; ".join(parts) + "."
-            add_inline_field(doc, "Construction details", construction_text)
+            para = doc.add_paragraph()
+            para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+            para.paragraph_format.space_before = Pt(0)
+            para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
+            para.paragraph_format.line_spacing = 0.9
+            run = para.add_run(construction_text)
+            run.font.size = Pt(9)
+            run.font.color.rgb = RGBColor(0, 0, 0)
             return
 
-    # Render new format as combined paragraph
+    # Render new format as standalone paragraph (no label)
     if sentences:
         construction_text = " ".join(sentences)
-        add_inline_field(doc, "Construction details", construction_text)
+        para = doc.add_paragraph()
+        para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+        para.paragraph_format.space_before = Pt(0)
+        para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
+        para.paragraph_format.line_spacing = 0.9
+        run = para.add_run(construction_text)
+        run.font.size = Pt(9)
+        run.font.color.rgb = RGBColor(0, 0, 0)
 
 
 def render_utilities_services(doc, building: Dict) -> None:
@@ -1737,8 +1829,8 @@ def render_utilities_services(doc, building: Dict) -> None:
 
     # Parking
     parking = utilities.get('parking', {})
-    covered = parking.get('covered_spaces', 0)
-    uncovered = parking.get('uncovered_spaces', 0)
+    covered = int(to_float(parking.get('covered_spaces')))
+    uncovered = int(to_float(parking.get('uncovered_spaces')))
     total_parking = covered + uncovered
     if total_parking > 0:
         parking_text = f"parking for {total_parking} vehicle{'s' if total_parking != 1 else ''}"
@@ -1961,6 +2053,28 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
             access_run = access_para.add_run(access_text)
             access_run.font.size = Pt(9)
             access_run.font.color.rgb = RGBColor(0, 0, 0)
+
+            # Add coordinates paragraph if available
+            if report.property_latitude and report.property_longitude:
+                # Add small spacing
+                coord_para = doc.add_paragraph()
+                coord_para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                coord_para.paragraph_format.space_before = Pt(6)
+                coord_para.paragraph_format.space_after = Pt(6)
+                coord_para.paragraph_format.line_spacing = 0.9
+
+                # Coordinate label (bold)
+                coord_label = coord_para.add_run("Property Location Coordinates: ")
+                coord_label.bold = True
+                coord_label.font.size = Pt(9)
+                coord_label.font.color.rgb = RGBColor(0, 0, 0)
+
+                # Coordinate values (format to 6 decimal places)
+                lat_value = float(report.property_latitude)
+                lng_value = float(report.property_longitude)
+                coord_text = coord_para.add_run(f"{lat_value:.6f}, {lng_value:.6f}")
+                coord_text.font.size = Pt(9)
+                coord_text.font.color.rgb = RGBColor(0, 0, 0)
 
             # Add map image if available (embedded within ACCESS section)
             if report.location_map_image_data:
@@ -2315,6 +2429,10 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                     # Add building subsection heading
                     add_section_heading(doc, building_number, building_name)
 
+                    # === CONSTRUCTION DETAILS (STANDALONE PARAGRAPH - NO LABEL) ===
+                    # This comes FIRST, directly under the building heading
+                    render_construction_details(doc, building)
+
                     # === PROFESSIONAL STRUCTURED FORMAT (All buildings) ===
 
                     # Opening paragraph: Construction materials and general description
@@ -2619,9 +2737,6 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
 
                         add_inline_field(doc, "Age and condition", age_text)
 
-                    # === CONSTRUCTION DETAILS ===
-                    render_construction_details(doc, building)
-
                     # === UTILITIES AND SERVICES ===
                     render_utilities_services(doc, building)
 
@@ -2651,7 +2766,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                         # Sort photos by order
                         sorted_photos = sorted(building_photos, key=lambda x: x.get('order', 0))
 
-                        # Modern flexible photo grid layout (no tables) - NO SUBHEADING as per user requirement
+                        # Modern flexible photo grid layout using tables for proper caption alignment
                         import base64
                         import re
                         import math
@@ -2673,13 +2788,28 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                                 # 2 photos or first row - use all remaining
                                 photos_in_row = remaining
 
-                            # Create paragraph for this row
-                            row_para = doc.add_paragraph()
-                            row_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                            row_para.paragraph_format.space_before = Pt(6)
-                            row_para.paragraph_format.space_after = Pt(4)
+                            # Create a table for this row of photos with captions
+                            table = doc.add_table(rows=2, cols=photos_in_row)
+                            table.alignment = WD_TABLE_ALIGNMENT.CENTER
 
-                            # Add photos to this row
+                            # Remove table borders
+                            for row in table.rows:
+                                for cell in row.cells:
+                                    cell.width = Inches(6.5 / photos_in_row)
+                                    # Remove all borders
+                                    tc = cell._element
+                                    tcPr = tc.get_or_add_tcPr()
+                                    tcBorders = parse_xml(
+                                        r'<w:tcBorders %s>'
+                                        r'<w:top w:val="none"/>'
+                                        r'<w:left w:val="none"/>'
+                                        r'<w:bottom w:val="none"/>'
+                                        r'<w:right w:val="none"/>'
+                                        r'</w:tcBorders>' % nsdecls('w')
+                                    )
+                                    tcPr.append(tcBorders)
+
+                            # Add photos to first row of table
                             for i in range(photos_in_row):
                                 if idx >= num_photos:
                                     break
@@ -2703,13 +2833,8 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                                     image_bytes = base64.b64decode(base64_data)
                                     image_stream = BytesIO(image_bytes)
 
-                                    # Calculate dimensions based on photos in row
-                                    if photos_in_row == 1:
-                                        img_width = Inches(3.0)  # Larger for single photo
-                                    elif photos_in_row == 2:
-                                        img_width = Inches(2.5)  # Medium for 2 photos
-                                    else:
-                                        img_width = Inches(1.8)  # Smaller for 3 photos
+                                    # Use uniform 2-inch width for all photos
+                                    img_width = Inches(2.0)
 
                                     dimensions = calculate_image_dimensions(
                                         image_stream,
@@ -2717,13 +2842,28 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                                         PROPERTY_PHOTO_HEIGHT
                                     )
 
-                                    # Add image to row
+                                    # Add image to table cell
                                     image_stream.seek(0)
-                                    row_para.add_run().add_picture(image_stream, **dimensions)
+                                    cell = table.rows[0].cells[i]
+                                    cell_para = cell.paragraphs[0]
+                                    cell_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                                    cell_para.add_run().add_picture(image_stream, **dimensions)
 
-                                    # Add spacing between photos in same row
-                                    if i < photos_in_row - 1:
-                                        row_para.add_run('   ')  # 3 spaces between photos
+                                    # Add caption to second row
+                                    caption_cell = table.rows[1].cells[i]
+                                    caption_para = caption_cell.paragraphs[0]
+                                    caption_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                                    caption_para.paragraph_format.space_before = Pt(2)
+                                    caption_para.paragraph_format.space_after = Pt(2)
+
+                                    caption_text = f"Fig. {idx + 1}"
+                                    if caption:
+                                        caption_text += f": {caption}"
+
+                                    caption_run = caption_para.add_run(caption_text)
+                                    caption_run.font.size = Pt(7)
+                                    caption_run.font.italic = True
+                                    caption_run.font.color.rgb = RGBColor(60, 60, 60)
 
                                     print(f"[DOCX] Added building photo {idx + 1} for {building_name}")
 
@@ -2732,33 +2872,13 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
 
                                 idx += 1
 
-                            # Add captions row if any photos had captions
-                            captions_text = []
-                            caption_start_idx = idx - photos_in_row
-                            for i in range(photos_in_row):
-                                caption_idx = caption_start_idx + i
-                                if caption_idx < num_photos:
-                                    photo = sorted_photos[caption_idx]
-                                    caption = photo.get('caption', '')
-                                    if caption:
-                                        captions_text.append(f"Fig. {caption_idx + 1}: {caption}")
-                                    else:
-                                        captions_text.append(f"Fig. {caption_idx + 1}")
+                            # Add spacing after photo table
+                            spacing_para = doc.add_paragraph()
+                            spacing_para.paragraph_format.space_after = Pt(8)
 
-                            if captions_text:
-                                caption_para = doc.add_paragraph()
-                                caption_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                                caption_para.paragraph_format.space_before = Pt(2)
-                                caption_para.paragraph_format.space_after = Pt(8)
-
-                                caption_run = caption_para.add_run('    '.join(captions_text))
-                                caption_run.font.size = Pt(7)
-                                caption_run.font.italic = True
-                                caption_run.font.color.rgb = RGBColor(60, 60, 60)
-
-                        # Add spacing after photos
-                        spacing_para = doc.add_paragraph()
-                        spacing_para.paragraph_format.space_after = IMAGE_SPACING_AFTER
+                        # Add final spacing after all photos
+                        final_spacing = doc.add_paragraph()
+                        final_spacing.paragraph_format.space_after = IMAGE_SPACING_AFTER
 
                     # === ADDITIONAL STRUCTURES ===
                     additional_structures = building.get('additional_structures_description', '')
@@ -2884,13 +3004,6 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
         if report.valuation_total_land_value or report.valuation_buildings_data:
             add_section_heading(doc, "8.0", "VALUATION OF THE PROPERTY")
 
-            # Subtitle: Method used
-            p = doc.add_paragraph()
-            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            run = p.add_run("On Contractors Method")
-            run.font.size = Pt(10)
-            p.paragraph_format.space_after = Pt(12)
-
             # === VALUATION BREAKDOWN ===
 
             # Land valuation line
@@ -2903,7 +3016,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                 text = f"Land – {extent:,.2f} perches @ {format_currency(rate)} per perch = {format_currency(land_value)}"
                 run = p.add_run(text)
                 run.font.size = Pt(10)
-                p.paragraph_format.space_after = Pt(6)
+                p.paragraph_format.space_after = Pt(4)
 
             # Buildings valuation
             total_depreciated_buildings_value = 0
@@ -2929,51 +3042,46 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                     text = f"{building_name} – {total_floor_area:,.0f} sq.ft @ {format_currency(avg_rate)} per square foot = {format_currency(subtotal)}"
                     run = p.add_run(text)
                     run.font.size = Pt(10)
-                    p.paragraph_format.space_after = Pt(3)
+                    p.paragraph_format.space_after = Pt(2)
 
-                    # Depreciation details (if available)
-                    construction_year = bldg.get('construction_year')
-                    age_years = bldg.get('age_years')
-                    economic_life = bldg.get('economic_life_years')
-                    depreciation_rate = bldg.get('depreciation_rate_percent')
-                    depreciation_amount = bldg.get('depreciation_amount')
-                    depreciated_value = bldg.get('depreciated_value')
+                    # Check if depreciation data exists
+                    has_depreciation = bldg.get('depreciation_amount') is not None and to_float(bldg.get('depreciation_amount', 0)) > 0
 
-                    if construction_year and economic_life and depreciation_rate is not None:
+                    if has_depreciation:
                         # Show depreciation breakdown
-                        p = doc.add_paragraph()
-                        p.paragraph_format.left_indent = Inches(0.3)
-                        text = f"(Construction Year: {construction_year}, Age: {age_years} years, Economic Life: {economic_life} years)"
-                        run = p.add_run(text)
-                        run.font.size = Pt(9)
-                        run.italic = True
-                        p.paragraph_format.space_after = Pt(2)
+                        depreciation_rate = to_float(bldg.get('depreciation_rate_percent', 0))
+                        depreciation_amount = to_float(bldg.get('depreciation_amount', 0))
+                        depreciated_value = to_float(bldg.get('depreciated_value', subtotal))
 
-                        p = doc.add_paragraph()
-                        p.paragraph_format.left_indent = Inches(0.3)
-                        text = f"(Depreciation Rate: {depreciation_rate:.1f}%, Depreciation Amount: {format_currency(depreciation_amount or 0)})"
-                        run = p.add_run(text)
-                        run.font.size = Pt(9)
-                        run.italic = True
-                        p.paragraph_format.space_after = Pt(2)
+                        # Depreciation line
+                        p_dep = doc.add_paragraph()
+                        p_dep.paragraph_format.left_indent = Inches(0.3)
+                        text_dep = f"Less: Depreciation @ {depreciation_rate:.2f}% = {format_currency(depreciation_amount)}"
+                        run_dep = p_dep.add_run(text_dep)
+                        run_dep.font.size = Pt(9)
+                        run_dep.font.color.rgb = RGBColor(0, 0, 0)  # Black color
+                        p_dep.paragraph_format.space_after = Pt(2)
 
-                        p = doc.add_paragraph()
-                        p.paragraph_format.left_indent = Inches(0.3)
-                        text = f"Depreciated Value = {format_currency(depreciated_value or subtotal)}"
-                        run = p.add_run(text)
-                        run.font.size = Pt(10)
-                        p.paragraph_format.space_after = Pt(6)
+                        # Depreciated value line
+                        p_val = doc.add_paragraph()
+                        p_val.paragraph_format.left_indent = Inches(0.3)
+                        text_val = f"Depreciated Value = {format_currency(depreciated_value)}"
+                        run_val = p_val.add_run(text_val)
+                        run_val.font.size = Pt(9)
+                        run_val.font.bold = True
+                        run_val.font.color.rgb = RGBColor(0, 0, 0)  # Black color
+                        p_val.paragraph_format.space_after = Pt(6)
 
-                        # Use depreciated value
-                        building_value = depreciated_value or subtotal
+                        building_value = depreciated_value
                     else:
-                        # No depreciation data, use replacement cost
-                        building_value = subtotal
+                        # Use replacement cost directly (no depreciation) - backward compatible
+                        building_value = to_float(subtotal)
 
                     total_depreciated_buildings_value += building_value
+                    # Insurance always uses replacement cost (undepreciated)
                     buildings_insurance_values.append({
                         'name': building_name,
-                        'value': building_value
+                        'value': to_float(subtotal)  # Replacement cost for insurance
                     })
 
             # Add-ons
@@ -2996,29 +3104,36 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                         run = p.add_run(text)
                         run.font.size = Pt(10)
                         p.paragraph_format.space_after = Pt(2)
-                        total_addons_value += addon.get('value', 0)
+                        total_addons_value += to_float(addon.get('value', 0))
 
                     doc.add_paragraph()  # Spacing
 
             # Calculate Open Market Value
-            land_value = report.valuation_total_land_value or 0
-            market_value_calculated = land_value + total_depreciated_buildings_value + total_addons_value
+            land_value = to_float(report.valuation_total_land_value)
+            market_value_calculated = land_value + to_float(total_depreciated_buildings_value) + to_float(total_addons_value)
             market_value_rounded = round_for_say(market_value_calculated)
 
             # Open Market Value with "Say"
             p = doc.add_paragraph()
             p.paragraph_format.space_before = Pt(6)
-            text = f"Open Market Value of the property                              Say = {format_currency(market_value_rounded)}"
+
+            # Add tab stop at 6 inches for right alignment
+            tab_stops = p.paragraph_format.tab_stops
+            tab_stops.add_tab_stop(Inches(6.0), WD_TAB_ALIGNMENT.RIGHT)
+
+            # Add text with tab character for proper alignment
+            text = f"Open Market Value of the property\tSay = {format_currency(market_value_rounded)}"
             run = p.add_run(text)
             run.font.bold = True
-            run.font.size = Pt(11)
+            run.font.size = Pt(9)
             p.paragraph_format.space_after = Pt(18)
 
             # === REMARKS & CONCLUSION ===
             p = doc.add_paragraph()
             run = p.add_run("REMARKS & CONCLUSION")
             run.font.bold = True
-            run.font.size = Pt(11)
+            run.font.underline = True
+            run.font.size = Pt(9)
             p.paragraph_format.space_before = Pt(12)
             p.paragraph_format.space_after = Pt(6)
 
@@ -3042,20 +3157,27 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
             p = doc.add_paragraph()
             run = p.add_run("SUMMARY OF THE VALUATION")
             run.font.bold = True
-            run.font.size = Pt(11)
+            run.font.underline = True
+            run.font.size = Pt(9)
             p.paragraph_format.space_before = Pt(12)
             p.paragraph_format.space_after = Pt(6)
 
             # Open Market Value
             p = doc.add_paragraph()
-            text = f"Open Market Value of the property     : {format_currency(market_value_rounded)}"
+            tab_stops = p.paragraph_format.tab_stops
+            tab_stops.add_tab_stop(Inches(3.5), WD_TAB_ALIGNMENT.LEFT)
+            tab_stops.add_tab_stop(Inches(3.7), WD_TAB_ALIGNMENT.LEFT)
+            text = f"Open Market Value of the property\t:\t{format_currency(market_value_rounded)}"
             run = p.add_run(text)
             run.font.size = Pt(10)
             p.paragraph_format.space_after = Pt(3)
 
             # Forced Sale Value
             p = doc.add_paragraph()
-            text = f"Forced Sale Value of the property     : {format_currency(forced_sale_value)}"
+            tab_stops = p.paragraph_format.tab_stops
+            tab_stops.add_tab_stop(Inches(3.5), WD_TAB_ALIGNMENT.LEFT)
+            tab_stops.add_tab_stop(Inches(3.7), WD_TAB_ALIGNMENT.LEFT)
+            text = f"Forced Sale Value of the property\t:\t{format_currency(forced_sale_value)}"
             run = p.add_run(text)
             run.font.size = Pt(10)
             p.paragraph_format.space_after = Pt(3)
@@ -3069,7 +3191,10 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
             for building_ins in buildings_insurance_values:
                 p = doc.add_paragraph()
                 p.paragraph_format.left_indent = Inches(0.3)
-                text = f"{building_ins['name']}                        : {format_currency(building_ins['value'])}"
+                tab_stops = p.paragraph_format.tab_stops
+                tab_stops.add_tab_stop(Inches(3.2), WD_TAB_ALIGNMENT.LEFT)
+                tab_stops.add_tab_stop(Inches(3.4), WD_TAB_ALIGNMENT.LEFT)
+                text = f"{building_ins['name']}\t:\t{format_currency(building_ins['value'])}"
                 run = p.add_run(text)
                 run.font.size = Pt(10)
                 p.paragraph_format.space_after = Pt(2)
@@ -3100,14 +3225,40 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                 run.font.bold = True
                 run.font.size = Pt(9)
 
-                run = p.add_run(f"I certify that the property inspected by me is identical to ")
+                run = p.add_run(f"I certify that the property inspected by me is identical to the property described in ")
                 run.font.size = Pt(9)
 
-                run = p.add_run(f"{report.certificate_survey_plan_ref} ")
+                # Add deed reference if available
+                deeds = safe_get_json_field(report, 'deeds', [])
+                has_deed = isinstance(deeds, list) and len(deeds) > 0
+                if has_deed:
+                    deed = deeds[0]
+                    deed_number = deed.get('deed_number', '') if isinstance(deed, dict) else getattr(deed, 'deed_number', '')
+                    deed_type = deed.get('deed_type', 'deed') if isinstance(deed, dict) else getattr(deed, 'deed_type', 'deed')
+                    deed_date = deed.get('deed_date', '') if isinstance(deed, dict) else getattr(deed, 'deed_date', '')
+
+                    if deed_number:
+                        run = p.add_run(f"{deed_type} No. {deed_number}")
+                        run.font.bold = True
+                        run.font.size = Pt(9)
+
+                        if deed_date:
+                            run = p.add_run(f" dated {deed_date}")
+                            run.font.size = Pt(9)
+
+                        run = p.add_run(" and identified in ")
+                        run.font.size = Pt(9)
+
+                # Add plan reference
+                run = p.add_run(f"{report.certificate_survey_plan_ref}")
                 run.font.bold = True
                 run.font.size = Pt(9)
 
-                run = p.add_run(f"dated {report.certificate_survey_plan_date}.")
+                if report.certificate_survey_plan_date:
+                    run = p.add_run(f" dated {report.certificate_survey_plan_date}")
+                    run.font.size = Pt(9)
+
+                run = p.add_run(".")
                 run.font.size = Pt(9)
 
             # Signature block
@@ -3134,13 +3285,23 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
 
             doc.add_paragraph()
 
+        # ===== SAVE DOCUMENT =====
+        # This MUST be outside the certification block!
+        logger.info("[DOCX] About to save document to BytesIO")
+        # Save to BytesIO
+        file_stream = BytesIO()
+        logger.info("[DOCX] Created BytesIO stream")
+        doc.save(file_stream)
+        logger.info("[DOCX] Document saved to stream")
+        file_stream.seek(0)
+        logger.info("[DOCX] Stream position reset to 0")
 
-            # Save to BytesIO
-            file_stream = BytesIO()
-            doc.save(file_stream)
-            file_stream.seek(0)
+        # Safety check
+        if file_stream is None or file_stream.getvalue() == b'':
+            raise ValueError("Generated document is empty or None")
 
-            return file_stream
+        logger.info(f"Document generated successfully, size: {len(file_stream.getvalue())} bytes")
+        return file_stream
 
     except AttributeError as e:
         logger.error(f"Missing required field in report generation: {e}", exc_info=True)

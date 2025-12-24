@@ -189,10 +189,10 @@ class RateLimiter:
 
         # Clean up buckets that haven't been used
         clients_to_remove = []
+        endpoints_to_remove = []
 
         for client_id, endpoints in self.buckets.items():
             # Remove endpoints that are full (haven't been used in a while)
-            endpoints_to_remove = []
             for endpoint, bucket in endpoints.items():
                 if bucket.tokens >= bucket.capacity:
                     endpoints_to_remove.append(endpoint)
@@ -275,12 +275,13 @@ def configure_rate_limits():
     rate_limiter.configure_endpoint("/api/locality/generate-narrative", requests_per_minute=20)
 
     # Document generation (resource intensive)
-    rate_limiter.configure_endpoint("/api/reports/", requests_per_minute=30)  # Prefix match for all report operations
+    rate_limiter.configure_endpoint("/api/reports", requests_per_minute=30)  # Prefix match for all report operations
     rate_limiter.configure_endpoint("/api/submit-and-generate", requests_per_minute=5)
 
     # Maps API endpoints (has external quota)
-    rate_limiter.configure_endpoint("/api/geocode", requests_per_minute=60)
-    rate_limiter.configure_endpoint("/api/directions", requests_per_minute=60)
+    rate_limiter.configure_endpoint("/api/maps/geocode", requests_per_minute=60)
+    rate_limiter.configure_endpoint("/api/maps/directions", requests_per_minute=60)
+    rate_limiter.configure_endpoint("/api/maps/static-map", requests_per_minute=60)
 
     logger.info("✓ Rate limits configured for all endpoints")
 

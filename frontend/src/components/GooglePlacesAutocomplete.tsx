@@ -163,7 +163,7 @@ export function GooglePlacesAutocomplete({
           <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto">
             {suggestions.map((suggestion, index) => (
               <button
-                key={index}
+                key={suggestion.place_id}
                 type="button"
                 onClick={() => handlePlaceSelect(suggestion.place_id, suggestion.description)}
                 className="w-full text-left px-4 py-2 hover:bg-blue-50 focus:bg-blue-50 focus:outline-none border-b border-gray-100 last:border-b-0"

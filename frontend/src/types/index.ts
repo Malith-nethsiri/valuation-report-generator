@@ -283,14 +283,13 @@ export interface BuildingValuation {
   building_name?: string;
   components: ValuationComponent[];
   subtotal: number;
-
   // Depreciation fields
-  construction_year?: number;  // e.g., 2010
-  age_years?: number;  // Auto-calculated from construction_year
-  economic_life_years?: number;  // Default by building type, editable
-  depreciation_rate_percent?: number;  // Auto-calculated or manual
-  depreciation_amount?: number;  // Calculated depreciation value
-  depreciated_value?: number;  // Final value after depreciation
+  economic_life_years?: number;
+  construction_year?: number;
+  age_years?: number;
+  depreciation_rate_percent?: number;
+  depreciation_amount?: number;
+  depreciated_value?: number;
 }
 
 export interface ValuationAddon {
@@ -300,9 +299,12 @@ export interface ValuationAddon {
 }
 
 // NEW: Simplified Road Condition Type
+export type RoadType = 'paved_road' | 'concrete_road' | 'carpet_road' | 'gravel_road' | 'sand_road' | 'earth_road';
+
 export interface RoadCondition {
-  road_type: 'paved_road' | 'carpet_road' | 'gravel_road' | 'sand_road' | 'earth_road';
+  road_type: RoadType;
   condition: 'excellent' | 'good' | 'fair' | 'poor';
+  distance_km?: number;  // Optional distance in kilometers
   notes?: string;
 }
 
@@ -318,7 +320,7 @@ export interface RoadSegment {
   distance_text?: string;
 
   // User-entered details
-  road_type?: 'paved_road' | 'carpet_road' | 'gravel_road' | 'sand_road' | 'earth_road';
+  road_type?: RoadType;
   surface_condition?: 'excellent' | 'good' | 'fair' | 'poor';
   road_width_meters?: number;
   additional_notes?: string;
@@ -381,6 +383,7 @@ export interface Report {
   // Submission Destination
   submission_organization?: string;
   submission_address?: string;
+  submission_recipient_position?: string;
 
   // Date of Inspection
   inspection_date?: string;
@@ -399,7 +402,6 @@ export interface Report {
   use_applicant_address_as_property?: boolean;
   property_name?: string;
   assessment_number?: string;
-  property_address_full?: string;
   property_village?: string;
   property_divisional_secretariat?: string;
   property_district?: string;
@@ -644,6 +646,7 @@ export interface ReportCreate {
   // Submission Destination
   submission_organization?: string;
   submission_address?: string;
+  submission_recipient_position?: string;
 
   // Date of Inspection
   inspection_date?: string;
@@ -662,7 +665,6 @@ export interface ReportCreate {
   use_applicant_address_as_property?: boolean;
   property_name?: string;
   assessment_number?: string;
-  property_address_full?: string;
   property_village?: string;
   property_divisional_secretariat?: string;
   property_district?: string;

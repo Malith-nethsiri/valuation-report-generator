@@ -219,8 +219,8 @@ const DashboardPage: React.FC = () => {
                                 <button
                                     key={index}
                                     className={`w-full flex items-center justify-between px-4 py-3 text-left text-sm font-medium rounded-2xl transition-all duration-200 ${item.active
-                                            ? 'bg-gradient-to-r from-violet-500 to-purple-600 text-white shadow-lg shadow-violet-500/25'
-                                            : 'text-gray-700 hover:bg-gray-100'
+                                        ? 'bg-gradient-to-r from-violet-500 to-purple-600 text-white shadow-lg shadow-violet-500/25'
+                                        : 'text-gray-700 hover:bg-gray-100'
                                         }`}
                                 >
                                     <div className="flex items-center">
@@ -388,8 +388,8 @@ const DashboardPage: React.FC = () => {
                                             >
                                                 <div className="flex items-center space-x-4">
                                                     <div className={`p-2 rounded-xl ${report.status === 'completed'
-                                                            ? 'bg-green-100 text-green-600'
-                                                            : 'bg-orange-100 text-orange-600'
+                                                        ? 'bg-green-100 text-green-600'
+                                                        : 'bg-orange-100 text-orange-600'
                                                         }`}>
                                                         <FileText className="h-5 w-5" />
                                                     </div>
@@ -414,8 +414,8 @@ const DashboardPage: React.FC = () => {
                                                                 {new Date(report.created_at).toLocaleDateString()}
                                                             </span>
                                                             <span className={`px-2 py-1 rounded-full text-xs font-medium ${report.status === 'completed'
-                                                                    ? 'bg-green-100 text-green-800'
-                                                                    : 'bg-orange-100 text-orange-800'
+                                                                ? 'bg-green-100 text-green-800'
+                                                                : 'bg-orange-100 text-orange-800'
                                                                 }`}>
                                                                 {report.status?.charAt(0).toUpperCase() + report.status?.slice(1)}
                                                             </span>
@@ -442,8 +442,8 @@ const DashboardPage: React.FC = () => {
                                                         }}
                                                         disabled={report.status !== 'completed'}
                                                         className={`p-2 rounded-xl transition-all duration-200 ${report.status === 'completed'
-                                                                ? 'text-violet-600 hover:bg-violet-100'
-                                                                : 'text-gray-400 cursor-not-allowed'
+                                                            ? 'text-violet-600 hover:bg-violet-100'
+                                                            : 'text-gray-400 cursor-not-allowed'
                                                             }`}
                                                     >
                                                         <Eye className="h-5 w-5" />

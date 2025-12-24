@@ -9,6 +9,88 @@ from typing import Dict, Any, List, Optional
 from anthropic import Anthropic
 import re
 
+# MAJOR landmarks to KEEP (for turn reference):
+MAJOR_LANDMARK_KEYWORDS = {
+    'junction', 'roundabout', 'intersection',
+    'railway crossing', 'railway station', 'bridge',
+    'town', 'city'
+}
+
+# MINOR landmarks to REMOVE:
+MINOR_LANDMARK_KEYWORDS = {
+    'salon', 'shop', 'store', 'bakery', 'restaurant',
+    'hotel', 'building', 'house', 'on the', 'near'
+}
+
+
+def filter_landmarks(landmarks: List[str]) -> List[str]:
+    """
+    Filter landmarks to keep only major ones (junctions, towns, railway crossings).
+    Remove minor landmarks (shops, salons, small businesses).
+
+    Args:
+        landmarks: List of extracted landmark strings
+
+    Returns:
+        List of filtered major landmarks only
+    """
+    filtered = []
+    for landmark in landmarks:
+        landmark_lower = landmark.lower()
+
+        # Check if contains minor keywords - skip these
+        if any(keyword in landmark_lower for keyword in MINOR_LANDMARK_KEYWORDS):
+            # Special case: "Hotel" can be major if part of a junction/town name
+            if 'junction' not in landmark_lower and 'town' not in landmark_lower:
+                continue
+
+        # Check if contains major keywords - keep these
+        if any(keyword in landmark_lower for keyword in MAJOR_LANDMARK_KEYWORDS):
+            filtered.append(landmark)
+            continue
+
+        # Check if proper noun (capitalized multi-word like "Digampathana")
+        # AND not too long (< 4 words usually means it's a place name, not a business)
+        words = landmark.split()
+        if landmark and landmark[0].isupper() and 1 <= len(words) <= 3:
+            filtered.append(landmark)
+
+    return filtered
+
+
+def detect_road_class_from_name(road_name: str) -> Optional[Dict[str, str]]:
+    """
+    Detect Sri Lankan road class from road name (for backend analytics only).
+    Returns: {"class": "A", "number": "6", "confidence": "high"} or None
+
+    NOTE: This is for backend analytics only - NOT shown in output text.
+    """
+    if not road_name:
+        return None
+
+    patterns = [
+        (r'\bA(\d+)\b', 'A'),           # A6, A1, A12
+        (r'\bB(\d+)\b', 'B'),           # B425, B28
+        (r'\bE0?(\d+)\b', 'E'),         # E01, E3 (Expressways)
+        (r'\bClass\s+A\b', 'A'),        # "Class A Road"
+        (r'\bClass\s+B\b', 'B'),
+        (r'\bClass\s+C\b', 'C'),
+        (r'\bClass\s+D\b', 'D'),
+    ]
+
+    for pattern, road_class in patterns:
+        match = re.search(pattern, road_name, re.IGNORECASE)
+        if match:
+            result = {
+                "class": road_class,
+                "confidence": "high"
+            }
+            if match.groups():
+                result["number"] = match.group(1)
+            return result
+
+    return None  # Assume "Local" if can't detect
+
 
 def extract_navigation_entities(steps: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
@@ -262,17 +344,22 @@ def transform_directions_to_professional(
                 route_description += f" - {distance}"
             route_description += "\n"
 
+    # Apply landmark filtering to keep only major landmarks
+    if navigation_entities.get('landmarks'):
+        navigation_entities['landmarks'] = filter_landmarks(navigation_entities['landmarks'])
+
     # Build road conditions description (NEW simplified format)
     road_conditions_text = ""
     if road_conditions and len(road_conditions) > 0:
-        road_conditions_text = "\nROAD SURFACE CONDITIONS (Apply to entire route - NO per-type distances):\n"
-        road_conditions_text += "These road types exist along the route. Integrate them naturally into turn-by-turn navigation.\n"
+        road_conditions_text = "\nROAD SURFACE CONDITIONS:\n"
+        road_conditions_text += "List road types encountered with their conditions at the END of the paragraph.\n"
         road_type_map = {
-            'paved_road': 'Paved road / Asphalt',
-            'carpet_road': 'Carpet road',
-            'gravel_road': 'Gravel road',
-            'sand_road': 'Sand road',
-            'earth_road': 'Earth road'
+            'paved_road': 'paved road',
+            'concrete_road': 'concrete road',
+            'carpet_road': 'carpet road',
+            'gravel_road': 'gravel road',
+            'sand_road': 'sand road',
+            'earth_road': 'earth road'
         }
         for cond in road_conditions:
             road_type = road_type_map.get(cond.get('road_type', ''), cond.get('road_type', ''))
@@ -287,9 +374,9 @@ def transform_directions_to_professional(
             road_conditions_text += "\n"
 
         # CRITICAL: Add anti-hallucination instruction
-        road_conditions_text += "\n⚠️ IMPORTANT: DO NOT allocate specific kilometers to each road type (e.g., NO '14.4km paved road').\n"
-        road_conditions_text += "Instead, use road conditions in parentheses when mentioning actual roads from turn-by-turn directions.\n"
-        road_conditions_text += "Example: 'proceed along A6 (paved road in excellent condition)'\n"
+        road_conditions_text += "\n⚠️ CRITICAL: Add road summary at the VERY END of the paragraph.\n"
+        road_conditions_text += "Format: 'The access comprises [road type] in [condition], [road type] in [condition], and [road type] fronting the property.'\n"
+        road_conditions_text += "DO NOT mention road classifications (Class A, B, C) anywhere in the output.\n"
 
     # BACKWARD COMPATIBILITY: Handle old road_segments format if present
     elif road_segments and len(road_segments) > 0:
@@ -330,83 +417,65 @@ def transform_directions_to_professional(
     if not route_description:
         route_description = "No route data provided."
 
-    prompt = f"""You are an expert at writing professional property valuation reports in Sri Lanka.
-Convert the following route information into a natural, professional access description paragraph.
+    prompt = f"""Generate professional property access directions in Sri Lankan valuation report style.
 
 ════════════════════════════════════════════════════════════════
-SECTION A: NAVIGATION DETAILS (PRIMARY - MUST USE ALL)
+OUTPUT REQUIREMENTS (CRITICAL)
+════════════════════════════════════════════════════════════════
+
+1. Single paragraph only
+2. DO NOT mention road classifications (Class A, B, C, etc.) ANYWHERE in the output
+3. Use ONLY major landmarks for turn references (junctions, towns, railway crossings)
+4. Remove minor landmarks (shops, salons, restaurants)
+5. Format: Navigation first, then road summary at very end
+
+════════════════════════════════════════════════════════════════
+NAVIGATION SECTION (FIRST 80% OF PARAGRAPH)
 ════════════════════════════════════════════════════════════════
 
 STARTING POINT: {starting_point_name}
 TOTAL DISTANCE: {total_distance_km:.1f} km
-TOTAL DURATION: {total_duration_mins} minutes
 PROPERTY POSITION: {property_side} side of the road
 
-SPECIFIC ROAD NAMES (MUST include in output):
+ROAD NAMES:
 {format_road_names(navigation_entities.get('road_names', []))}
 
-LANDMARKS (MUST include when available):
+MAJOR LANDMARKS (for turn reference only):
 {format_landmarks(navigation_entities.get('landmarks', []))}
 
-TURN-BY-TURN NAVIGATION (MUST include turn directions):
+TURN-BY-TURN DIRECTIONS:
 {format_major_turns(navigation_entities.get('major_turns', []))}
 
+Navigation Format:
+- Start: "From {{starting_point_name}}, proceed along..."
+- Include: Road names, distances ("about X km"), turn directions
+- Use landmarks ONLY for WHERE to turn (e.g., "up to Digampathana, turn right", "before Railway crossing turn left")
+- End navigation: "...to reach the property on the {{property_side}} hand side of the road fronting same."
+
 ════════════════════════════════════════════════════════════════
-SECTION B: ROAD SURFACE CONDITIONS (SECONDARY - INTEGRATE NATURALLY)
+ROAD SUMMARY SECTION (LAST 20% - AT THE VERY END)
 ════════════════════════════════════════════════════════════════
 
 {road_conditions_text}
 
-IMPORTANT: Add these in parentheses when mentioning roads, e.g.:
-"proceed along A6 (paved road in excellent condition)"
+Format: "The access comprises [road type] in [condition], [road type] in [condition], and [road type] fronting the property."
+Example: "The access comprises paved road in good condition, gravel road in fair condition, and concrete road in excellent condition fronting the property."
+
+🚨 CRITICAL RULES:
+- Add this sentence at the VERY END after the navigation
+- DO NOT mention road types inline with navigation
+- DO NOT invent distances for road types
+- Make this section OPTIONAL - if no road data provided, omit entirely
 
 ════════════════════════════════════════════════════════════════
-CRITICAL REQUIREMENTS (PRIORITIZED)
+COMPLETE EXAMPLE OUTPUT
 ════════════════════════════════════════════════════════════════
 
-PRIORITY 1 - Navigation Details:
-✓ Include SPECIFIC road names from Section A (e.g., "A6", "Dambulla Road")
-✓ Include turn instructions with LEFT/RIGHT directions
-✓ Include landmarks naturally (e.g., "before the Railway crossing", "at Deshapriya Hotel")
-
-PRIORITY 2 - Road Conditions Integration:
-✓ Add road conditions in parentheses: "(paved road in excellent condition)"
-✓ Do NOT let road conditions dominate the narrative
-✓ Balance: 70% navigation details, 30% road conditions
-✓ 🚨 CRITICAL - ANTI-HALLUCINATION RULES:
-  - NEVER create distance breakdowns per road type (e.g., WRONG: "14.4km paved road, 13.0km carpet road")
-  - NEVER allocate portions of total distance to specific road types
-  - ALWAYS integrate road conditions into actual road names from turn-by-turn directions
-  - Example CORRECT: "proceed along A6 (paved road in excellent condition) for 2km, turn onto Wellawa Road (carpet road in good condition)"
-  - Example WRONG: "proceed 14.4 Kilometers on paved road, then 13 Kilometers on carpet road"
-  - If you write "X km/Kilometers [road_type] road" you are HALLUCINATING - STOP
-
-PRIORITY 3 - Professional Format:
-✓ Start with "From {starting_point_name},"
-✓ Use professional language: "proceed along", "turn left onto", "turn right onto"
-✓ Use approximate distances: "about 2 Kilometers", "about 500 Meters"
-✓ Combine small consecutive steps (< 200m) into larger logical segments
-✓ End with property position: "to reach the property on the {property_side} side of the road fronting same"
-✓ ONE flowing paragraph, 2-5 sentences
-✓ NO special characters (¾, ½) - use decimals (0.75, 0.5)
-✓ Title case for road names
-
-════════════════════════════════════════════════════════════════
-EXAMPLES - GOOD OUTPUT SHOWING INTEGRATION
-════════════════════════════════════════════════════════════════
-
-Example 1 - Urban route with landmarks and mixed road conditions:
-"From Clock tower junction of Kurunegala town, proceed along Dambulla Road (paved road in excellent condition) for about 2 Kilometers, before the Railway crossing turn left onto Wellawa Road (carpet road in good condition) and proceed about 500 Meters, turn right onto Araliya Uyana Road, crossing the Railway and proceed about 75 Meters, turn right onto Rathu Araliya Mawatha and proceed about 50 Meters to reach the property on the right side of the road fronting same."
-
-Example 2 - Simple route with landmark:
-"From Puttalam junction of Kurunegala town, proceed along Negombo Road (paved road in excellent condition) for about 1.5 Kilometers, about 250 Meters after crossing Puwakgashandiya color light junction, turn left onto Wijayaba Mawatha and proceed about 50 Meters to reach the property on the right side of the road fronting same."
-
-Example 3 - Highway route with landmark:
-"From Deshapriya Hotel & Bakers 2, turn right onto Ambepussa - Kurunegala - Trincomalee Hwy/A6 (paved road in excellent condition) and proceed about 3 Kilometers, passing Miracle Health Hospital Medical Laboratory on the left, to reach the property on the right side of the road fronting same."
+"From Clocktower junction of Dambulla, proceed along Trincomalee Road for about 17.2km up to Digampathana, turn right on to the road leading to "Aliya Resort" and proceed for about 1km. Then turn left and proceed for about 1.2km to reach the property on the left hand side of the road fronting same. The access comprises paved road in good condition, gravel road in fair condition, and concrete road in excellent condition fronting the property."
 
 ════════════════════════════════════════════════════════════════
 
-Return ONLY the professional access description paragraph following these requirements."""
+Return ONLY the professional access description paragraph."""
 
     try:
         # Call Claude API
@@ -511,22 +580,30 @@ def generate_fallback_access_text(
 
 def validate_summary_mode_output(text: str, road_conditions: List[Dict[str, Any]]) -> bool:
     """
-    Validate that summary mode output doesn't contain hallucinated distance breakdowns.
+    Validate that summary mode output doesn't contain hallucinated distance breakdowns
+    or road classification mentions (Class A, B, C).
     Returns True if valid, False if contains hallucination patterns.
     """
+    import re
+
+    # Check for road class mentions (should be absent - NEW validation)
+    if re.search(r'\bClass\s+[A-E]\b', text, re.IGNORECASE):
+        print(f"[VALIDATION FAILED] Output contains road classification (Class A/B/C) which should not be shown")
+        return False
+
     if not road_conditions:
         return True
 
     # Check for patterns like "X km paved road" or "X Kilometers carpet road"
     road_type_map = {
         'paved_road': ['paved', 'asphalt'],
+        'concrete_road': ['concrete'],
         'carpet_road': ['carpet'],
         'gravel_road': ['gravel'],
         'sand_road': ['sand'],
         'earth_road': ['earth']
     }
 
-    import re
     for cond in road_conditions:
         road_type = cond.get('road_type', '')
         type_keywords = road_type_map.get(road_type, [])

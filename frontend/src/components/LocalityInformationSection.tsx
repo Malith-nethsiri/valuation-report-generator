@@ -124,13 +124,6 @@ const LocalityInformationSection: React.FC<Props> = ({
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
 
-  // Debug logging
-  useEffect(() => {
-    console.log('[LocalityInformationSection] Received data:', data);
-    console.log('[LocalityInformationSection] Nearby facilities count:', data.nearby_facilities?.length || 0);
-    console.log('[LocalityInformationSection] Property coords:', { lat: propertyLatitude, lng: propertyLongitude });
-  }, [data, propertyLatitude, propertyLongitude]);
-
   // Auto-check "Public Transport Available" when transport data is present
   useEffect(() => {
     if ((data.nearest_bus_stop_name || data.nearest_railway_station) && !data.has_public_transport) {
@@ -242,13 +235,11 @@ const LocalityInformationSection: React.FC<Props> = ({
 
     try {
       const token = authTokenStorage.getToken();
-      console.log('[LOCALITY] Generate narrative - Auth token present:', !!token);
 
       if (!token) {
         throw new Error('Authentication required. Please log in again.');
       }
 
-      console.log('[LOCALITY] Sending narrative generation request...');
       const response = await fetch(`${API_BASE_URL}/api/locality/generate-narrative`, {
         method: 'POST',
         headers: {
@@ -264,8 +255,6 @@ const LocalityInformationSection: React.FC<Props> = ({
         })
       });
 
-      console.log('[LOCALITY] Narrative response status:', response.status);
-
       if (response.status === 401) {
         console.error('[LOCALITY] Token expired or invalid');
         throw new Error('Your session has expired. Please refresh the page and log in again.');
@@ -277,7 +266,6 @@ const LocalityInformationSection: React.FC<Props> = ({
       }
 
       const result = await response.json();
-      console.log('[LOCALITY] Narrative generated successfully');
       onChange({ locality_description_text: result.narrative });
 
     } catch (err: any) {
@@ -310,13 +298,11 @@ const LocalityInformationSection: React.FC<Props> = ({
 
   // Toggle facility selection
   const toggleFacilitySelection = (facility: Facility) => {
-    console.log('[LocalityInformationSection] Toggling facility:', facility.name);
     const updated = (data.nearby_facilities || []).map(f =>
       f.name === facility.name && f.type === facility.type
         ? { ...f, selected: !f.selected }
         : f
     );
-    console.log('[LocalityInformationSection] Updated facilities:', updated.filter(f => f.selected).length, 'selected');
     onChange({ nearby_facilities: updated });
   };
 
@@ -441,10 +427,7 @@ const LocalityInformationSection: React.FC<Props> = ({
             <Label>Nearest Major Town</Label>
             <Input
               value={data.major_town_name || ''}
-              onChange={(e) => {
-                console.log('[LocalityInformationSection] Major town changed:', e.target.value);
-                onChange({ major_town_name: e.target.value });
-              }}
+              onChange={(e) => onChange({ major_town_name: e.target.value })}
               placeholder="e.g., Rambukkana"
             />
           </div>
@@ -454,10 +437,7 @@ const LocalityInformationSection: React.FC<Props> = ({
               type="number"
               step="0.1"
               value={data.distance_to_major_town_km || ''}
-              onChange={(e) => {
-                console.log('[LocalityInformationSection] Distance changed:', e.target.value);
-                onChange({ distance_to_major_town_km: Number(e.target.value) });
-              }}
+              onChange={(e) => onChange({ distance_to_major_town_km: Number(e.target.value) })}
               placeholder="e.g., 2.4"
             />
           </div>

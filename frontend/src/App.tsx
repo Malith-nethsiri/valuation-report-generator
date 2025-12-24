@@ -34,7 +34,7 @@ const LandingPage: React.FC = () => {
                         </div>
                     </div>
                     <h1 className="text-5xl md:text-7xl font-black gradient-text-primary mb-6">
-                        Valuatiion Report
+                        Valuation Report
                     </h1>
                     <h2 className="text-2xl md:text-3xl font-bold text-gray-800 mb-6">
                         Valuation Report Generation Platform

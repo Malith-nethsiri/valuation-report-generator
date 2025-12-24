@@ -184,7 +184,7 @@ export const AutocompleteInput: React.FC<AutocompleteInputProps> = ({
         <div className="flex flex-wrap gap-2 mb-2">
           {selectedItems.map((item, index) => (
             <span
-              key={index}
+              key={`${item}-${index}`}
               className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-emerald-100 text-emerald-800 border border-emerald-200"
             >
               {item}
@@ -241,7 +241,7 @@ export const AutocompleteInput: React.FC<AutocompleteInputProps> = ({
           {filteredSuggestions.length > 0 ? (
             <ul className="py-1">
               {filteredSuggestions.map((suggestion, index) => (
-                <li key={index}>
+                <li key={`${suggestion}-${index}`}>
                   <button
                     type="button"
                     className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 focus:bg-gray-100 focus:outline-none flex items-center justify-between ${

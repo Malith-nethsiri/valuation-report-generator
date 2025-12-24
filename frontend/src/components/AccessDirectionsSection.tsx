@@ -362,27 +362,7 @@ export function AccessDirectionsSection({ formData, updateFormData }: Props) {
             </div>
           )}
 
-          {/* Turn-by-Turn Directions - MOVED TO BOTTOM */}
-          {routeData.steps && routeData.steps.length > 0 && (
-            <div className="border rounded-lg p-4 bg-gray-50">
-              <h4 className="font-medium mb-3 text-gray-700">Turn-by-Turn Directions Reference:</h4>
-              <ol className="space-y-2">
-                {routeData.steps.map((step, idx) => (
-                  <li key={idx} className="flex gap-3 text-sm">
-                    <span className="flex-shrink-0 w-6 h-6 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center text-xs font-medium">
-                      {idx + 1}
-                    </span>
-                    <div className="flex-1">
-                      <div className="text-gray-900">{cleanInstruction(step.instruction)}</div>
-                      <div className="text-gray-500 text-xs mt-1">
-                        {step.distance} • {step.duration}
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-            </div>
-          )}
+          {/* Turn-by-Turn Directions - HIDDEN (data still used for prompt generation) */}
         </div>
       )}
 

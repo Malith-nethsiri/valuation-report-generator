@@ -6,6 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { reportApi } from '../services/api';
 import toast from 'react-hot-toast';
 import { Report } from '../types';
+import { authTokenStorage } from '../utils/secureStorage';
 
 const ResidentialPropertyForm: React.FC = () => {
   const navigate = useNavigate();
@@ -33,8 +34,30 @@ const ResidentialPropertyForm: React.FC = () => {
 
       try {
         const report = await reportApi.getReport(parseInt(reportId));
-        setExistingReport(report);
-        console.log('[ResidentialPropertyForm] Loaded report for editing:', report);
+
+        // Clean up old length/width fields from room data before loading into form
+        const cleanedReport = { ...report };
+        if (cleanedReport.buildings && Array.isArray(cleanedReport.buildings)) {
+          cleanedReport.buildings = cleanedReport.buildings.map((building: any) => ({
+            ...building,
+            floors: building.floors?.map((floor: any) => ({
+              ...floor,
+              rooms: floor.rooms?.map((room: any) => {
+                // Remove old length and width fields that may be null
+                const { length, width, ...cleanRoom } = room;
+                return cleanRoom;
+              }) || []
+            })) || []
+          }));
+        }
+
+        // Ensure property_photos is always an array
+        if (!cleanedReport.property_photos) {
+          cleanedReport.property_photos = [];
+        }
+
+        setExistingReport(cleanedReport);
+        console.log('[ResidentialPropertyForm] Loaded report for editing:', cleanedReport);
       } catch (error: any) {
         console.error('Failed to load report:', error);
         toast.error('Failed to load report for editing');
@@ -58,7 +81,7 @@ const ResidentialPropertyForm: React.FC = () => {
       return;
     }
 
-    const token = localStorage.getItem('authToken');
+    const token = authTokenStorage.getToken();
     if (!token) {
       console.error('[ResidentialPropertyForm] No auth token found');
       toast.error('Your session has expired. Please log in again.');
@@ -68,10 +91,28 @@ const ResidentialPropertyForm: React.FC = () => {
 
     setIsSubmitting(true);
     try {
+      // Clean up old fields from rooms data before sending to API
+      const cleanedData = { ...data };
+      if (cleanedData.buildings && Array.isArray(cleanedData.buildings)) {
+        cleanedData.buildings = cleanedData.buildings.map((building: any) => ({
+          ...building,
+          floors: building.floors?.map((floor: any) => ({
+            ...floor,
+            rooms: floor.rooms?.map((room: any) => {
+              // Remove length and width fields if they exist
+              const { length, width, ...cleanRoom } = room;
+              return cleanRoom;
+            }) || []
+          })) || []
+        }));
+      }
+
       const reportData = {
-        ...data,
+        ...cleanedData,
         report_type: 'residential_property',
-        status: submissionType === 'complete' ? 'completed' : 'draft'
+        status: submissionType === 'complete' ? 'completed' : 'draft',
+        // Ensure property_photos is always an array, not null
+        property_photos: cleanedData.property_photos || []
       };
 
       console.log('[ResidentialPropertyForm] About to send to API:', reportData);
@@ -129,7 +170,7 @@ const ResidentialPropertyForm: React.FC = () => {
       return;
     }
 
-    const token = localStorage.getItem('authToken');
+    const token = authTokenStorage.getToken();
     if (!token) {
       toast.error('Session expired. Please log in again.');
       navigate('/login');
