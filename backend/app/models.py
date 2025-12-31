@@ -40,8 +40,9 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    # Relationship to reports (with cascading delete)
+    # Relationships (with cascading delete)
     reports = relationship("Report", back_populates="user", cascade="all, delete-orphan")
+    properties = relationship("Property", back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<User(id={self.id}, email='{self.email}', full_name='{self.full_name}', designation='{self.professional_designation}')>"
@@ -210,6 +211,7 @@ class Report(Base):
     land_condition = Column(String(50), nullable=True)
     land_condition_description = Column(Text, nullable=True)
     land_description_text = Column(Text, nullable=True)
+    ongoing_construction_notes = Column(Text, nullable=True)  # Development feasibility/construction status
 
     # Topographical Features
     elevation_changes = Column(String(50), nullable=True)
@@ -320,11 +322,261 @@ class Report(Base):
     certification_valuer_designation = Column(String(200), nullable=True)
     certification_date = Column(String(50), nullable=True)
 
+    # ===== MULTI-PROPERTY SUPPORT =====
+    is_multi_property = Column(Boolean, default=False, nullable=False)
+    property_count = Column(Integer, default=1, nullable=False)
+    total_valuation_amount = Column(Numeric(15, 2), nullable=True)
+    invoice_data = Column(JSON, nullable=True)  # {items: [...], subtotal, discount, total, payment_terms, bank_details}
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
-    # Relationship to user
+    # Relationships
     user = relationship("User", back_populates="reports")
+    property_associations = relationship("ReportProperty", back_populates="report", cascade="all, delete-orphan")
+
+    @property
+    def properties(self):
+        """Get all properties for this report, ordered by property_order"""
+        return [rp.property for rp in sorted(self.property_associations, key=lambda x: x.property_order)]
 
     def __repr__(self):
-        return f"<Report(id={self.id}, user_id={self.user_id}, type='{self.report_type}', status='{self.status}')>"
+        return f"<Report(id={self.id}, user_id={self.user_id}, type='{self.report_type}', status='{self.status}', multi={self.is_multi_property})>"
+
+
+class Property(Base):
+    """
+    Property model - stores individual property data for multi-property valuation reports.
+
+    Each property represents a distinct piece of real estate with its own:
+    - Location, access, and boundaries
+    - Buildings and improvements
+    - Valuation data
+    - Legal aspects
+    - Can be reused across multiple reports (Property Library feature)
+    """
+    __tablename__ = "properties"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+
+    # Property Status & Type (for multi-property reports)
+    status = Column(String(50), nullable=False, default="draft")  # 'draft' or 'completed'
+    property_type = Column(String(50), nullable=False, default="residential")  # 'residential' or 'bare_land'
+
+    # Property Identification
+    property_lot_description = Column(String(200), nullable=True)
+    plan_number = Column(String(100), nullable=True)
+    plan_date = Column(String(50), nullable=True)
+    licensed_surveyor_name = Column(String(255), nullable=True)
+    property_identification_type = Column(String(50), nullable=True)
+    property_identification_documents = Column(JSON, nullable=True)
+
+    # Deed Information
+    has_deed_info = Column(String(10), nullable=True)
+    deeds = Column(JSON, nullable=True)
+
+    # Property Location
+    property_name = Column(String(200), nullable=True)
+    assessment_number = Column(String(100), nullable=True)
+    property_village = Column(String(200), nullable=True)
+    property_divisional_secretariat = Column(String(200), nullable=True)
+    property_district = Column(String(100), nullable=True)
+    property_province = Column(String(100), nullable=True)
+    property_latitude = Column(Numeric(10, 8), nullable=True)
+    property_longitude = Column(Numeric(11, 8), nullable=True)
+    property_number = Column(String(50), nullable=True)
+    grama_niladari_division = Column(String(200), nullable=True)
+    korale = Column(String(300), nullable=True)
+    pradeshiya_sabha = Column(String(200), nullable=True)
+    ward_number = Column(String(20), nullable=True)
+    is_municipal_limit = Column(Boolean, nullable=True)
+    location_direction = Column(String(50), nullable=True)
+
+    # Access Directions
+    access_starting_point_name = Column(Text, nullable=True)
+    access_starting_point_latitude = Column(Numeric(10, 8), nullable=True)
+    access_starting_point_longitude = Column(Numeric(11, 8), nullable=True)
+    access_route_data = Column(JSON, nullable=True)
+    access_directions_text = Column(Text, nullable=True)
+    access_distance_km = Column(Numeric(10, 2), nullable=True)
+    access_duration_minutes = Column(Integer, nullable=True)
+    access_road_type = Column(String(200), nullable=True)
+    property_road_position = Column(String(100), nullable=True)
+    location_map_image_data = Column(Text, nullable=True)
+    access_road_segments = Column(JSON, nullable=True)
+    access_road_conditions = Column(JSON, nullable=True)
+    access_entry_mode = Column(String(20), nullable=True)
+    access_road_classes_detected = Column(JSON, nullable=True)
+
+    # Land Extent & Boundaries
+    land_extent_acres = Column(Numeric(8, 2), nullable=True)
+    land_extent_roods = Column(Integer, nullable=True)
+    land_extent_perches = Column(Numeric(6, 2), nullable=True)
+    land_extent_hectares = Column(Numeric(10, 4), nullable=True)
+    land_extent_square_meters = Column(Numeric(12, 2), nullable=True)
+    land_extent_formatted = Column(String(50), nullable=True)
+    land_traditional_name = Column(String(300), nullable=True)
+    boundaries = Column(JSON, nullable=True)
+    physical_boundaries_types = Column(JSON, nullable=True)
+    physical_boundaries_description = Column(Text, nullable=True)
+    boundary_types_per_direction = Column(JSON, nullable=True)
+    entrance_type = Column(String(100), nullable=True)
+    boundaries_summary_text = Column(Text, nullable=True)
+    has_multiple_lots = Column(Boolean, nullable=True)
+    lots_data = Column(JSON, nullable=True)
+
+    # Property Description
+    land_shape = Column(String(50), nullable=True)
+    land_type = Column(String(50), nullable=True)
+    land_frontage_type = Column(String(100), nullable=True)
+    land_frontage_width = Column(Numeric(6, 2), nullable=True)
+    land_frontage_description = Column(Text, nullable=True)
+    land_level = Column(String(50), nullable=True)
+    land_level_difference = Column(Numeric(8, 2), nullable=True)
+    soil_type = Column(String(50), nullable=True)
+    water_table_depth = Column(Numeric(8, 2), nullable=True)
+    flood_risk = Column(String(50), nullable=True)
+    inundation_risk = Column(String(50), nullable=True)
+    earth_slip_risk = Column(String(50), nullable=True)
+    land_condition = Column(String(50), nullable=True)
+    land_condition_description = Column(Text, nullable=True)
+    land_description_text = Column(Text, nullable=True)
+    elevation_changes = Column(String(50), nullable=True)
+    drainage_pattern = Column(String(50), nullable=True)
+    vegetation_type = Column(String(50), nullable=True)
+    natural_features = Column(Text, nullable=True)
+
+    # Buildings
+    buildings = Column(JSON, nullable=True)
+    occupier_name = Column(String(300), nullable=True)
+    occupier_relationship = Column(String(50), nullable=True)
+
+    # Property Photos
+    property_photos = Column(JSON, nullable=True)
+
+    # Locality Information
+    distance_to_major_town_km = Column(Numeric(6, 2), nullable=True)
+    major_town_name = Column(String(200), nullable=True)
+    nearby_facilities = Column(JSON, nullable=True)
+    has_electricity = Column(Boolean, nullable=True)
+    water_supply_type = Column(String(50), nullable=True)
+    telecommunication_types = Column(JSON, nullable=True)
+    internet_types = Column(JSON, nullable=True)
+    has_public_transport = Column(Boolean, nullable=True)
+    public_transport_routes = Column(Text, nullable=True)
+    public_transport_frequency = Column(String(200), nullable=True)
+    nearest_bus_stop_distance_km = Column(Numeric(6, 2), nullable=True)
+    nearest_bus_stop_name = Column(String(200), nullable=True)
+    nearest_railway_station = Column(String(200), nullable=True)
+    nearest_railway_distance_km = Column(Numeric(6, 2), nullable=True)
+    area_type = Column(String(50), nullable=True)
+    development_level = Column(String(50), nullable=True)
+    predominant_building_type = Column(String(100), nullable=True)
+    is_tourist_area = Column(Boolean, nullable=True)
+    tourist_attractions_nearby = Column(Text, nullable=True)
+    locality_description_text = Column(Text, nullable=True)
+
+    # Legal Aspects
+    ownership_type = Column(String(200), nullable=True)
+    street_lines_status = Column(String(200), nullable=True)
+    street_lines_gazette_ref = Column(String(100), nullable=True)
+    street_lines_gazette_date = Column(String(20), nullable=True)
+    street_lines_impact_description = Column(Text, nullable=True)
+    building_limits_status = Column(String(200), nullable=True)
+    building_distance_from_road = Column(String(50), nullable=True)
+    building_plan_approved = Column(String(20), nullable=True)
+    building_plan_reference = Column(String(200), nullable=True)
+    building_approval_authority = Column(String(200), nullable=True)
+    building_within_limits = Column(String(3), nullable=True)
+    local_authority_data = Column(Text, nullable=True)
+    local_authority_rated = Column(String(3), nullable=True)
+    local_authority_tax_levy = Column(Text, nullable=True)
+    rent_act_effectiveness = Column(String(200), nullable=True)
+    title_search_conducted = Column(String(3), nullable=True)
+    pedigree_search_conducted = Column(String(3), nullable=True)
+    valuation_basis_note = Column(Text, nullable=True)
+    property_encumbered = Column(String(3), nullable=True)
+    encumbrance_type = Column(String(100), nullable=True)
+    encumbrance_details = Column(Text, nullable=True)
+
+    # Comparable Properties & Valuation
+    comparable_properties = Column(JSON, nullable=True)
+    land_market_analysis = Column(Text, nullable=True)
+    valuation_land_extent = Column(Numeric(10, 2), nullable=True)
+    valuation_rate_per_perch = Column(Numeric(12, 2), nullable=True)
+    valuation_total_land_value = Column(Numeric(15, 2), nullable=True)
+    valuation_buildings_data = Column(JSON, nullable=True)
+    valuation_total_buildings_value = Column(Numeric(15, 2), nullable=True)
+    valuation_addons = Column(JSON, nullable=True)
+    valuation_total_addons_value = Column(Numeric(15, 2), nullable=True)
+    valuation_market_value = Column(Numeric(15, 2), nullable=True)
+    valuation_forced_sale_percentage = Column(Numeric(5, 2), nullable=True)
+    valuation_forced_sale_value = Column(Numeric(15, 2), nullable=True)
+    valuation_insurance_value = Column(Numeric(15, 2), nullable=True)
+    valuation_manual_overrides = Column(JSON, nullable=True)
+
+    # Property Owner (can differ from report applicant for family properties)
+    property_owner_title = Column(String(20), nullable=True)
+    property_owner_full_name = Column(String(500), nullable=True)
+    property_owner_id_type = Column(String(50), nullable=True)
+    property_owner_id_number = Column(String(100), nullable=True)
+    has_additional_owner = Column(String(10), nullable=True)
+    additional_owner_names = Column(Text, nullable=True)
+
+    # Per-property inspection date (can differ from report date)
+    inspection_date = Column(String(50), nullable=True)
+
+    # OCR Metadata
+    uploaded_documents = Column(JSON, nullable=True)
+    field_sources = Column(JSON, nullable=True)
+    survey_plan_scale = Column(String(50), nullable=True)
+    plan_reference_notes = Column(Text, nullable=True)
+
+    # Property Library Support
+    is_template = Column(Boolean, default=False, nullable=True)
+    template_name = Column(String(200), nullable=True)
+    last_valued_date = Column(String(50), nullable=True)
+
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Relationships
+    user = relationship("User", back_populates="properties")
+    report_associations = relationship("ReportProperty", back_populates="property", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<Property(id={self.id}, lot='{self.property_lot_description}', village='{self.property_village}', district='{self.property_district}')>"
+
+
+class ReportProperty(Base):
+    """
+    ReportProperty junction table - enables many-to-many relationship between Reports and Properties.
+
+    Allows:
+    - One report to contain multiple properties
+    - One property to be included in multiple reports (reuse via Property Library)
+    - Custom ordering of properties within a report (drag-drop support)
+    - Per-report-property overrides (e.g., different valuation for different purposes)
+    """
+    __tablename__ = "report_properties"
+
+    id = Column(Integer, primary_key=True, index=True)
+    report_id = Column(Integer, ForeignKey("reports.id", ondelete="CASCADE"), nullable=False)
+    property_id = Column(Integer, ForeignKey("properties.id", ondelete="CASCADE"), nullable=False)
+    property_order = Column(Integer, nullable=False, default=1)  # For drag-drop ordering
+
+    # Optional per-report-property data
+    report_specific_notes = Column(Text, nullable=True)
+    override_market_value = Column(Numeric(15, 2), nullable=True)
+    override_forced_sale_value = Column(Numeric(15, 2), nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    report = relationship("Report", back_populates="property_associations")
+    property = relationship("Property", back_populates="report_associations")
+
+    def __repr__(self):
+        return f"<ReportProperty(report_id={self.report_id}, property_id={self.property_id}, order={self.property_order})>"

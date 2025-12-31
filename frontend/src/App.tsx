@@ -9,6 +9,9 @@ import ProfilePage from './pages/ProfilePage';
 import ProfessionalProfilePage from './pages/ProfessionalProfilePage';
 import ReportTypeSelection from './pages/ReportTypeSelection';
 import ResidentialPropertyForm from './pages/ResidentialPropertyForm';
+import MultiPropertyForm from './pages/MultiPropertyForm';
+import BareLandForm from './pages/BareLandForm';
+import ReportEditRouter from './components/ReportEditRouter';
 import { DataCollectionForm } from './components/DataCollectionForm';
 import TestComponents from './pages/TestComponents';
 import { FileText, ArrowRight, Shield, Users, Zap } from 'lucide-react';
@@ -208,10 +211,34 @@ const AppRoutes: React.FC = () => {
                 }
             />
             <Route
+                path="/reports/new/multi_property"
+                element={
+                    <ProtectedRoute>
+                        <MultiPropertyForm />
+                    </ProtectedRoute>
+                }
+            />
+            <Route
+                path="/reports/multi-property/:reportId"
+                element={
+                    <ProtectedRoute>
+                        <MultiPropertyForm />
+                    </ProtectedRoute>
+                }
+            />
+            <Route
+                path="/reports/new/bare_land"
+                element={
+                    <ProtectedRoute>
+                        <BareLandForm />
+                    </ProtectedRoute>
+                }
+            />
+            <Route
                 path="/reports/edit/:reportId"
                 element={
                     <ProtectedRoute>
-                        <ResidentialPropertyForm />
+                        <ReportEditRouter />
                     </ProtectedRoute>
                 }
             />

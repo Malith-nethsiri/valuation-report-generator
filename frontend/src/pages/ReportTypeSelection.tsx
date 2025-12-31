@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Home, Building2, ChevronRight, Star,
   Clock, Users, Award, TrendingUp, Sparkles,
-  FileText, Calendar, MapPin, Shield
+  FileText, Calendar, MapPin, Shield, Layers, Landmark
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -27,8 +27,8 @@ interface ReportType {
 const reportTypes: ReportType[] = [
   {
     id: 'residential_property',
-    name: 'Residential Property Report',
-    description: 'Comprehensive property analysis and valuation report for residential properties including condition assessment, market analysis, and recommendations.',
+    name: 'Residential/Commercial Property Report',
+    description: 'Comprehensive property analysis and valuation report for residential and commercial properties including condition assessment, market analysis, and recommendations.',
     category: 'Real Estate',
     icon: Home,
     color: 'from-emerald-500 to-green-600',
@@ -47,64 +47,46 @@ const reportTypes: ReportType[] = [
     recommended: true
   },
   {
-    id: 'commercial_property',
-    name: 'Commercial Property Report',
-    description: 'In-depth analysis for commercial real estate including cash flow projections, ROI calculations, and market positioning.',
+    id: 'multi_property',
+    name: 'Multi-Property Report',
+    description: 'Value multiple properties in a single comprehensive report with summary page, individual property sections, and combined valuation totals.',
     category: 'Real Estate',
-    icon: Building2,
-    color: 'from-blue-500 to-indigo-600',
-    gradient: 'from-blue-50 to-indigo-100',
+    icon: Layers,
+    color: 'from-violet-500 to-purple-600',
+    gradient: 'from-violet-50 to-purple-100',
     features: [
-      'Cash flow analysis',
-      'ROI calculations',
-      'Zoning compliance',
-      'Commercial market trends',
-      'Investment metrics'
+      'Multiple properties in one report',
+      'Summary page with property listing',
+      'Grand total valuation',
+      'Property library integration',
+      'Professional fee invoice',
+      'Drag-drop property ordering'
     ],
-    estimatedTime: '25-30 minutes',
-    difficulty: 'Advanced',
-    isAvailable: false,
-    comingSoon: true
+    estimatedTime: '25-35 minutes',
+    difficulty: 'Intermediate',
+    isAvailable: true,
+    popular: true
   },
   {
-    id: 'market_analysis',
-    name: 'Market Analysis Report',
-    description: 'Comprehensive market research and trend analysis for specific geographic regions and property types.',
-    category: 'Analytics',
-    icon: TrendingUp,
-    color: 'from-purple-500 to-violet-600',
-    gradient: 'from-purple-50 to-violet-100',
+    id: 'bare_land',
+    name: 'Bare Land Valuation Report',
+    description: 'Comprehensive land-only valuation for vacant lots, development sites, and bare land properties without existing buildings.',
+    category: 'Real Estate',
+    icon: Landmark,
+    color: 'from-amber-500 to-orange-600',
+    gradient: 'from-amber-50 to-orange-100',
     features: [
-      'Market trend analysis',
-      'Price comparisons',
-      'Demographic insights',
-      'Growth projections',
-      'Competitive landscape'
+      'Land extent and boundaries',
+      'Development feasibility assessment',
+      'Infrastructure readiness analysis',
+      'Land-only valuation (no buildings)',
+      'Up to 20 property photos',
+      'Ongoing construction notes'
     ],
-    estimatedTime: '20-25 minutes',
-    difficulty: 'Intermediate',
-    isAvailable: false,
-    comingSoon: true
-  },
-  {
-    id: 'inspection_report',
-    name: 'Property Inspection Report',
-    description: 'Detailed property inspection documentation with photos, condition ratings, and maintenance recommendations.',
-    category: 'Inspection',
-    icon: Shield,
-    color: 'from-orange-500 to-red-500',
-    gradient: 'from-orange-50 to-red-100',
-    features: [
-      'Visual inspection checklist',
-      'Photo documentation',
-      'Condition ratings',
-      'Maintenance priorities',
-      'Repair cost estimates'
-    ],
-    estimatedTime: '30-40 minutes',
-    difficulty: 'Intermediate',
-    isAvailable: false,
-    comingSoon: true
+    estimatedTime: '12-15 minutes',
+    difficulty: 'Beginner',
+    isAvailable: true,
+    popular: false
   }
 ];
 

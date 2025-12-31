@@ -362,6 +362,10 @@ const completeFormSchema = basePropertyPlanSchema
     .merge(baseAdditionalDetailsSchema)
     .merge(baseCertificationSchema);
 
+// Property-only schema for embedded multi-property mode (excludes applicant & additional details)
+const propertyOnlySchema = basePropertyPlanSchema
+    .merge(baseCertificationSchema);
+
 type FormData = z.infer<typeof completeFormSchema> & {
     // Single deed fields (like plan info)
     deed_type?: string;
@@ -429,6 +433,7 @@ type FormData = z.infer<typeof completeFormSchema> & {
     land_condition?: string;
     land_condition_description?: string;
     land_description_text?: string;
+    ongoing_construction_notes?: string;  // Development feasibility/construction status for bare land
     buildings?: any[];
     occupier_name?: string;
     occupier_relationship?: string;
@@ -1997,6 +2002,41 @@ interface MultiStepFormProps {
     isEditMode?: boolean;
     reportId?: number;
     initialData?: Partial<FormData>;
+    reportType?: 'residential_property' | 'bare_land' | 'multi_property';  // Report type
+
+    // Multi-property context props
+    isEmbeddedInMultiProperty?: boolean;
+    commonData?: {
+        // Applicant & Purpose (Step 9)
+        applicant_title?: string;
+        applicant_full_name?: string;
+        applicant_id_type?: string;
+        applicant_id_number?: string;
+        applicant_address_line1?: string;
+        applicant_address_line2?: string;
+        applicant_district?: string;
+        applicant_province?: string;
+        applicant_country?: string;
+        valuation_type?: string;
+        valuation_purpose?: string;
+        property_type_valued?: string;
+        property_ownership?: string;
+        has_additional_owner?: string;
+        additional_owner_names?: string;
+        // Additional Details (Step 10)
+        submission_recipient_position?: string;
+        submission_organization?: string;
+        submission_address?: string;
+        inspection_date?: string;
+        has_special_note?: string;
+        special_note_text?: string;
+        report_reference?: string;
+        report_date?: string;
+    };
+    onSaveProperty?: (data: FormData) => Promise<void>;
+    onFinishProperty?: (data: FormData) => Promise<void>;
+    onCancelProperty?: () => void;
+    hideCertification?: boolean;
 }
 
 interface DataQualityWarning {
@@ -2005,7 +2045,47 @@ interface DataQualityWarning {
     severity: 'warning' | 'info';
 }
 
-const MultiStepForm: React.FC<MultiStepFormProps> = ({ onSubmit, isSubmitting = false, user, isEditMode = false, reportId, initialData }) => {
+const MultiStepForm: React.FC<MultiStepFormProps> = ({
+    onSubmit,
+    isSubmitting = false,
+    user,
+    isEditMode = false,
+    reportId,
+    initialData,
+    reportType = 'residential_property',
+    isEmbeddedInMultiProperty = false,
+    commonData,
+    onSaveProperty,
+    onFinishProperty,
+    onCancelProperty,
+    hideCertification = false
+}) => {
+    const isBareLand = reportType === 'bare_land';
+
+    // Filter steps based on context (multi-property vs standalone)
+    const getActiveSteps = () => {
+        if (!isEmbeddedInMultiProperty) {
+            return steps;  // All 12 steps for standalone reports
+        }
+
+        // Multi-property: Exclude steps 9 (Applicant) and 10 (Additional Details)
+        let filteredSteps = steps.filter(step => step.id !== 9 && step.id !== 10);
+
+        if (hideCertification) {
+            filteredSteps = filteredSteps.filter(step => step.id !== 12);
+        }
+
+        // Re-number for display (1-10 instead of 1,2,3,4,5,6,7,8,11,12)
+        return filteredSteps.map((step, index) => ({
+            ...step,
+            displayId: index + 1,  // Display sequential numbers
+            originalId: step.id     // Keep original for render logic
+        }));
+    };
+
+    const activeSteps = getActiveSteps();
+    const maxStep = activeSteps.length;
+
     const [currentStep, setCurrentStep] = useState(1);
     const navigate = useNavigate();
     const [showNavigationModal, setShowNavigationModal] = useState(false);
@@ -2027,8 +2107,9 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({ onSubmit, isSubmitting = 
         getValues,
         setValue,
         reset,
+        clearErrors,
     } = useForm<FormData>({
-        resolver: zodResolver(completeFormSchema),
+        resolver: zodResolver(isEmbeddedInMultiProperty ? propertyOnlySchema : completeFormSchema),
         mode: 'onTouched',        // Validate on blur
         reValidateMode: 'onChange', // Re-validate on change after first validation
         defaultValues: {
@@ -2071,6 +2152,33 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({ onSubmit, isSubmitting = 
             certificate_notary_district: '',
             // Certification checkbox
             certificate_identity_confirmed: false,
+
+            // Merge commonData when embedded in multi-property
+            ...(isEmbeddedInMultiProperty && commonData ? {
+                applicant_title: commonData.applicant_title,
+                applicant_full_name: commonData.applicant_full_name,
+                applicant_id_type: commonData.applicant_id_type,
+                applicant_id_number: commonData.applicant_id_number,
+                applicant_address_line1: commonData.applicant_address_line1,
+                applicant_address_line2: commonData.applicant_address_line2,
+                applicant_district: commonData.applicant_district,
+                applicant_province: commonData.applicant_province,
+                applicant_country: commonData.applicant_country,
+                valuation_type: commonData.valuation_type,
+                valuation_purpose: commonData.valuation_purpose,
+                property_type_valued: commonData.property_type_valued,
+                property_ownership: commonData.property_ownership,
+                has_additional_owner: commonData.has_additional_owner,
+                additional_owner_names: commonData.additional_owner_names,
+                submission_recipient_position: commonData.submission_recipient_position,
+                submission_organization: commonData.submission_organization,
+                submission_address: commonData.submission_address,
+                inspection_date: commonData.inspection_date,
+                has_special_note: commonData.has_special_note,
+                special_note_text: commonData.special_note_text,
+                report_reference: commonData.report_reference,
+                report_date: commonData.report_date,
+            } : {}),
         } as Partial<FormData>,
     });
 
@@ -2147,14 +2255,38 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({ onSubmit, isSubmitting = 
         }
     }, [isEditMode, initialData, reset]);
 
+    // Clear applicant/additional details errors in embedded mode (these fields are handled by parent)
+    useEffect(() => {
+        if (isEmbeddedInMultiProperty) {
+            // Clear validation errors for applicant and additional details fields
+            const fieldsToSkip = [
+                'applicant_title', 'applicant_full_name', 'applicant_id_type', 'applicant_id_number',
+                'applicant_address_line1', 'applicant_address_line2', 'applicant_district',
+                'applicant_province', 'applicant_country', 'valuation_type', 'valuation_purpose',
+                'property_ownership', 'property_type_valued', 'has_additional_owner', 'additional_owner_names',
+                'submission_organization', 'submission_address', 'submission_recipient_position',
+                'inspection_date', 'has_special_note', 'special_note_text', 'report_reference', 'report_date'
+            ];
+            clearErrors(fieldsToSkip as any);
+
+            // Also clear from validation errors state (for ErrorSummaryPanel)
+            setValidationErrors([]);
+
+            // Hide error panel since we're clearing applicant errors
+            setShowErrorPanel(false);
+        }
+    }, [isEmbeddedInMultiProperty, clearErrors]);
+
     // Draft management hooks
+    // Disable draft manager in embedded mode (multi-property handles saves explicitly)
     const { isDirty, saveDraft } = useDraftManager({
         reportId,
-        isEditMode,
+        isEditMode: isEditMode && !isEmbeddedInMultiProperty,  // Disable in embedded mode
         formMethods: { watch, getValues, setValue }
     });
 
-    useNavigationBlocker(isDirty && !isSaving, () => {
+    // Disable navigation blocker in embedded mode (users need to freely navigate back to dashboard)
+    useNavigationBlocker(isDirty && !isSaving && !isEmbeddedInMultiProperty, () => {
         setShowNavigationModal(true);
     });
 
@@ -2182,6 +2314,12 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({ onSubmit, isSubmitting = 
     };
 
     const validateCurrentStep = async () => {
+        // In embedded multi-property mode, skip validation entirely
+        // Properties can be incomplete - validation happens in parent form
+        if (isEmbeddedInMultiProperty) {
+            return true;
+        }
+
         const stepSchema = getCurrentStepSchema();
         const stepData = getValues();
 
@@ -2326,14 +2464,17 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({ onSubmit, isSubmitting = 
         }
     };
 
-    const nextStep = async () => {
+    const nextStep = async (e?: React.MouseEvent<HTMLButtonElement>) => {
+        e?.preventDefault(); // Prevent any form submission
+        e?.stopPropagation(); // Prevent event bubbling
+
         const isValid = await validateCurrentStep();
-        if (isValid && currentStep < 12) {
+        if (isValid && currentStep < maxStep) {
             const nextStepNum = currentStep + 1;
             setCurrentStep(nextStepNum);
 
             // Check data quality when entering the final certification step
-            if (nextStepNum === 12) {
+            if (nextStepNum === maxStep) {
                 setTimeout(() => {
                     checkDataQuality();
                 }, 500); // Small delay to allow step to render
@@ -2341,19 +2482,34 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({ onSubmit, isSubmitting = 
         }
     };
 
-    const prevStep = () => {
+    const prevStep = (e?: React.MouseEvent<HTMLButtonElement>) => {
+        e?.preventDefault(); // Prevent any form submission
+        e?.stopPropagation(); // Prevent event bubbling
+
         if (currentStep > 1) {
             setCurrentStep(currentStep - 1);
         }
     };
     // Save & Exit handler
-    const handleSaveAndExit = async () => {
+    const handleSaveAndExit = async (e?: React.MouseEvent<HTMLButtonElement>) => {
+        e?.preventDefault(); // Prevent any form submission
+        e?.stopPropagation(); // Prevent event bubbling
+
         try {
             setIsSaving(true);
             const formData = getValues(); // NO validation
-            await onSubmit(formData, 'draft');
+
+            // Multi-property mode: call onSaveProperty
+            if (isEmbeddedInMultiProperty && onSaveProperty) {
+                await onSaveProperty(formData);
+                toast.success('Property saved as draft');
+            } else {
+                // Standalone mode: call onSubmit with 'draft'
+                await onSubmit(formData, 'draft');
+            }
         } catch (error) {
             toast.error('Failed to save draft');
+            console.error('Save error:', error);
         } finally {
             setIsSaving(false);
         }
@@ -2398,10 +2554,10 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({ onSubmit, isSubmitting = 
 
 
     const handleFormSubmit = async (validatedData: FormData) => {
-        // CERTIFICATION STEP ENFORCEMENT: Only allow submission from step 12
-        if (currentStep !== 12) {
+        // CERTIFICATION STEP ENFORCEMENT: Only allow submission from final step
+        if (currentStep !== maxStep && !isEmbeddedInMultiProperty) {
             toast.error('Please complete the Certification step before submitting the report');
-            setCurrentStep(12);
+            setCurrentStep(maxStep);
             return;
         }
 
@@ -2536,12 +2692,42 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({ onSubmit, isSubmitting = 
         await onSubmit(submissionData, 'complete');
     };
 
+    // Multi-property finish handler
+    const handleFinishProperty = async () => {
+        if (!isEmbeddedInMultiProperty || !onFinishProperty) return;
+
+        // COMPLETELY clear all validation errors and hide error panel
+        setValidationErrors([]);
+        setShowErrorPanel(false);
+        clearErrors();
+
+        // In embedded mode, DON'T validate anything - just save the property
+        // Applicant & additional details are validated by the parent form
+        // Property fields are optional - users can save incomplete properties as drafts
+
+        setIsSaving(true);
+        try {
+            const allFormData = getValues();
+            await onFinishProperty(allFormData);
+            toast.success('Property marked as completed');
+        } catch (error) {
+            toast.error('Failed to complete property');
+            console.error('Finish error:', error);
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
     const renderStep = () => {
         const stepProps = { register, errors, watch, setValue, getValues };
         // Use watch() instead of getValues() to make form data reactive
         const allValues = watch();
 
-        switch (currentStep) {
+        // Get the actual step ID (originalId for multi-property, id for standalone)
+        const currentStepConfig = activeSteps[currentStep - 1];
+        const actualStepId = currentStepConfig?.originalId || currentStepConfig?.id || currentStep;
+
+        switch (actualStepId) {
             case 1: return <PropertyPlanStep {...stepProps} />;
             case 2: return <ExtentBoundariesStep {...stepProps} />;
             case 3: return <PropertySearchStep {...stepProps} />;
@@ -2583,7 +2769,7 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({ onSubmit, isSubmitting = 
                     pradeshiyaSabha={allValues.pradeshiya_sabha}
                 />
             );
-            case 6: return <PropertyDescriptionStep {...stepProps} />;
+            case 6: return <PropertyDescriptionStep {...stepProps} isBareLand={isBareLand} />;
             case 7: return (
                 <LegalAspectsSection
                     data={allValues}
@@ -2632,7 +2818,7 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({ onSubmit, isSubmitting = 
         }
     };
 
-    const currentStepData = steps[currentStep - 1];
+    const currentStepData = activeSteps[currentStep - 1];
 
     return (
         <>
@@ -2696,7 +2882,7 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({ onSubmit, isSubmitting = 
                             )}
 
                             {/* Data Quality Warnings Panel (non-blocking) */}
-                            {showWarningsPanel && dataQualityWarnings.length > 0 && currentStep === 12 && (
+                            {showWarningsPanel && dataQualityWarnings.length > 0 && currentStep === maxStep && (
                                 <div className="mb-6 bg-amber-50 border-2 border-amber-300 rounded-2xl p-6 animate-slideDown">
                                     <div className="flex items-start gap-4">
                                         <div className="flex-shrink-0">
@@ -2784,67 +2970,94 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({ onSubmit, isSubmitting = 
 
                             {/* Navigation Buttons */}
                             <div className="flex justify-between items-center pt-6 border-t border-gray-200/50">
-                                <Button
-                                    type="button"
-                                    onClick={prevStep}
-                                    disabled={currentStep === 1}
-                                    className={`flex items-center px-6 py-3 rounded-2xl font-medium transition-all duration-200 ${currentStep === 1
-                                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                                            : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-                                        }`}
-                                >
-                                    <ArrowLeft className="h-5 w-5 mr-2" />
-                                    Previous
-                                </Button>
-
-
-                                <Button
-                                    type="button"
-                                    onClick={handleSaveAndExit}
-                                    disabled={isSaving}
-                                    className="flex items-center px-6 py-3 bg-gradient-to-r from-blue-500 to-cyan-600 hover:from-blue-600 hover:to-cyan-700 text-white font-semibold rounded-2xl shadow-lg transition-all duration-200"
-                                >
-                                    {isSaving ? (
-                                        <>
-                                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
-                                            Saving...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Save className="h-5 w-5 mr-2" />
-                                            Save & Exit
-                                        </>
+                                <div className="flex gap-3">
+                                    {/* Previous button */}
+                                    {currentStep > 1 && (
+                                        <Button
+                                            type="button"
+                                            onClick={prevStep}
+                                            variant="outline"
+                                            className="flex items-center gap-2"
+                                        >
+                                            <ArrowLeft className="h-4 w-4" />
+                                            Previous
+                                        </Button>
                                     )}
-                                </Button>
 
-                                {currentStep < 12 ? (
-                                    <Button
-                                        type="button"
-                                        onClick={nextStep}
-                                        className={`flex items-center px-6 py-3 bg-gradient-to-r ${currentStepData.color} hover:shadow-xl text-white font-semibold rounded-2xl transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98]`}
-                                    >
-                                        Next Step
-                                        <ArrowRight className="h-5 w-5 ml-2" />
-                                    </Button>
-                                ) : (
-                                    <Button
-                                        type="submit"
-                                        disabled={isSubmitting}
-                                        className="flex items-center px-8 py-3 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-bold rounded-2xl shadow-2xl shadow-green-500/25 transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
-                                        {isSubmitting ? (
-                                            <>
-                                                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-3"></div>
-                                                Creating Report...
-                                            </>
-                                        ) : (
-                                            <>
-                                                <FileText className="h-5 w-5 mr-3" />
-                                                Generate Report
-                                            </>
-                                        )}
-                                    </Button>
-                                )}
+                                    {/* Back to Dashboard button (multi-property only) */}
+                                    {isEmbeddedInMultiProperty && onCancelProperty && (
+                                        <Button
+                                            type="button"
+                                            onClick={onCancelProperty}
+                                            variant="outline"
+                                            className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
+                                        >
+                                            <ArrowLeft className="h-4 w-4" />
+                                            Back to Dashboard
+                                        </Button>
+                                    )}
+                                </div>
+
+                                <div className="flex gap-3">
+                                    {/* Save & Exit button - Different behavior for multi-property vs standalone */}
+                                    {isEmbeddedInMultiProperty && onSaveProperty ? (
+                                        <Button
+                                            type="button"
+                                            onClick={handleSaveAndExit}
+                                            variant="outline"
+                                            disabled={isSaving}
+                                            className="flex items-center gap-2 border-blue-500 text-blue-600 hover:bg-blue-50"
+                                        >
+                                            <Save className="h-4 w-4" />
+                                            {isSaving ? 'Saving...' : 'Save & Exit'}
+                                        </Button>
+                                    ) : !isEmbeddedInMultiProperty && (
+                                        <Button
+                                            type="button"
+                                            onClick={handleSaveAndExit}
+                                            disabled={isSaving}
+                                            className="flex items-center px-6 py-3 bg-gradient-to-r from-blue-500 to-cyan-600 hover:from-blue-600 hover:to-cyan-700 text-white font-semibold rounded-2xl shadow-lg transition-all duration-200"
+                                        >
+                                            {isSaving ? (
+                                                <>
+                                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
+                                                    Saving...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Save className="h-5 w-5 mr-2" />
+                                                    Save & Exit
+                                                </>
+                                            )}
+                                        </Button>
+                                    )}
+
+                                    {/* Next or Complete/Finish button */}
+                                    {currentStep < maxStep ? (
+                                        <Button
+                                            type="button"
+                                            onClick={nextStep}
+                                            disabled={isSubmitting}
+                                            className="flex items-center gap-2 bg-gradient-to-r from-violet-500 to-purple-600"
+                                        >
+                                            Next
+                                            <ArrowRight className="h-4 w-4" />
+                                        </Button>
+                                    ) : (
+                                        <Button
+                                            type={isEmbeddedInMultiProperty ? "button" : "submit"}
+                                            onClick={isEmbeddedInMultiProperty ? handleFinishProperty : undefined}
+                                            disabled={isSubmitting || isSaving}
+                                            className="flex items-center gap-2 bg-gradient-to-r from-green-500 to-emerald-600"
+                                        >
+                                            <CheckCircle2 className="h-4 w-4" />
+                                            {isEmbeddedInMultiProperty
+                                                ? (isSaving ? 'Completing...' : 'Finish Property')
+                                                : (isSubmitting ? 'Generating...' : 'Generate Report')
+                                            }
+                                        </Button>
+                                    )}
+                                </div>
                             </div>
                         </form>
                     </div>
@@ -2852,7 +3065,7 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({ onSubmit, isSubmitting = 
                     {/* Step Info */}
                     <div className="mt-8 text-center">
                         <p className="text-gray-500">
-                            Step {currentStep} of {steps.length} •
+                            Step {currentStep} of {maxStep} •
                             <span className="ml-1">All information is securely stored and encrypted</span>
                         </p>
                     </div>

@@ -258,6 +258,10 @@ class ReportBase(BaseModel):
     report_type: str = Field(default="residential_property", description="Type of report")
     status: str = Field(default="draft", description="Report status (draft, completed)")
 
+    # Multi-property support
+    is_multi_property: Optional[bool] = Field(None, description="Whether this is a multi-property report")
+    property_count: Optional[int] = Field(None, description="Number of properties in this report")
+
     # Property & Plan Information
     property_lot_description: Optional[str] = Field(None, max_length=200, description="Lot description (e.g., Lot 15)")
     plan_number: Optional[str] = Field(None, max_length=100, description="Plan number")
@@ -419,6 +423,7 @@ class ReportBase(BaseModel):
     land_condition: Optional[str] = Field(None, max_length=50)
     land_condition_description: Optional[str] = Field(None)
     land_description_text: Optional[str] = Field(None)
+    ongoing_construction_notes: Optional[str] = Field(None, description="Ongoing construction or development feasibility notes")
 
     # Topographical Features
     elevation_changes: Optional[str] = Field(None, max_length=50, description="Elevation changes pattern (relatively_flat, gentle_slope, moderate_slope, steep_gradients, undulating)")
@@ -688,6 +693,8 @@ class ReportResponse(BaseModel):
     # Copy all fields from ReportBase without validators
     report_type: Optional[str] = None
     status: Optional[str] = None
+    is_multi_property: Optional[bool] = None
+    property_count: Optional[int] = None
     property_lot_description: Optional[str] = None
     plan_number: Optional[str] = None
     plan_date: Optional[str] = None
@@ -782,6 +789,7 @@ class ReportResponse(BaseModel):
     land_condition: Optional[str] = None
     land_condition_description: Optional[str] = None
     land_description_text: Optional[str] = None
+    ongoing_construction_notes: Optional[str] = None
     elevation_changes: Optional[str] = None
     drainage_pattern: Optional[str] = None
     vegetation_type: Optional[str] = None
@@ -879,3 +887,370 @@ class TemplateMetadata(BaseModel):
 class TemplateListResponse(BaseModel):
     """Response containing list of available templates"""
     templates: List[TemplateMetadata] = Field(..., description="List of available letterhead templates")
+
+
+# ===== MULTI-PROPERTY SUPPORT SCHEMAS =====
+
+# Invoice Schemas
+class InvoiceItem(BaseModel):
+    """Individual line item in a professional fee invoice"""
+    description: str = Field(..., description="Service description (e.g., 'Valuation of Property 1')")
+    quantity: int = Field(default=1, ge=1, description="Quantity of service")
+    unit_price: float = Field(..., ge=0, description="Unit price for the service")
+    total: float = Field(..., ge=0, description="Total for this line item (quantity * unit_price)")
+
+class InvoiceData(BaseModel):
+    """Professional fee invoice data for single or multi-property reports"""
+    items: List[InvoiceItem] = Field(default_factory=list, description="Itemized service charges")
+    subtotal: float = Field(default=0, ge=0, description="Sum of all items")
+    traveling_charges: Optional[float] = Field(None, ge=0, description="Optional traveling/site visit charges")
+    discount: Optional[float] = Field(None, ge=0, description="Optional discount amount")
+    total: float = Field(..., ge=0, description="Final total amount")
+    payment_terms: Optional[str] = Field(None, description="Payment terms (e.g., 'Due within 30 days')")
+    bank_details: Optional[str] = Field(None, description="Bank account details for payment")
+
+
+# Property Schemas (mirrors Property model fields)
+class PropertyBase(BaseModel):
+    """Base schema for Property - contains all property-specific fields"""
+
+    # Property Status & Type (for multi-property reports)
+    status: Optional[str] = Field("draft", max_length=50, description="Property completion status: 'draft' or 'completed'")
+    property_type: Optional[str] = Field("residential", max_length=50, description="Property type: 'residential' or 'bare_land'")
+
+    # Property Identification
+    property_lot_description: Optional[str] = Field(None, max_length=200)
+    plan_number: Optional[str] = Field(None, max_length=100)
+    plan_date: Optional[str] = Field(None, max_length=50)
+    licensed_surveyor_name: Optional[str] = Field(None, max_length=255)
+    property_identification_type: Optional[str] = Field(None, max_length=50)
+    property_identification_documents: Optional[dict] = None
+
+    # Deed Information
+    has_deed_info: Optional[str] = Field(None, max_length=10)
+    deeds: Optional[List[dict]] = None
+
+    # Property Location
+    property_name: Optional[str] = Field(None, max_length=200)
+    assessment_number: Optional[str] = Field(None, max_length=100)
+    property_village: Optional[str] = Field(None, max_length=200)
+    property_divisional_secretariat: Optional[str] = Field(None, max_length=200)
+    property_district: Optional[str] = Field(None, max_length=100)
+    property_province: Optional[str] = Field(None, max_length=100)
+    property_latitude: Optional[float] = Field(None, ge=-90, le=90)
+    property_longitude: Optional[float] = Field(None, ge=-180, le=180)
+    property_number: Optional[str] = Field(None, max_length=50)
+    grama_niladari_division: Optional[str] = Field(None, max_length=200)
+    korale: Optional[str] = Field(None, max_length=300)
+    pradeshiya_sabha: Optional[str] = Field(None, max_length=200)
+    ward_number: Optional[str] = Field(None, max_length=20)
+    is_municipal_limit: Optional[bool] = None
+    location_direction: Optional[str] = Field(None, max_length=50)
+
+    # Access Directions
+    access_starting_point_name: Optional[str] = None
+    access_starting_point_latitude: Optional[float] = Field(None, ge=-90, le=90)
+    access_starting_point_longitude: Optional[float] = Field(None, ge=-180, le=180)
+    access_route_data: Optional[dict] = None
+    access_directions_text: Optional[str] = None
+    access_distance_km: Optional[float] = Field(None, ge=0)
+    access_duration_minutes: Optional[int] = Field(None, ge=0)
+    access_road_type: Optional[str] = Field(None, max_length=200)
+    property_road_position: Optional[str] = Field(None, max_length=100)
+    location_map_image_data: Optional[str] = None
+    access_road_segments: Optional[List[dict]] = None
+    access_road_conditions: Optional[List[dict]] = None
+    access_entry_mode: Optional[str] = Field(None, max_length=20)
+    access_road_classes_detected: Optional[dict] = None
+
+    # Land Extent & Boundaries
+    land_extent_acres: Optional[float] = Field(None, ge=0)
+    land_extent_roods: Optional[int] = Field(None, ge=0, le=3)
+    land_extent_perches: Optional[float] = Field(None, ge=0)
+    land_extent_hectares: Optional[float] = Field(None, ge=0)
+    land_extent_square_meters: Optional[float] = Field(None, ge=0)
+    land_extent_formatted: Optional[str] = Field(None, max_length=50)
+    land_traditional_name: Optional[str] = Field(None, max_length=300)
+    boundaries: Optional[dict] = None
+    physical_boundaries_types: Optional[List[str]] = None
+    physical_boundaries_description: Optional[str] = None
+    boundary_types_per_direction: Optional[dict] = None
+    entrance_type: Optional[str] = Field(None, max_length=100)
+    boundaries_summary_text: Optional[str] = None
+    has_multiple_lots: Optional[bool] = None
+    lots_data: Optional[List[dict]] = None
+
+    # Property Description
+    land_shape: Optional[str] = Field(None, max_length=50)
+    land_type: Optional[str] = Field(None, max_length=50)
+    land_frontage_type: Optional[str] = Field(None, max_length=100)
+    land_frontage_width: Optional[float] = Field(None, ge=0)
+    land_frontage_description: Optional[str] = None
+    land_level: Optional[str] = Field(None, max_length=50)
+    land_level_difference: Optional[float] = None
+    soil_type: Optional[str] = Field(None, max_length=50)
+    water_table_depth: Optional[float] = Field(None, ge=0)
+    flood_risk: Optional[str] = Field(None, max_length=50)
+    inundation_risk: Optional[str] = Field(None, max_length=50)
+    earth_slip_risk: Optional[str] = Field(None, max_length=50)
+    land_condition: Optional[str] = Field(None, max_length=50)
+    land_condition_description: Optional[str] = None
+    land_description_text: Optional[str] = None
+    elevation_changes: Optional[str] = Field(None, max_length=50)
+    drainage_pattern: Optional[str] = Field(None, max_length=50)
+    vegetation_type: Optional[str] = Field(None, max_length=50)
+    natural_features: Optional[str] = None
+
+    # Buildings
+    buildings: Optional[List[dict]] = None
+    occupier_name: Optional[str] = Field(None, max_length=300)
+    occupier_relationship: Optional[str] = Field(None, max_length=50)
+
+    # Property Photos
+    property_photos: Optional[List[dict]] = None
+
+    # Locality Information
+    distance_to_major_town_km: Optional[float] = Field(None, ge=0)
+    major_town_name: Optional[str] = Field(None, max_length=200)
+    nearby_facilities: Optional[List[dict]] = None
+    has_electricity: Optional[bool] = None
+    water_supply_type: Optional[str] = Field(None, max_length=50)
+    telecommunication_types: Optional[List[str]] = None
+    internet_types: Optional[List[str]] = None
+    has_public_transport: Optional[bool] = None
+    public_transport_routes: Optional[str] = None
+    public_transport_frequency: Optional[str] = Field(None, max_length=200)
+    nearest_bus_stop_distance_km: Optional[float] = Field(None, ge=0)
+    nearest_bus_stop_name: Optional[str] = Field(None, max_length=200)
+    nearest_railway_station: Optional[str] = Field(None, max_length=200)
+    nearest_railway_distance_km: Optional[float] = Field(None, ge=0)
+    area_type: Optional[str] = Field(None, max_length=50)
+    development_level: Optional[str] = Field(None, max_length=50)
+    predominant_building_type: Optional[str] = Field(None, max_length=100)
+    is_tourist_area: Optional[bool] = None
+    tourist_attractions_nearby: Optional[str] = None
+    locality_description_text: Optional[str] = None
+
+    # Legal Aspects
+    ownership_type: Optional[str] = Field(None, max_length=200)
+    street_lines_status: Optional[str] = Field(None, max_length=200)
+    street_lines_gazette_ref: Optional[str] = Field(None, max_length=100)
+    street_lines_gazette_date: Optional[str] = Field(None, max_length=20)
+    street_lines_impact_description: Optional[str] = None
+    building_limits_status: Optional[str] = Field(None, max_length=200)
+    building_distance_from_road: Optional[str] = Field(None, max_length=50)
+    building_plan_approved: Optional[str] = Field(None, max_length=20)
+    building_plan_reference: Optional[str] = Field(None, max_length=200)
+    building_approval_authority: Optional[str] = Field(None, max_length=200)
+    building_within_limits: Optional[str] = Field(None, max_length=3)
+    local_authority_data: Optional[str] = None
+    local_authority_rated: Optional[str] = Field(None, max_length=3)
+    local_authority_tax_levy: Optional[str] = None
+    rent_act_effectiveness: Optional[str] = Field(None, max_length=200)
+    title_search_conducted: Optional[str] = Field(None, max_length=3)
+    pedigree_search_conducted: Optional[str] = Field(None, max_length=3)
+    valuation_basis_note: Optional[str] = None
+    property_encumbered: Optional[str] = Field(None, max_length=3)
+    encumbrance_type: Optional[str] = Field(None, max_length=100)
+    encumbrance_details: Optional[str] = None
+
+    # Comparable Properties & Valuation
+    comparable_properties: Optional[List[dict]] = None
+    land_market_analysis: Optional[str] = None
+    valuation_land_extent: Optional[float] = Field(None, ge=0)
+    valuation_rate_per_perch: Optional[float] = Field(None, ge=0)
+    valuation_total_land_value: Optional[float] = Field(None, ge=0)
+    valuation_buildings_data: Optional[List[dict]] = None
+    valuation_total_buildings_value: Optional[float] = Field(None, ge=0)
+    valuation_addons: Optional[List[dict]] = None
+    valuation_total_addons_value: Optional[float] = Field(None, ge=0)
+    valuation_market_value: Optional[float] = Field(None, ge=0)
+    valuation_forced_sale_percentage: Optional[float] = Field(None, ge=0, le=100)
+    valuation_forced_sale_value: Optional[float] = Field(None, ge=0)
+    valuation_insurance_value: Optional[float] = Field(None, ge=0)
+    valuation_manual_overrides: Optional[dict] = None
+
+    # Property Owner (can differ from report applicant)
+    property_owner_title: Optional[str] = Field(None, max_length=20)
+    property_owner_full_name: Optional[str] = Field(None, max_length=500)
+    property_owner_id_type: Optional[str] = Field(None, max_length=50)
+    property_owner_id_number: Optional[str] = Field(None, max_length=100)
+    has_additional_owner: Optional[str] = Field(None, max_length=10)
+    additional_owner_names: Optional[str] = None
+
+    # Per-property inspection date
+    inspection_date: Optional[str] = Field(None, max_length=50)
+
+    # OCR Metadata
+    uploaded_documents: Optional[List[dict]] = None
+    field_sources: Optional[dict] = None
+    survey_plan_scale: Optional[str] = Field(None, max_length=50)
+    plan_reference_notes: Optional[str] = None
+
+    # Property Library Support
+    is_template: Optional[bool] = Field(default=False)
+    template_name: Optional[str] = Field(None, max_length=200)
+    last_valued_date: Optional[str] = Field(None, max_length=50)
+
+    # Validation for geographic coordinates
+    @field_validator('property_latitude')
+    @classmethod
+    def validate_latitude(cls, v):
+        if v is not None and (v < -90 or v > 90):
+            raise ValueError('Latitude must be between -90 and 90')
+        return v
+
+    @field_validator('property_longitude')
+    @classmethod
+    def validate_longitude(cls, v):
+        if v is not None and (v < -180 or v > 180):
+            raise ValueError('Longitude must be between -180 and 180')
+        return v
+
+
+class PropertyCreate(PropertyBase):
+    """Schema for creating a new property"""
+    pass
+
+
+class PropertyUpdate(PropertyBase):
+    """Schema for updating an existing property"""
+    pass
+
+
+class PropertyResponse(PropertyBase):
+    """Schema for property response (includes ID and timestamps)"""
+    id: int
+    user_id: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class PropertyTemplateResponse(BaseModel):
+    """Simplified property response for Property Library listing"""
+    id: int
+    template_name: Optional[str] = None
+    property_village: Optional[str] = None
+    property_district: Optional[str] = None
+    land_extent_formatted: Optional[str] = None
+    last_valued_date: Optional[str] = None
+    valuation_market_value: Optional[float] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# ReportProperty Junction Schemas
+class ReportPropertyBase(BaseModel):
+    """Base schema for ReportProperty junction"""
+    property_id: int = Field(..., description="ID of the property")
+    property_order: int = Field(default=1, ge=1, description="Display order in report (for drag-drop)")
+    report_specific_notes: Optional[str] = Field(None, description="Notes specific to this property in this report")
+    override_market_value: Optional[float] = Field(None, ge=0, description="Override market value for this report")
+    override_forced_sale_value: Optional[float] = Field(None, ge=0, description="Override forced sale value for this report")
+
+
+class ReportPropertyCreate(ReportPropertyBase):
+    """Schema for creating a report-property association"""
+    pass
+
+
+class ReportPropertyUpdate(BaseModel):
+    """Schema for updating report-property association"""
+    property_order: Optional[int] = Field(None, ge=1)
+    report_specific_notes: Optional[str] = None
+    override_market_value: Optional[float] = Field(None, ge=0)
+    override_forced_sale_value: Optional[float] = Field(None, ge=0)
+
+
+class ReportPropertyResponse(ReportPropertyBase):
+    """Schema for report-property response (includes full property data)"""
+    id: int
+    report_id: int
+    property: PropertyResponse  # Nested full property data
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+# Updated Report Schemas for Multi-Property Support
+class MultiPropertyReportCreate(BaseModel):
+    """Schema for creating a multi-property report"""
+    report_type: str = Field(default="residential_property")
+    status: str = Field(default="draft")
+
+    # Common fields (shared across all properties)
+    applicant_title: Optional[str] = None
+    applicant_full_name: Optional[str] = None
+    applicant_id_type: Optional[str] = None
+    applicant_id_number: Optional[str] = None
+    applicant_address_line1: Optional[str] = None
+    applicant_address_line2: Optional[str] = None
+    applicant_district: Optional[str] = None
+    applicant_province: Optional[str] = None
+    applicant_country: Optional[str] = Field(default="Sri Lanka")
+
+    valuation_type: Optional[str] = None
+    valuation_purpose: Optional[str] = None
+    property_ownership: Optional[str] = None
+    property_type_valued: Optional[str] = None
+
+    submission_organization: Optional[str] = None
+    submission_address: Optional[str] = None
+    submission_recipient_position: Optional[str] = None
+
+    report_reference: Optional[str] = None
+    report_date: Optional[str] = None
+
+    has_special_note: Optional[str] = None
+    special_note_text: Optional[str] = None
+
+    # Certification (common for all properties)
+    certification_text: Optional[str] = None
+    certification_valuer_name: Optional[str] = None
+    certification_valuer_designation: Optional[str] = None
+    certification_date: Optional[str] = None
+    certificate_identity_confirmed: Optional[bool] = False
+
+    # Multi-property specific fields
+    is_multi_property: bool = Field(default=True)
+    property_ids: Optional[List[int]] = Field(None, description="IDs of existing properties to link")
+    properties: Optional[List[PropertyCreate]] = Field(None, description="New properties to create inline")
+    invoice_data: Optional[InvoiceData] = None
+
+
+class MultiPropertyReportResponse(BaseModel):
+    """Response schema for multi-property reports (includes all associated properties)"""
+    id: int
+    user_id: int
+    report_type: str
+    status: str
+    is_multi_property: bool
+    property_count: int
+    total_valuation_amount: Optional[float] = None
+
+    # Common fields
+    applicant_full_name: Optional[str] = None
+    applicant_address_line1: Optional[str] = None
+    valuation_type: Optional[str] = None
+    valuation_purpose: Optional[str] = None
+    submission_organization: Optional[str] = None
+    report_reference: Optional[str] = None
+    report_date: Optional[str] = None
+
+    # Associated properties (ordered by property_order)
+    properties: List[PropertyResponse] = Field(default_factory=list)
+
+    # Invoice data
+    invoice_data: Optional[InvoiceData] = None
+
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True

@@ -420,7 +420,7 @@ async def get_user_reports(
     """Get all reports for the authenticated user (paginated)"""
     return crud.get_user_reports(db, current_user.id, skip=skip, limit=limit)
 
-@app.get("/api/reports/{report_id}", response_model=schemas.ReportResponse)
+@app.get("/api/reports/{report_id}")
 async def get_report(
     report_id: int,
     current_user: models.User = Depends(get_current_user),
@@ -433,22 +433,138 @@ async def get_report(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Report with ID {report_id} not found"
         )
+
+    # For multi-property reports, include properties in response
+    if db_report.is_multi_property:
+        # Get all associated properties ordered by property_order
+        properties = db_report.properties
+
+        # Convert to response format
+        response_data = {
+            **{key: getattr(db_report, key) for key in db_report.__dict__ if not key.startswith('_')},
+            'properties': properties
+        }
+        return response_data
+
     return db_report
 
-@app.put("/api/reports/{report_id}", response_model=schemas.ReportResponse)
+@app.put("/api/reports/{report_id}")
 async def update_report(
     report_id: int,
-    report_update: schemas.ReportUpdate,
+    request_body: dict,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Update a report (must belong to authenticated user)"""
+    logger.info(f"[UPDATE_REPORT] Received PUT request for report {report_id}")
+    logger.info(f"[UPDATE_REPORT] Request body keys: {list(request_body.keys())}")
+
+    # Extract properties from request if present
+    properties_data = request_body.pop('properties', None)
+    property_metadata = request_body.pop('property_metadata', None)
+
+    logger.info(f"[UPDATE_REPORT] Properties data present: {properties_data is not None}")
+    if properties_data:
+        logger.info(f"[UPDATE_REPORT] Properties count: {len(properties_data)}")
+
+    # If properties are being sent, ensure report is marked as multi-property
+    if properties_data:
+        request_body['is_multi_property'] = True
+        request_body['property_count'] = len(properties_data)
+        logger.info(f"[UPDATE_REPORT] Setting is_multi_property=True because properties provided")
+
+    # Update report common fields
+    report_update = schemas.ReportUpdate(**request_body)
     updated_report = crud.update_report(db, report_id, report_update, current_user.id)
     if not updated_report:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Report with ID {report_id} not found"
         )
+
+    logger.info(f"[UPDATE_REPORT] Report is_multi_property: {updated_report.is_multi_property}")
+
+    # Handle properties for multi-property reports
+    if properties_data:
+        logger.info(f"[UPDATE_REPORT] Updating properties for multi-property report {report_id}")
+        logger.info(f"[UPDATE_REPORT] Received {len(properties_data)} properties")
+
+        # Get current properties associated with this report
+        current_property_ids = {rp.property_id for rp in updated_report.property_associations}
+        logger.info(f"[UPDATE_REPORT] Current property IDs in DB: {current_property_ids}")
+
+        # Get incoming property IDs (only those that are existing properties with integer IDs)
+        incoming_property_ids = {
+            prop_data.get('id') for prop_data in properties_data
+            if prop_data.get('id') and isinstance(prop_data.get('id'), int)
+        }
+        logger.info(f"[UPDATE_REPORT] Incoming property IDs from frontend: {incoming_property_ids}")
+
+        # Find properties to delete (exist in DB but not in incoming data)
+        properties_to_delete = current_property_ids - incoming_property_ids
+        logger.info(f"[UPDATE_REPORT] Properties to delete: {properties_to_delete}")
+
+        # Delete removed properties
+        for property_id in properties_to_delete:
+            logger.info(f"[UPDATE_REPORT] Deleting property {property_id} from report")
+            # Delete the association
+            db.query(models.ReportProperty).filter(
+                models.ReportProperty.report_id == report_id,
+                models.ReportProperty.property_id == property_id
+            ).delete()
+
+            # Optionally delete the property itself if it's not used in other reports
+            property_usage_count = db.query(models.ReportProperty).filter(
+                models.ReportProperty.property_id == property_id
+            ).count()
+
+            if property_usage_count == 0:
+                logger.info(f"[UPDATE_REPORT] Property {property_id} not used in any other reports, deleting")
+                db.query(models.Property).filter(models.Property.id == property_id).delete()
+
+        # Update or create properties
+        for prop_data in properties_data:
+            property_id = prop_data.get('id')
+
+            # If property has an integer ID, it exists - update it
+            if property_id and isinstance(property_id, int):
+                logger.info(f"[UPDATE_REPORT] Updating existing property {property_id}")
+                property_update = schemas.PropertyUpdate(**prop_data)
+                crud.update_property(db, property_id, property_update, current_user.id)
+            else:
+                # Create new property
+                logger.info(f"[UPDATE_REPORT] Creating new property")
+                property_create = schemas.PropertyCreate(**prop_data)
+                new_property = crud.create_property(db, property_create, current_user.id)
+
+                # Associate with report
+                # Check if association already exists
+                existing_assoc = db.query(models.ReportProperty).filter(
+                    models.ReportProperty.report_id == report_id,
+                    models.ReportProperty.property_id == new_property.id
+                ).first()
+
+                if not existing_assoc:
+                    property_order = prop_data.get('property_order', len(properties_data))
+                    report_property = models.ReportProperty(
+                        report_id=report_id,
+                        property_id=new_property.id,
+                        property_order=property_order
+                    )
+                    db.add(report_property)
+
+        db.commit()
+        db.refresh(updated_report)
+
+    # Return with properties if multi-property
+    if updated_report.is_multi_property:
+        properties = updated_report.properties
+        response_data = {
+            **{key: getattr(updated_report, key) for key in updated_report.__dict__ if not key.startswith('_')},
+            'properties': properties
+        }
+        return response_data
+
     return updated_report
 
 @app.delete("/api/reports/{report_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -517,6 +633,354 @@ async def generate_report_docx(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error generating DOCX file: {type(e).__name__}: {str(e)}"
         )
+
+# ===== PROPERTY ENDPOINTS (Protected) =====
+@app.post("/api/properties", response_model=schemas.PropertyResponse, status_code=status.HTTP_201_CREATED)
+async def create_property(
+    property_data: schemas.PropertyCreate,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new property for the authenticated user"""
+    logger.info(f"[CREATE PROPERTY] User: {current_user.email}")
+    try:
+        db_property = crud.create_property(db, property_data, current_user.id)
+        logger.info(f"[CREATE PROPERTY] Property created with ID: {db_property.id}")
+        return db_property
+    except ValueError as e:
+        logger.error(f"[CREATE PROPERTY] Validation error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"[CREATE PROPERTY] Error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creating property: {str(e)}"
+        )
+
+@app.get("/api/properties", response_model=list[schemas.PropertyResponse])
+async def get_user_properties(
+    skip: int = 0,
+    limit: int = 100,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all properties for the authenticated user (paginated)"""
+    return crud.get_user_properties(db, current_user.id, skip=skip, limit=limit)
+
+@app.get("/api/properties/templates", response_model=list[schemas.PropertyTemplateResponse])
+async def get_property_templates(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all property templates (Property Library) for the authenticated user"""
+    templates = crud.get_property_templates(db, current_user.id)
+    return [
+        schemas.PropertyTemplateResponse(
+            id=p.id,
+            template_name=p.template_name,
+            property_village=p.property_village,
+            property_district=p.property_district,
+            land_extent_formatted=p.land_extent_formatted,
+            last_valued_date=p.last_valued_date,
+            valuation_market_value=p.valuation_market_value
+        )
+        for p in templates
+    ]
+
+@app.get("/api/properties/{property_id}", response_model=schemas.PropertyResponse)
+async def get_property(
+    property_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get a specific property by ID (must belong to authenticated user)"""
+    db_property = crud.get_property(db, property_id, current_user.id)
+    if db_property is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Property with ID {property_id} not found"
+        )
+    return db_property
+
+@app.put("/api/properties/{property_id}", response_model=schemas.PropertyResponse)
+async def update_property(
+    property_id: int,
+    property_update: schemas.PropertyUpdate,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update a property (must belong to authenticated user)"""
+    try:
+        updated_property = crud.update_property(db, property_id, property_update, current_user.id)
+        if not updated_property:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Property with ID {property_id} not found"
+            )
+        return updated_property
+    except ValueError as e:
+        logger.error(f"[UPDATE PROPERTY] Validation error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@app.delete("/api/properties/{property_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_property(
+    property_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a property (must belong to authenticated user, and not used in any reports)"""
+    try:
+        success = crud.delete_property(db, property_id, current_user.id)
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Property with ID {property_id} not found"
+            )
+        return None
+    except ValueError as e:
+        # Property is in use
+        logger.warning(f"[DELETE PROPERTY] Cannot delete: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(e)
+        )
+
+# ===== MULTI-PROPERTY REPORT ENDPOINTS (Protected) =====
+@app.post("/api/reports/multi-property", response_model=schemas.MultiPropertyReportResponse, status_code=status.HTTP_201_CREATED)
+async def create_multi_property_report(
+    report_data: schemas.MultiPropertyReportCreate,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a multi-property report with existing or new properties"""
+    logger.info(f"[CREATE MULTI-PROPERTY REPORT] User: {current_user.email}")
+    logger.info(f"  Property IDs: {report_data.property_ids}")
+    logger.info(f"  New properties: {len(report_data.properties or [])}")
+
+    try:
+        db_report = crud.create_multi_property_report(db, report_data, current_user.id)
+        logger.info(f"[CREATE MULTI-PROPERTY REPORT] Report created with ID: {db_report.id}")
+        logger.info(f"  Property count: {db_report.property_count}")
+        logger.info(f"  Total valuation: {db_report.total_valuation_amount}")
+
+        # Build response with properties
+        response = schemas.MultiPropertyReportResponse(
+            id=db_report.id,
+            is_multi_property=db_report.is_multi_property,
+            property_count=db_report.property_count,
+            total_valuation_amount=db_report.total_valuation_amount,
+            properties=[rp.property for rp in db_report.property_associations],
+            invoice_data=db_report.invoice_data
+        )
+        return response
+    except ValueError as e:
+        logger.error(f"[CREATE MULTI-PROPERTY REPORT] Validation error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error(f"[CREATE MULTI-PROPERTY REPORT] Error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creating multi-property report: {str(e)}"
+        )
+
+@app.post("/api/reports/{report_id}/properties/{property_id}", response_model=schemas.ReportPropertyResponse, status_code=status.HTTP_201_CREATED)
+async def add_property_to_report(
+    report_id: int,
+    property_id: int,
+    property_order: Optional[int] = None,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Add an existing property to a report"""
+    logger.info(f"[ADD PROPERTY TO REPORT] Report: {report_id}, Property: {property_id}")
+
+    try:
+        report_property = crud.add_property_to_report(
+            db, report_id, property_id, current_user.id, property_order
+        )
+        logger.info(f"  Added with order: {report_property.property_order}")
+        return report_property
+    except ValueError as e:
+        logger.error(f"[ADD PROPERTY TO REPORT] Error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@app.delete("/api/reports/{report_id}/properties/{property_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_property_from_report(
+    report_id: int,
+    property_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Remove a property from a report"""
+    logger.info(f"[REMOVE PROPERTY FROM REPORT] Report: {report_id}, Property: {property_id}")
+
+    try:
+        crud.remove_property_from_report(db, report_id, property_id, current_user.id)
+        logger.info(f"  Property removed successfully")
+        return None
+    except ValueError as e:
+        logger.error(f"[REMOVE PROPERTY FROM REPORT] Error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@app.put("/api/reports/{report_id}/properties/reorder", status_code=status.HTTP_200_OK)
+async def reorder_report_properties(
+    report_id: int,
+    property_order_map: dict[int, int],
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Reorder properties in a report (drag-drop support)
+
+    Body: {"property_id": new_order, ...}
+    Example: {1: 2, 2: 1, 3: 3} swaps first two properties
+    """
+    logger.info(f"[REORDER PROPERTIES] Report: {report_id}")
+    logger.info(f"  New order: {property_order_map}")
+
+    try:
+        crud.reorder_report_properties(db, report_id, property_order_map, current_user.id)
+        logger.info(f"  Properties reordered successfully")
+        return {"status": "success", "message": "Properties reordered"}
+    except ValueError as e:
+        logger.error(f"[REORDER PROPERTIES] Error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@app.put("/api/reports/{report_id}/properties/{property_id}", response_model=schemas.PropertyResponse)
+async def update_report_property(
+    report_id: int,
+    property_id: int,
+    property_update: schemas.PropertyUpdate,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update an individual property within a report
+
+    Supports updating all property fields including status ('draft' or 'completed')
+    """
+    logger.info(f"[UPDATE REPORT PROPERTY] Report: {report_id}, Property: {property_id}")
+
+    # Verify user owns the report
+    db_report = crud.get_report(db, report_id, current_user.id)
+    if not db_report:
+        logger.error(f"  Report not found or access denied")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Report not found or access denied"
+        )
+
+    # Update the property
+    db_property = crud.update_property(db, property_id, property_update, current_user.id)
+    if not db_property:
+        logger.error(f"  Property not found or access denied")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Property not found or access denied"
+        )
+
+    logger.info(f"  Property updated successfully (status: {db_property.status})")
+    return db_property
+
+@app.post("/api/reports/{report_id}/properties/{property_id}/duplicate", response_model=schemas.PropertyResponse, status_code=status.HTTP_201_CREATED)
+async def duplicate_report_property(
+    report_id: int,
+    property_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Duplicate a property within a report (deep copy including images)
+
+    Creates a new property with all data copied from the original.
+    The duplicated property starts with status='draft' and is added to the report.
+    """
+    logger.info(f"[DUPLICATE PROPERTY] Report: {report_id}, Property: {property_id}")
+
+    try:
+        new_property = crud.duplicate_property(db, report_id, property_id, current_user.id)
+        logger.info(f"  Property duplicated successfully (new ID: {new_property.id})")
+        return new_property
+    except ValueError as e:
+        logger.error(f"[DUPLICATE PROPERTY] Error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@app.patch("/api/properties/{property_id}/status")
+async def update_property_status(
+    property_id: int,
+    status_update: dict,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update the status of a property ('draft' or 'completed')
+
+    Body: {"status": "completed"} or {"status": "draft"}
+    """
+    logger.info(f"[UPDATE PROPERTY STATUS] Property: {property_id}")
+
+    status_value = status_update.get("status")
+    if not status_value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing 'status' field in request body"
+        )
+
+    try:
+        db_property = crud.update_property_status(db, property_id, status_value, current_user.id)
+        if not db_property:
+            logger.error(f"  Property not found or access denied")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Property not found or access denied"
+            )
+
+        logger.info(f"  Status updated to: {status_value}")
+        return {"status": "success", "property_id": property_id, "new_status": status_value}
+    except ValueError as e:
+        logger.error(f"[UPDATE PROPERTY STATUS] Error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@app.get("/api/reports/{report_id}/properties", response_model=list[schemas.ReportPropertyResponse])
+async def get_report_properties(
+    report_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all properties for a report, ordered by property_order"""
+    # Verify user owns the report
+    db_report = crud.get_report(db, report_id, current_user.id)
+    if not db_report:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Report with ID {report_id} not found"
+        )
+
+    return crud.get_report_properties(db, report_id)
 
 # OCR Document Processing Endpoint
 @app.post("/api/ocr/extract")

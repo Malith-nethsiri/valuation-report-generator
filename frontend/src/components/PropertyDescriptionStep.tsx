@@ -27,6 +27,7 @@ interface PropertyDescriptionStepProps {
   errors: any;
   watch: any;
   setValue: any;
+  isBareLand?: boolean;  // Hide building sections for bare land reports
 }
 
 // Configuration Constants
@@ -115,6 +116,63 @@ const VEGETATION_TYPES = [
   { value: 'mature_trees', label: 'Mature Trees' },
   { value: 'mixed_vegetation', label: 'Mixed Vegetation' },
   { value: 'dense_jungle', label: 'Dense Jungle/Forest' },
+];
+
+const DEVELOPMENT_FEASIBILITY_TEMPLATES = [
+  {
+    value: '',
+    label: '-- Select a template (optional) --'
+  },
+  {
+    value: 'residential_ready',
+    label: 'Ready for Residential Development',
+    text: 'The land is cleared and ready for residential development. All essential infrastructure including electricity, water supply, and road access are available. The site is suitable for immediate construction without requiring major preparatory work.'
+  },
+  {
+    value: 'residential_potential',
+    label: 'Residential Development Potential',
+    text: 'The land has good potential for residential development. The location is well-connected with nearby access to main roads and utilities. With proper land preparation and obtaining necessary approvals, the site would be suitable for residential construction.'
+  },
+  {
+    value: 'commercial_ready',
+    label: 'Ready for Commercial Development',
+    text: 'The property is well-positioned for commercial development with excellent road frontage and visibility. Essential infrastructure is in place, and the zoning permits commercial use. The location benefits from high traffic flow and proximity to commercial centers.'
+  },
+  {
+    value: 'commercial_potential',
+    label: 'Commercial Development Potential',
+    text: 'The land shows promising potential for commercial development due to its strategic location. Subject to obtaining necessary planning approvals and zoning clearances, the site could be developed for commercial purposes with good accessibility and infrastructure availability.'
+  },
+  {
+    value: 'infrastructure_pending',
+    label: 'Infrastructure Development Pending',
+    text: 'The land is currently undeveloped but has development potential. Essential infrastructure such as electricity and water connections are planned for the area. Development is feasible once the necessary infrastructure is established and relevant approvals are obtained.'
+  },
+  {
+    value: 'agricultural',
+    label: 'Agricultural/Cultivation Use',
+    text: 'The land is currently utilized for agricultural purposes. The soil quality and drainage patterns are suitable for cultivation. While primarily suited for agricultural use, the land could potentially be considered for development subject to obtaining necessary change of use approvals.'
+  },
+  {
+    value: 'subdivision_potential',
+    label: 'Subdivision Potential',
+    text: 'The property has potential for subdivision into multiple parcels, subject to local planning regulations and obtaining necessary approvals. The land extent and configuration are suitable for subdivision, which could enhance overall development value.'
+  },
+  {
+    value: 'ongoing_construction',
+    label: 'Construction in Progress',
+    text: 'There is ongoing construction activity on the property. Foundation work has been completed and structural work is in progress. The development is being carried out with proper building approvals and is progressing according to plan.'
+  },
+  {
+    value: 'infrastructure_ready',
+    label: 'Infrastructure Ready',
+    text: 'All necessary infrastructure is in place including water supply connections, electricity, sewerage system, and proper road access. The land is leveled and ready for construction. No major site preparation work is required before commencing development.'
+  },
+  {
+    value: 'planned_development',
+    label: 'Planned Development Project',
+    text: 'The property is part of a planned development project in the area. Infrastructure improvements are underway, and the locality is witnessing steady development. The land benefits from upcoming infrastructure projects and improved connectivity.'
+  }
 ];
 
 const BUILDING_TYPES = [
@@ -228,11 +286,19 @@ interface BuildingPhoto {
   order: number;
 }
 
+interface PropertyPhoto {
+  id: string;
+  image_data: string;
+  caption: string;
+  order: number;
+}
+
 export const PropertyDescriptionStep: React.FC<PropertyDescriptionStepProps> = ({
   register,
   errors,
   watch,
-  setValue
+  setValue,
+  isBareLand = false
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>('land');
   const [buildings, setBuildings] = useState<Building[]>([]);
@@ -240,13 +306,22 @@ export const PropertyDescriptionStep: React.FC<PropertyDescriptionStepProps> = (
   const [isGeneratingDescription, setIsGeneratingDescription] = useState(false);
   const [floorCount, setFloorCount] = useState<{[buildingId: string]: number}>({});
   const [uploadingPhotos, setUploadingPhotos] = useState<{[buildingId: string]: boolean}>({});
+  const [propertyPhotos, setPropertyPhotos] = useState<PropertyPhoto[]>([]);
+  const [uploadingPropertyPhotos, setUploadingPropertyPhotos] = useState(false);
 
   // Initialize buildings from form values on mount
   const formBuildings = watch('buildings');
+  const formPropertyPhotos = watch('property_photos');
 
   useEffect(() => {
     if (formBuildings && Array.isArray(formBuildings) && formBuildings.length > 0) {
       setBuildings(formBuildings);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (formPropertyPhotos && Array.isArray(formPropertyPhotos) && formPropertyPhotos.length > 0) {
+      setPropertyPhotos(formPropertyPhotos);
     }
   }, []);
 
@@ -788,10 +863,173 @@ export const PropertyDescriptionStep: React.FC<PropertyDescriptionStepProps> = (
     setValue('buildings', updated);
   };
 
-  const tabs = [
-    { id: 'land' as TabType, label: 'Land Description', icon: Mountain },
-    { id: 'building' as TabType, label: 'Building Details', icon: Building2 },
-  ];
+  // ===== PROPERTY PHOTO HANDLERS =====
+
+  // Handle property photo upload
+  const handlePropertyPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    if (propertyPhotos.length >= MAX_PROPERTY_PHOTOS) {
+      toast.error(`Maximum ${MAX_PROPERTY_PHOTOS} photos reached`);
+      return;
+    }
+
+    const filesToProcess = Array.from(files).slice(0, MAX_PROPERTY_PHOTOS - propertyPhotos.length);
+    const photoCount = filesToProcess.length;
+
+    // Set loading state
+    setUploadingPropertyPhotos(true);
+
+    // Show loading toast
+    const toastId = toast.loading(`Uploading ${photoCount} photo${photoCount > 1 ? 's' : ''}...`);
+
+    const newPhotos: PropertyPhoto[] = [];
+    const startingOrder = propertyPhotos.length + 1;
+
+    try {
+      // Read all files sequentially
+      for (let i = 0; i < filesToProcess.length; i++) {
+        try {
+          const imageData = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(filesToProcess[i]);
+          });
+
+          newPhotos.push({
+            id: `photo-${Date.now()}-${i}`,
+            image_data: imageData,
+            caption: '',
+            order: startingOrder + i
+          });
+        } catch (error) {
+          console.error('Error reading file:', error);
+          toast.error(`Failed to read ${filesToProcess[i].name}`);
+        }
+      }
+
+      // Single state update with all photos
+      if (newPhotos.length > 0) {
+        const updated = [...propertyPhotos, ...newPhotos];
+        setPropertyPhotos(updated);
+        setValue('property_photos', updated);
+
+        // Show success toast
+        toast.success(`✓ ${newPhotos.length} photo${newPhotos.length > 1 ? 's' : ''} uploaded successfully`, {
+          id: toastId,
+        });
+      } else {
+        toast.dismiss(toastId);
+      }
+    } catch (error) {
+      console.error('Upload error:', error);
+      toast.error('Failed to upload photos. Please try again.', { id: toastId });
+    } finally {
+      // Clear loading state
+      setUploadingPropertyPhotos(false);
+    }
+  };
+
+  // Handle drag and drop for property photos
+  const handlePropertyPhotoDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const files = e.dataTransfer.files;
+    if (!files) return;
+
+    if (propertyPhotos.length >= MAX_PROPERTY_PHOTOS) {
+      toast.error(`Maximum ${MAX_PROPERTY_PHOTOS} photos reached`);
+      return;
+    }
+
+    const imageFiles = Array.from(files).filter(file => file.type.startsWith('image/'));
+
+    if (imageFiles.length === 0) {
+      toast.error('Please drop only image files');
+      return;
+    }
+
+    const filesToProcess = imageFiles.slice(0, MAX_PROPERTY_PHOTOS - propertyPhotos.length);
+    const photoCount = filesToProcess.length;
+
+    // Set loading state
+    setUploadingPropertyPhotos(true);
+
+    // Show loading toast
+    const toastId = toast.loading(`Uploading ${photoCount} photo${photoCount > 1 ? 's' : ''}...`);
+
+    const newPhotos: PropertyPhoto[] = [];
+    const startingOrder = propertyPhotos.length + 1;
+
+    try {
+      // Read all files sequentially
+      for (let i = 0; i < filesToProcess.length; i++) {
+        try {
+          const imageData = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(filesToProcess[i]);
+          });
+
+          newPhotos.push({
+            id: `photo-${Date.now()}-${i}`,
+            image_data: imageData,
+            caption: '',
+            order: startingOrder + i
+          });
+        } catch (error) {
+          console.error('Error reading file:', error);
+          toast.error(`Failed to read ${filesToProcess[i].name}`);
+        }
+      }
+
+      // Single state update with all photos
+      if (newPhotos.length > 0) {
+        const updated = [...propertyPhotos, ...newPhotos];
+        setPropertyPhotos(updated);
+        setValue('property_photos', updated);
+
+        // Show success toast
+        toast.success(`✓ ${newPhotos.length} photo${newPhotos.length > 1 ? 's' : ''} uploaded successfully`, {
+          id: toastId,
+        });
+      } else {
+        toast.dismiss(toastId);
+      }
+    } catch (error) {
+      console.error('Upload error:', error);
+      toast.error('Failed to upload photos. Please try again.', { id: toastId });
+    } finally {
+      // Clear loading state
+      setUploadingPropertyPhotos(false);
+    }
+  };
+
+  // Remove property photo
+  const removePropertyPhoto = (photoId: string) => {
+    const updated = propertyPhotos.filter(p => p.id !== photoId);
+    setPropertyPhotos(updated);
+    setValue('property_photos', updated);
+    toast.success('Photo removed');
+  };
+
+  // Update property photo caption
+  const updatePropertyPhotoCaption = (photoId: string, caption: string) => {
+    const updated = propertyPhotos.map(p =>
+      p.id === photoId ? { ...p, caption } : p
+    );
+    setPropertyPhotos(updated);
+    setValue('property_photos', updated);
+  };
+
+  const tabs = isBareLand
+    ? [{ id: 'land' as TabType, label: 'Land Description', icon: Mountain }]
+    : [
+        { id: 'land' as TabType, label: 'Land Description', icon: Mountain },
+        { id: 'building' as TabType, label: 'Building Details', icon: Building2 },
+      ];
 
   return (
     <div className="space-y-6">
@@ -1055,31 +1293,185 @@ export const PropertyDescriptionStep: React.FC<PropertyDescriptionStepProps> = (
               </p>
             </div>
 
-            {/* Occupier Information */}
-            <div className="border-t border-gray-200 pt-6 mt-6">
-              <h4 className="text-lg font-semibold text-gray-900 mb-4">Occupier Information</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="occupier_name">Occupier Name</Label>
-                  <Input
-                    {...register('occupier_name')}
-                    placeholder="e.g., Mrs. Prema Nandage Sunitha Kumari Jayasinghe"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="occupier_relationship">Relationship</Label>
+            {/* Development Feasibility / Ongoing Construction (for bare land) */}
+            {isBareLand && (
+              <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl p-4 border border-amber-200">
+                <Label htmlFor="ongoing_construction_notes" className="text-amber-800 font-semibold">
+                  Development Feasibility / Ongoing Construction
+                  <span className="text-gray-500 text-sm ml-2 font-normal">(Optional - for bare land or development sites)</span>
+                </Label>
+
+                {/* Template Selector */}
+                <div className="mt-3 mb-2">
                   <select
-                    {...register('occupier_relationship')}
-                    className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                    className="w-full px-3 py-2 text-sm bg-white border border-amber-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                    onChange={(e) => {
+                      const selectedTemplate = DEVELOPMENT_FEASIBILITY_TEMPLATES.find(
+                        t => t.value === e.target.value
+                      );
+                      if (selectedTemplate && selectedTemplate.text) {
+                        // Directly set the template text without confirmation
+                        setValue('ongoing_construction_notes', selectedTemplate.text);
+                        // Reset dropdown to default
+                        e.target.value = '';
+                      }
+                    }}
                   >
-                    <option value="">Select relationship...</option>
-                    {OCCUPIER_RELATIONSHIPS.map(opt => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    {DEVELOPMENT_FEASIBILITY_TEMPLATES.map(template => (
+                      <option key={template.value} value={template.value}>
+                        {template.label}
+                      </option>
                     ))}
                   </select>
+                  <p className="text-xs text-amber-700 mt-1">
+                    💡 Select a template to quickly fill in common development notes (you can edit after)
+                  </p>
+                </div>
+
+                <textarea
+                  {...register('ongoing_construction_notes')}
+                  rows={3}
+                  maxLength={2000}
+                  className="w-full px-4 py-3 bg-white border border-amber-300 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+                  placeholder="Describe any ongoing construction, planned development, infrastructure readiness, or suitability for future building..."
+                />
+                <p className="text-xs text-amber-600 mt-2">
+                  Note any construction in progress, development plans, infrastructure availability, or development potential. Appears in bare land reports.
+                </p>
+              </div>
+            )}
+
+            {/* Property Photos (for bare land only) */}
+            {isBareLand && (
+              <div className="bg-white rounded-xl p-6 border border-gray-200 shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <Label className="flex items-center space-x-2">
+                    <Camera className="h-5 w-5 text-emerald-600" />
+                    <span>Property Photos (Max {MAX_PROPERTY_PHOTOS})</span>
+                  </Label>
+                  <span className="text-sm text-gray-500">
+                    {propertyPhotos.length} / {MAX_PROPERTY_PHOTOS}
+                  </span>
+                </div>
+
+                {/* Photo Upload Area */}
+                {propertyPhotos.length < MAX_PROPERTY_PHOTOS && (
+                  <div
+                    className={`border-2 border-dashed rounded-xl p-6 text-center transition-colors mb-4 ${
+                      uploadingPropertyPhotos
+                        ? 'border-emerald-500 bg-emerald-50/50'
+                        : 'border-gray-300 hover:border-emerald-500'
+                    }`}
+                    onDrop={handlePropertyPhotoDrop}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDragEnter={(e) => e.preventDefault()}
+                  >
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={handlePropertyPhotoUpload}
+                      className="hidden"
+                      id="property-photo-upload"
+                      disabled={uploadingPropertyPhotos}
+                    />
+                    <label htmlFor="property-photo-upload" className={uploadingPropertyPhotos ? 'cursor-not-allowed' : 'cursor-pointer'}>
+                      {uploadingPropertyPhotos ? (
+                        <>
+                          <Loader2 className="h-10 w-10 mx-auto text-emerald-600 mb-2 animate-spin" />
+                          <p className="text-emerald-700 text-sm font-medium mb-1">
+                            Uploading photos...
+                          </p>
+                          <p className="text-xs text-emerald-600">
+                            Please wait while we process your images
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="h-10 w-10 mx-auto text-gray-400 mb-2" />
+                          <p className="text-gray-600 text-sm font-medium mb-1">
+                            Click to upload or drag & drop photos
+                          </p>
+                          <p className="text-xs text-gray-500 mb-2">
+                            💡 Tip: Select multiple files using Ctrl+Click or Shift+Click
+                          </p>
+                          <p className="text-xs text-gray-400">
+                            PNG, JPG up to 10MB each • {MAX_PROPERTY_PHOTOS - propertyPhotos.length} slot{MAX_PROPERTY_PHOTOS - propertyPhotos.length !== 1 ? 's' : ''} remaining
+                          </p>
+                        </>
+                      )}
+                    </label>
+                  </div>
+                )}
+
+                {/* Photo Grid */}
+                {propertyPhotos.length > 0 && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {propertyPhotos.map((photo, photoIndex) => (
+                      <div key={photo.id} className="border border-gray-200 rounded-xl overflow-hidden">
+                        <div className="relative aspect-video bg-gray-100">
+                          <img
+                            src={photo.image_data}
+                            alt={photo.caption || `Photo ${photoIndex + 1}`}
+                            className="w-full h-full object-cover"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removePropertyPhoto(photo.id)}
+                            className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                          <span className="absolute top-2 left-2 px-2 py-1 bg-black/50 text-white text-xs rounded">
+                            Fig. {String(photoIndex + 1).padStart(2, '0')}
+                          </span>
+                        </div>
+                        <div className="p-3">
+                          <Input
+                            value={photo.caption}
+                            onChange={(e) => updatePropertyPhotoCaption(photo.id, e.target.value)}
+                            placeholder={`Caption for Fig. ${String(photoIndex + 1).padStart(2, '0')}`}
+                            className="text-sm"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <p className="text-xs text-gray-500 mt-4 italic">
+                  📸 These photos will appear in Section 4.0 (Description of Property) in the final report
+                </p>
+              </div>
+            )}
+
+            {/* Occupier Information - Hidden for bare land */}
+            {!isBareLand && (
+              <div className="border-t border-gray-200 pt-6 mt-6">
+                <h4 className="text-lg font-semibold text-gray-900 mb-4">Occupier Information</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="occupier_name">Occupier Name</Label>
+                    <Input
+                      {...register('occupier_name')}
+                      placeholder="e.g., Mrs. Prema Nandage Sunitha Kumari Jayasinghe"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="occupier_relationship">Relationship</Label>
+                    <select
+                      {...register('occupier_relationship')}
+                      className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                    >
+                      <option value="">Select relationship...</option>
+                      {OCCUPIER_RELATIONSHIPS.map(opt => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         )}
 
