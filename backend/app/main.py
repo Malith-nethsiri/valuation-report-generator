@@ -167,7 +167,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With"],
     expose_headers=["Content-Disposition"],
 )
@@ -360,6 +360,53 @@ async def update_profile(
             detail="User not found"
         )
     return updated_user
+
+# Bank Account Management Endpoints
+@app.get("/api/users/me/bank-accounts", response_model=List[schemas.BankAccount])
+async def get_my_bank_accounts(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all bank accounts for the current user"""
+    accounts = crud.get_bank_accounts(db, current_user.id)
+    return accounts or []
+
+@app.post("/api/users/me/bank-accounts", response_model=schemas.BankAccount, status_code=status.HTTP_201_CREATED)
+async def create_bank_account(
+    account: schemas.BankAccountCreate,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Add a new bank account"""
+    new_account = crud.add_bank_account(db, current_user.id, account)
+    if not new_account:
+        raise HTTPException(status_code=500, detail="Failed to create bank account")
+    return new_account
+
+@app.patch("/api/users/me/bank-accounts/{account_id}", response_model=schemas.BankAccount)
+async def update_bank_account(
+    account_id: str,
+    account_update: schemas.BankAccountUpdate,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update an existing bank account"""
+    updated_account = crud.update_bank_account(db, current_user.id, account_id, account_update)
+    if not updated_account:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bank account not found")
+    return updated_account
+
+@app.delete("/api/users/me/bank-accounts/{account_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_bank_account(
+    account_id: str,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a bank account"""
+    success = crud.delete_bank_account(db, current_user.id, account_id)
+    if not success:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Bank account not found")
+    return None
 
 # Letterhead Template Endpoints
 @app.get("/api/letterhead-templates", response_model=schemas.TemplateListResponse)
@@ -581,6 +628,26 @@ async def delete_report(
             detail=f"Report with ID {report_id} not found"
         )
     return None
+
+@app.post("/api/reports/{report_id}/duplicate", response_model=schemas.ReportResponse, status_code=status.HTTP_201_CREATED)
+async def duplicate_report(
+    report_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Duplicate an existing report as a new draft"""
+    logger.info(f"[DUPLICATE_REPORT] User {current_user.email} duplicating report {report_id}")
+
+    new_report = crud.duplicate_report(db, report_id, current_user.id)
+    if not new_report:
+        logger.warning(f"[DUPLICATE_REPORT] Report {report_id} not found for user {current_user.id}")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Report with ID {report_id} not found"
+        )
+
+    logger.info(f"[DUPLICATE_REPORT] Successfully created duplicate report {new_report.id}")
+    return new_report
 
 @app.post("/api/reports/{report_id}/generate")
 async def generate_report_docx(
@@ -929,7 +996,7 @@ async def duplicate_report_property(
 @app.patch("/api/properties/{property_id}/status")
 async def update_property_status(
     property_id: int,
-    status_update: dict,
+    status_update: schemas.PropertyStatusUpdate,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -940,12 +1007,7 @@ async def update_property_status(
     """
     logger.info(f"[UPDATE PROPERTY STATUS] Property: {property_id}")
 
-    status_value = status_update.get("status")
-    if not status_value:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Missing 'status' field in request body"
-        )
+    status_value = status_update.status
 
     try:
         db_property = crud.update_property_status(db, property_id, status_value, current_user.id)
@@ -1678,6 +1740,77 @@ async def generate_land_description_endpoint(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error generating land description: {str(e)}"
+        )
+
+
+@app.post("/api/admin/migrate-rooms")
+async def migrate_rooms_to_building_level(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Admin endpoint: Migrate all buildings from floor-based to building-level rooms.
+
+    This endpoint:
+    1. Finds all reports and properties with buildings
+    2. Aggregates rooms from floor-level to building-level
+    3. Simplifies floor structure (removes rooms and accommodation_summary)
+    4. Calculates building-level accommodation_summary
+
+    Returns count of migrated reports and buildings.
+    """
+    try:
+        from .migrations.migrate_rooms_to_building_level import migrate_property_buildings
+
+        # Get all reports with buildings
+        reports = db.query(models.Report).filter(models.Report.buildings.isnot(None)).all()
+
+        # Get all properties with buildings
+        properties = db.query(models.Property).filter(models.Property.buildings.isnot(None)).all()
+
+        migrated_reports = 0
+        migrated_buildings = 0
+
+        # Migrate reports
+        for report in reports:
+            if report.buildings:
+                original_building_count = len(report.buildings)
+                report_data = {'buildings': report.buildings}
+                migrated_data = migrate_property_buildings(report_data)
+                report.buildings = migrated_data['buildings']
+                migrated_reports += 1
+                migrated_buildings += original_building_count
+
+        # Migrate properties
+        for prop in properties:
+            if prop.buildings:
+                original_building_count = len(prop.buildings)
+                property_data = {'buildings': prop.buildings}
+                migrated_data = migrate_property_buildings(property_data)
+                prop.buildings = migrated_data['buildings']
+                migrated_buildings += original_building_count
+
+        # Commit all changes
+        db.commit()
+
+        return {
+            "status": "success",
+            "message": "Migration completed successfully",
+            "reports_processed": migrated_reports,
+            "properties_processed": len(properties),
+            "total_buildings_migrated": migrated_buildings,
+            "migrated_at": datetime.utcnow().isoformat()
+        }
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"[ERROR] Migration failed: {str(e)}")
+        import traceback
+        error_details = traceback.format_exc()
+        logger.error(f"[ERROR] Migration traceback: {error_details}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Migration failed: {str(e)}"
         )
 
 

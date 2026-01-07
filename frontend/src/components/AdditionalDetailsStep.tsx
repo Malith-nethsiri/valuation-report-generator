@@ -29,6 +29,7 @@ export const AdditionalDetailsStep: React.FC<AdditionalDetailsStepProps> = ({
     setValue
 }) => {
     const hasSpecialNote = watch('has_special_note');
+    const requestType = watch('request_type'); // Watch request_type for controlled radio buttons
 
     return (
         <div className="space-y-6">
@@ -79,6 +80,42 @@ export const AdditionalDetailsStep: React.FC<AdditionalDetailsStepProps> = ({
                             {...register('submission_address')}
                         />
                     </div>
+                </div>
+            </div>
+
+            {/* Request Information Section */}
+            <div className="space-y-4">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Request Information</h3>
+
+                <div className="space-y-2">
+                    <Label className="text-gray-700 font-medium">
+                        Is this a request from a client or organization? *
+                    </Label>
+                    <div className="flex gap-4">
+                        <label className="flex items-center">
+                            <input
+                                type="radio"
+                                value="client_request"
+                                className="mr-2"
+                                checked={requestType === 'client_request'}
+                                {...register('request_type')}
+                            />
+                            <span>Client Request</span>
+                        </label>
+                        <label className="flex items-center">
+                            <input
+                                type="radio"
+                                value="organization_request"
+                                className="mr-2"
+                                checked={requestType === 'organization_request'}
+                                {...register('request_type')}
+                            />
+                            <span>Organization Request</span>
+                        </label>
+                    </div>
+                    {errors.request_type && (
+                        <p className="text-red-500 text-sm">{errors.request_type.message}</p>
+                    )}
                 </div>
             </div>
 

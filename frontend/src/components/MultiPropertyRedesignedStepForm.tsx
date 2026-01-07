@@ -37,6 +37,7 @@ import { PropertyMiniDashboard, PropertyInReport } from './PropertyMiniDashboard
 import MultiStepForm from './MultiStepForm';
 import InvoiceDataStep from './InvoiceDataStep';
 import { validateSriLankanNIC, validatePassport } from '../utils/validators';
+import { reportApi, api } from '../services/api';
 
 interface MultiPropertyRedesignedStepFormProps {
     onSubmit: (data: any) => Promise<void>;
@@ -95,6 +96,7 @@ const step1Schema = z.object({
     applicant_district: z.string().min(2, 'Please enter the district'),
     applicant_province: z.string().min(2, 'Please enter the province'),
     applicant_country: z.string().min(2, 'Please enter the country').default('Sri Lanka'),
+    applicant_contact_number: z.string().nullable().optional(), // Optional contact number
     valuation_type: z.string().min(1, 'Please enter the valuation type'),
     valuation_purpose: z.string().min(1, 'Purpose of valuation is required'),
     property_ownership: z.string().optional(),
@@ -117,6 +119,7 @@ const step1Schema = z.object({
 
 // Validation schema for Step 2 (Additional Details)
 const step2Schema = z.object({
+    request_type: z.enum(['client_request', 'organization_request']).optional(),
     submission_organization: z.string().optional(),
     submission_address: z.string().optional(),
     submission_recipient_position: z.string().optional(),
@@ -139,6 +142,7 @@ const multiPropertyCommonSchema = z.object({
     applicant_district: z.string().optional(),
     applicant_province: z.string().optional(),
     applicant_country: z.string().optional(),
+    applicant_contact_number: z.string().nullable().optional(), // Optional contact number
     valuation_type: z.string().optional(),
     valuation_purpose: z.string().optional(),
     property_ownership: z.string().optional(),
@@ -147,6 +151,7 @@ const multiPropertyCommonSchema = z.object({
     additional_owner_names: z.string().nullable().optional(),
 
     // Step 2: Additional Details
+    request_type: z.enum(['client_request', 'organization_request']).optional(),
     submission_organization: z.string().optional(),
     submission_address: z.string().optional(),
     submission_recipient_position: z.string().optional(),
@@ -174,6 +179,8 @@ export const MultiPropertyRedesignedStepForm: React.FC<MultiPropertyRedesignedSt
     const [currentStep, setCurrentStep] = useState(1); // Always start at step 1 to review saved data
     const [properties, setProperties] = useState<PropertyInReport[]>([]);
     const [editingPropertyId, setEditingPropertyId] = useState<string | number | null>(null);
+    const [showDraftWarning, setShowDraftWarning] = useState(false);
+    const [draftWarningData, setDraftWarningData] = useState<{ draftCount: number; completedCount: number } | null>(null);
 
     // Form for common data (Steps 1 & 2)
     const formMethods = useForm({
@@ -256,7 +263,7 @@ export const MultiPropertyRedesignedStepForm: React.FC<MultiPropertyRedesignedSt
                 id: prop.id || `property-${Date.now()}-${index}`,
                 type: prop.property_type || 'residential',
                 order: prop.property_order !== undefined ? prop.property_order : index,
-                status: prop.property_status || 'draft',
+                status: prop.status || 'draft',
                 data: prop
             }));
 
@@ -319,15 +326,19 @@ export const MultiPropertyRedesignedStepForm: React.FC<MultiPropertyRedesignedSt
         const property = properties.find(p => p.id === propertyId);
         if (!property) return;
 
+        // Create duplicate data WITHOUT the database ID to prevent overwriting original
+        const { id, ...dataWithoutId } = property.data || {};
+
         const newProperty: PropertyInReport = {
             id: `${property.type}-${Date.now()}`,
             type: property.type,
             order: properties.length,
             status: 'draft', // Duplicates start as draft
-            data: { ...property.data }, // Deep copy data
+            data: { ...dataWithoutId }, // Copy data WITHOUT database ID
         };
 
         setProperties(prev => [...prev, newProperty]);
+        console.log('[handleDuplicateProperty] Created duplicate without DB ID:', newProperty);
         toast.success('Property duplicated');
     };
 
@@ -369,6 +380,7 @@ export const MultiPropertyRedesignedStepForm: React.FC<MultiPropertyRedesignedSt
     };
 
     const handlePropertyFinish = async (propertyId: string | number, data: any) => {
+        // Update local state first
         setProperties(prev =>
             prev.map(p => {
                 if (p.id === propertyId) {
@@ -383,6 +395,24 @@ export const MultiPropertyRedesignedStepForm: React.FC<MultiPropertyRedesignedSt
                 return p;
             })
         );
+
+        // ✅ NEW: Save status to database immediately (only for properties with DB IDs)
+        try {
+            if (typeof propertyId === 'number') {
+                // Property has DB ID - update status via API
+                await api.patch(`/api/properties/${propertyId}/status`, { status: 'completed' });
+                console.log(`[handlePropertyFinish] Status updated in database for property ${propertyId}`);
+            } else {
+                // New property with temp ID - local state updated, will be saved on next draft save
+                console.log('[handlePropertyFinish] Property has temp ID, status updated in local state only');
+                console.log('[handlePropertyFinish] Click "Save Draft" to persist this property to the database');
+            }
+        } catch (error) {
+            console.error('[handlePropertyFinish] Failed to update status:', error);
+            toast.error('Failed to save property status');
+            return;
+        }
+
         setEditingPropertyId(null);
         toast.success('Property marked as completed');
     };
@@ -450,10 +480,9 @@ export const MultiPropertyRedesignedStepForm: React.FC<MultiPropertyRedesignedSt
             }
 
             if (draftCount > 0) {
-                const confirmed = window.confirm(
-                    `${draftCount} properties are draft. Only ${completedCount} completed properties will be included in the report.\n\nDo you want to continue?`
-                );
-                if (!confirmed) return;
+                setDraftWarningData({ draftCount, completedCount });
+                setShowDraftWarning(true);
+                return; // Stop navigation, wait for user confirmation
             }
         }
 
@@ -462,6 +491,17 @@ export const MultiPropertyRedesignedStepForm: React.FC<MultiPropertyRedesignedSt
 
     const handlePrevious = () => {
         setCurrentStep(prev => Math.max(prev - 1, 1));
+    };
+
+    const handleDraftWarningConfirm = () => {
+        setShowDraftWarning(false);
+        setDraftWarningData(null);
+        setCurrentStep(prev => Math.min(prev + 1, 5)); // Proceed to next step
+    };
+
+    const handleDraftWarningCancel = () => {
+        setShowDraftWarning(false);
+        setDraftWarningData(null);
     };
 
     // Final submission
@@ -505,7 +545,7 @@ export const MultiPropertyRedesignedStepForm: React.FC<MultiPropertyRedesignedSt
             const propertiesData = properties.map(prop => ({
                 ...prop.data,
                 property_order: prop.order,
-                property_status: prop.status,
+                status: prop.status,
                 property_type: prop.type,
             }));
             console.log('[handleSaveDraft] Serialized properties:', propertiesData);
@@ -526,6 +566,38 @@ export const MultiPropertyRedesignedStepForm: React.FC<MultiPropertyRedesignedSt
 
             await onSaveDraft(completeData);
             console.log('[handleSaveDraft] ✅ Draft saved successfully');
+
+            // ✅ NEW: Reload report to sync property IDs with database
+            if (reportId) {
+                try {
+                    const updatedReport = await reportApi.getReport(reportId);
+
+                    // Update properties state with database IDs
+                    if (updatedReport.properties && updatedReport.properties.length > 0) {
+                        const updatedProperties = updatedReport.properties.map((dbProp: any, index: number) => ({
+                            id: dbProp.id,  // ✅ Use integer DB ID from database
+                            type: dbProp.property_type || 'residential',
+                            order: dbProp.property_order !== undefined ? dbProp.property_order : index + 1,
+                            status: dbProp.status || 'draft',
+                            data: dbProp  // Full property data including DB ID
+                        }));
+
+                        setProperties(updatedProperties);
+                        console.log('[handleSaveDraft] Properties synced with database:', updatedProperties);
+                    }
+
+                    // ✅ Update form fields with the saved data from database
+                    // This ensures fields like contact_number, request_type, etc. persist correctly
+                    const { properties: _, ...reportFields } = updatedReport;
+                    reset(reportFields, { keepDefaultValues: false });
+                    console.log('[handleSaveDraft] Form fields updated with saved data');
+                } catch (error) {
+                    console.error('[handleSaveDraft] Failed to reload report:', error);
+                    // Don't show error to user - save was successful
+                }
+            }
+
+            toast.success('Draft saved successfully');
         } catch (error) {
             console.error('[handleSaveDraft] ❌ Draft save error:', error);
             toast.error('Failed to save draft');
@@ -587,7 +659,7 @@ export const MultiPropertyRedesignedStepForm: React.FC<MultiPropertyRedesignedSt
                     />
                 );
             case 4:
-                return <InvoiceDataStep formMethods={formMethods as any} />;
+                return <InvoiceDataStep formMethods={formMethods as any} properties={properties} isMultiProperty={true} />;
             case 5:
                 return (
                     <div className="text-center space-y-6">
@@ -713,6 +785,61 @@ export const MultiPropertyRedesignedStepForm: React.FC<MultiPropertyRedesignedSt
                     </div>
                 </div>
             </div>
+
+            {/* Modern Confirmation Dialog for Draft Properties */}
+            {showDraftWarning && draftWarningData && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center">
+                    {/* Backdrop */}
+                    <div
+                        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+                        onClick={handleDraftWarningCancel}
+                    />
+
+                    {/* Dialog */}
+                    <div className="relative bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl shadow-2xl max-w-md w-full mx-4 p-6 border border-slate-700 animate-in fade-in zoom-in duration-200">
+                        {/* Icon */}
+                        <div className="flex justify-center mb-4">
+                            <div className="bg-amber-500/20 p-3 rounded-full">
+                                <svg className="w-8 h-8 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                </svg>
+                            </div>
+                        </div>
+
+                        {/* Content */}
+                        <div className="text-center mb-6">
+                            <h3 className="text-xl font-bold text-white mb-3">
+                                Draft Properties Detected
+                            </h3>
+                            <div className="space-y-2">
+                                <p className="text-slate-300 text-sm leading-relaxed">
+                                    {draftWarningData.draftCount} {draftWarningData.draftCount === 1 ? 'property is' : 'properties are'} in draft status.
+                                    Only <span className="font-semibold text-green-400">{draftWarningData.completedCount}</span> completed {draftWarningData.completedCount === 1 ? 'property' : 'properties'} will be included in the report.
+                                </p>
+                                <p className="text-slate-400 text-sm font-medium">
+                                    Do you want to continue?
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Buttons */}
+                        <div className="flex gap-3">
+                            <button
+                                onClick={handleDraftWarningCancel}
+                                className="flex-1 px-4 py-2.5 rounded-lg font-medium text-slate-300 bg-slate-700 hover:bg-slate-600 transition-colors duration-200 border border-slate-600"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleDraftWarningConfirm}
+                                className="flex-1 px-4 py-2.5 rounded-lg font-medium text-white bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 transition-all duration-200 shadow-lg shadow-green-500/30"
+                            >
+                                Continue
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

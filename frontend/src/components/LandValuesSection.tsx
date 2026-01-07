@@ -36,7 +36,9 @@ function generateId(): string {
 
 export default function LandValuesSection({ data, onChange }: Props) {
   const [comparables, setComparables] = useState<ComparableProperty[]>(
-    data.comparable_properties || []
+    (data.comparable_properties || []).map(comp =>
+      comp.id ? comp : { ...comp, id: generateId() }
+    )
   );
 
   // Template selection state
@@ -46,7 +48,11 @@ export default function LandValuesSection({ data, onChange }: Props) {
   // Sync local state with parent data
   useEffect(() => {
     if (data.comparable_properties) {
-      setComparables(data.comparable_properties);
+      setComparables(
+        data.comparable_properties.map(comp =>
+          comp.id ? comp : { ...comp, id: generateId() }
+        )
+      );
     }
   }, [data.comparable_properties]);
 

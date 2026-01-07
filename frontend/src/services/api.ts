@@ -5,6 +5,9 @@ import type {
   AuthResponse,
   User,
   UserUpdate,
+  BankAccount,
+  BankAccountCreate,
+  BankAccountUpdate,
   Report,
   ReportCreate,
   TemplateMetadata,
@@ -314,6 +317,28 @@ export const authApi = {
   },
 };
 
+// Bank Account Management API
+export const bankAccountApi = {
+  getAll: async (): Promise<BankAccount[]> => {
+    const response = await api.get<BankAccount[]>('/api/users/me/bank-accounts');
+    return response.data;
+  },
+
+  create: async (account: BankAccountCreate): Promise<BankAccount> => {
+    const response = await api.post<BankAccount>('/api/users/me/bank-accounts', account);
+    return response.data;
+  },
+
+  update: async (accountId: string, account: BankAccountUpdate): Promise<BankAccount> => {
+    const response = await api.patch<BankAccount>(`/api/users/me/bank-accounts/${accountId}`, account);
+    return response.data;
+  },
+
+  delete: async (accountId: string): Promise<void> => {
+    await api.delete(`/api/users/me/bank-accounts/${accountId}`);
+  },
+};
+
 // Letterhead Template API
 export const letterheadApi = {
   getTemplates: async (): Promise<TemplateMetadata[]> => {
@@ -379,6 +404,11 @@ export const reportApi = {
     link.click();
     document.body.removeChild(link);
     window.URL.revokeObjectURL(url);
+  },
+
+  duplicateReport: async (id: number): Promise<Report> => {
+    const response = await api.post<Report>(`/api/reports/${id}/duplicate`);
+    return response.data;
   },
 };
 

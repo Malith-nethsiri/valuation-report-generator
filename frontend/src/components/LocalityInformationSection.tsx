@@ -4,6 +4,7 @@ import { Button } from './Button';
 import { Label } from './Label';
 import { Input } from './Input';
 import { Textarea } from './Textarea';
+import { MultiSelectWithCustomInput } from './MultiSelectWithCustomInput';
 import { formatFacilityName, formatPlaceName, formatAddress } from '../utils/textFormatter';
 import { authTokenStorage } from '../utils/secureStorage';
 
@@ -40,7 +41,7 @@ interface LocalityData {
 
   // Infrastructure
   has_electricity?: boolean;
-  water_supply_type?: string;
+  water_supply_type?: string[];  // Array of water supply types
   telecommunication_types?: string[];
   internet_types?: string[];
 
@@ -56,7 +57,7 @@ interface LocalityData {
   // Area characteristics
   area_type?: string;
   development_level?: string;
-  predominant_building_type?: string;
+  predominant_building_type?: string[];  // Array of predominant building types
 
   // Tourism
   is_tourist_area?: boolean;
@@ -517,18 +518,20 @@ const LocalityInformationSection: React.FC<Props> = ({
 
           {/* Water Supply */}
           <div>
-            <Label>Water Supply Type</Label>
-            <select
-              value={data.water_supply_type || ''}
-              onChange={(e) => onChange({ water_supply_type: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-            >
-              <option value="">Select water supply type</option>
-              <option value="pipe_borne_water">Pipe-borne Water</option>
-              <option value="bore_water">Bore Water</option>
-              <option value="well_water">Well Water</option>
-              <option value="none">None</option>
-            </select>
+            <MultiSelectWithCustomInput
+              label="Water Supply Type"
+              value={data.water_supply_type || []}
+              onChange={(values) => onChange({ water_supply_type: values })}
+              predefinedOptions={[
+                { value: 'Pipe-borne (NWSDB)', label: 'Pipe-borne (NWSDB)' },
+                { value: 'Well', label: 'Well' },
+                { value: 'Bore/Tube Well', label: 'Bore/Tube Well' },
+                { value: 'Rainwater Harvesting', label: 'Rainwater Harvesting' }
+              ]}
+              maxSelections={5}
+              maxCharacters={50}
+              helperText="Select up to 5 types or add custom values (press Enter)"
+            />
           </div>
 
           {/* Telecommunication */}
@@ -722,19 +725,21 @@ const LocalityInformationSection: React.FC<Props> = ({
             </select>
           </div>
           <div>
-            <Label>Predominant Buildings</Label>
-            <select
-              value={data.predominant_building_type || ''}
-              onChange={(e) => onChange({ predominant_building_type: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-            >
-              <option value="">Select building type</option>
-              <option value="single_storey_residential">Single Storey Residential</option>
-              <option value="multi_storey_residential">Multi Storey Residential</option>
-              <option value="apartments">Apartments</option>
-              <option value="commercial_buildings">Commercial Buildings</option>
-              <option value="mixed">Mixed</option>
-            </select>
+            <MultiSelectWithCustomInput
+              label="Predominant Buildings"
+              value={data.predominant_building_type || []}
+              onChange={(values) => onChange({ predominant_building_type: values })}
+              predefinedOptions={[
+                { value: 'Single Storey Residential', label: 'Single Storey Residential' },
+                { value: 'Multi Storey Residential', label: 'Multi Storey Residential' },
+                { value: 'Apartments', label: 'Apartments' },
+                { value: 'Commercial Buildings', label: 'Commercial Buildings' },
+                { value: 'Mixed', label: 'Mixed' }
+              ]}
+              maxSelections={5}
+              maxCharacters={50}
+              helperText="Select up to 5 types or add custom values (press Enter)"
+            />
           </div>
         </div>
       </div>

@@ -178,32 +178,25 @@ export function PropertyLocationSection({ formData, updateFormData, applicantAdd
           <p className="text-xs text-gray-500 mt-1">Property identification number within the village</p>
         </div>
 
-        {/* DS Division - Hierarchical Dropdown */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Divisional Secretariat Division
-          </label>
-          <select
-            value={formData.property_divisional_secretariat || ''}
-            onChange={(e) => updateFormData({ property_divisional_secretariat: e.target.value })}
-            disabled={!formData.property_district}
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
-          >
-            <option value="">
-              {formData.property_district ? 'Select DS Division' : 'Select District first'}
-            </option>
-            {dsDivisions.map(ds => (
-              <option key={ds.name} value={ds.name}>
-                {ds.name} ({ds.gn_count} GN divisions)
-              </option>
-            ))}
-          </select>
-          {formData.property_district && dsDivisions.length > 0 && (
-            <p className="text-xs text-gray-500 mt-1">
-              {dsDivisions.length} DS divisions available in {formData.property_district}
-            </p>
-          )}
-        </div>
+        {/* DS Division - Autocomplete with District dependency */}
+        <AutocompleteInput
+          label="Divisional Secretariat Division"
+          value={formData.property_divisional_secretariat || ''}
+          onChange={(value) => {
+            // Extract DS division name without GN count
+            const dsName = value.replace(/\s*\(\d+\s+GN\s+divisions\)$/i, '').trim();
+            updateFormData({ property_divisional_secretariat: dsName });
+          }}
+          suggestions={!formData.property_district ? [] : dsDivisions.map(ds => `${ds.name} (${ds.gn_count} GN divisions)`)}
+          placeholder={formData.property_district ? "Type to search or enter custom DS Division" : "Select District first"}
+          allowCustom={true}
+          className={!formData.property_district ? "opacity-50 pointer-events-none" : ""}
+        />
+        {formData.property_district && dsDivisions.length > 0 && (
+          <p className="text-xs text-gray-500 mt-1">
+            {dsDivisions.length} DS divisions available in {formData.property_district}
+          </p>
+        )}
 
         {/* GN Division - with autocomplete suggestions */}
         <AutocompleteInput
@@ -212,6 +205,16 @@ export function PropertyLocationSection({ formData, updateFormData, applicantAdd
           onChange={(value) => updateFormData({ grama_niladari_division: value })}
           suggestions={[]} // TODO: Populate with actual GN divisions when data is available
           placeholder="Enter GN Division name (e.g., Bamunna, Ihala Kotte)"
+          allowCustom={true}
+        />
+
+        {/* Hathpaththuwa - with autocomplete */}
+        <AutocompleteInput
+          label="Hathpaththuwa"
+          value={formData.hathpaththuwa || ''}
+          onChange={(value) => updateFormData({ hathpaththuwa: value })}
+          suggestions={[]} // TODO: Populate with Hathpaththuwa names per district if data becomes available
+          placeholder="Enter Hathpaththuwa name"
           allowCustom={true}
         />
 

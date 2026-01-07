@@ -79,6 +79,85 @@ def update_user(db: Session, user_id: int, user_update: schemas.UserUpdate):
     db.refresh(db_user)
     return db_user
 
+# Bank Account CRUD Operations
+def add_bank_account(db: Session, user_id: int, account: schemas.BankAccountCreate):
+    """Add a new bank account to user profile"""
+    import uuid
+
+    db_user = get_user(db, user_id)
+    if not db_user:
+        return None
+
+    # Initialize bank_accounts if None
+    if db_user.bank_accounts is None:
+        db_user.bank_accounts = []
+
+    # Create new account with UUID
+    new_account = {
+        "id": str(uuid.uuid4()),
+        "bank_name": account.bank_name,
+        "account_number": account.account_number,
+        "branch_name": account.branch_name
+    }
+
+    # Append to existing accounts
+    accounts = db_user.bank_accounts.copy() if db_user.bank_accounts else []
+    accounts.append(new_account)
+    db_user.bank_accounts = accounts
+
+    db.commit()
+    db.refresh(db_user)
+    return new_account
+
+def update_bank_account(db: Session, user_id: int, account_id: str, account_update: schemas.BankAccountUpdate):
+    """Update an existing bank account"""
+    db_user = get_user(db, user_id)
+    if not db_user or not db_user.bank_accounts:
+        return None
+
+    accounts = db_user.bank_accounts.copy()
+    account_found = False
+
+    for account in accounts:
+        if account["id"] == account_id:
+            # Update only provided fields
+            update_data = account_update.model_dump(exclude_unset=True)
+            account.update(update_data)
+            account_found = True
+            break
+
+    if not account_found:
+        return None
+
+    db_user.bank_accounts = accounts
+    db.commit()
+    db.refresh(db_user)
+
+    return next(acc for acc in accounts if acc["id"] == account_id)
+
+def delete_bank_account(db: Session, user_id: int, account_id: str):
+    """Delete a bank account"""
+    db_user = get_user(db, user_id)
+    if not db_user or not db_user.bank_accounts:
+        return False
+
+    accounts = [acc for acc in db_user.bank_accounts if acc["id"] != account_id]
+
+    if len(accounts) == len(db_user.bank_accounts):
+        return False  # Account not found
+
+    db_user.bank_accounts = accounts
+    db.commit()
+    return True
+
+def get_bank_accounts(db: Session, user_id: int):
+    """Get all bank accounts for a user"""
+    db_user = get_user(db, user_id)
+    if not db_user:
+        return None
+
+    return db_user.bank_accounts or []
+
 # Report CRUD Operations
 def create_report(db: Session, report: schemas.ReportCreate, user_id: int):
     """Create a new report for a user"""
@@ -166,6 +245,60 @@ def delete_report(db: Session, report_id: int, user_id: int = None):
         db.commit()
         return True
     return False
+
+def duplicate_report(db: Session, report_id: int, user_id: int):
+    """Duplicate an existing report as a new draft"""
+    from sqlalchemy import inspect
+
+    # Get original report
+    original_report = get_report(db, report_id, user_id)
+    if not original_report:
+        return None
+
+    # Get all column names except id, created_at, updated_at
+    mapper = inspect(models.Report)
+    columns_to_copy = [
+        column.key for column in mapper.columns
+        if column.key not in ['id', 'created_at', 'updated_at']
+    ]
+
+    # Build dictionary of fields to copy
+    report_data = {}
+    for column in columns_to_copy:
+        value = getattr(original_report, column)
+        report_data[column] = value
+
+    # Reset draft-specific fields
+    report_data['status'] = 'draft'
+    report_data['report_reference'] = None
+    report_data['report_date'] = None
+    report_data['certification_text'] = None
+    report_data['certification_date'] = None
+    report_data['certification_valuer_name'] = None
+    report_data['certification_valuer_designation'] = None
+    report_data['certificate_survey_plan_ref'] = None
+    report_data['certificate_survey_plan_date'] = None
+    report_data['certificate_identity_confirmed'] = False
+
+    # Create new report
+    new_report = models.Report(**report_data)
+    db.add(new_report)
+    db.flush()  # Get the new report ID
+
+    # If multi-property report, duplicate the property associations
+    if original_report.is_multi_property:
+        original_associations = get_report_properties(db, report_id)
+        for assoc in original_associations:
+            new_assoc = models.ReportProperty(
+                report_id=new_report.id,
+                property_id=assoc.property_id,
+                property_order=assoc.property_order
+            )
+            db.add(new_assoc)
+
+    db.commit()
+    db.refresh(new_report)
+    return new_report
 
 # Property CRUD Operations
 def create_property(db: Session, property: schemas.PropertyCreate, user_id: int):

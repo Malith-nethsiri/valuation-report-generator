@@ -1,3 +1,23 @@
+// Bank Account Types
+export interface BankAccount {
+  id: string;
+  bank_name: string;
+  account_number: string;
+  branch_name: string;
+}
+
+export interface BankAccountCreate {
+  bank_name: string;
+  account_number: string;
+  branch_name: string;
+}
+
+export interface BankAccountUpdate {
+  bank_name?: string;
+  account_number?: string;
+  branch_name?: string;
+}
+
 // Authentication Types
 export interface User {
   id: number;
@@ -29,6 +49,9 @@ export interface User {
 
   // Letterhead template preference
   preferred_letterhead_template?: string;
+
+  // Bank Account Management
+  bank_accounts?: BankAccount[];
 
   created_at: string;
   updated_at?: string;
@@ -96,6 +119,9 @@ export interface UserUpdate {
 
   // Letterhead template preference
   preferred_letterhead_template?: string;
+
+  // Bank Account Management
+  bank_accounts?: BankAccount[];
 }
 
 export interface AuthResponse {
@@ -166,8 +192,6 @@ export interface AccommodationSummary {
 export interface Floor {
   floor_name: string;
   floor_area?: number;
-  rooms: Room[];
-  accommodation_summary?: AccommodationSummary;
 }
 
 export interface BuildingPhoto {
@@ -214,10 +238,34 @@ export interface Parking {
 }
 
 export interface UtilitiesServices {
-  water_supply?: string;
+  // Water and sewage
+  water_supply?: string[];  // Array of water supply types
   sewage?: string;
+
+  // Electricity and parking (detailed objects)
   electricity?: Electricity;
   parking?: Parking;
+
+  // Communication services
+  telephone?: boolean;
+  internet?: boolean;
+
+  // Gas connection
+  gas_connection?: boolean;
+
+  // Security features
+  security_features?: string[];
+
+  // Modern amenities
+  amenities?: {
+    air_conditioning?: boolean;
+    built_in_wardrobes?: boolean;
+    modern_kitchen?: boolean;
+    pantry_cupboards?: boolean;
+  };
+
+  // Hot water system
+  hot_water_system?: string;
 }
 
 export interface Building {
@@ -238,6 +286,8 @@ export interface Building {
   floor_description?: string;
   total_floor_area?: number;
   floors: Floor[];
+  rooms: Room[];
+  accommodation_summary?: AccommodationSummary;
   construction_materials?: ConstructionMaterials;
   utilities_services?: UtilitiesServices;
   conveniences: string[];
@@ -364,6 +414,12 @@ export interface Report {
   applicant_province?: string;
   applicant_country?: string;
 
+  // Request Type (client vs organization)
+  request_type?: 'client_request' | 'organization_request';
+
+  // Applicant Contact Number
+  applicant_contact_number?: string;
+
   // Valuation Purpose
   valuation_type?: string;
   property_ownership?: string;
@@ -412,6 +468,7 @@ export interface Report {
   // Sri Lankan Administrative Subdivisions (Phase 2 Enhancement)
   property_number?: string;
   grama_niladari_division?: string;
+  hathpaththuwa?: string;
   korale?: string;
   pradeshiya_sabha?: string;
   ward_number?: string;
@@ -444,24 +501,32 @@ export interface Report {
   // Traditional Land Name
   land_traditional_name?: string;
 
-  // Boundaries
+  // Boundaries (4 main directions + 4 optional diagonal directions)
   boundaries?: {
     north?: { description?: string; length?: string; adjoins?: string; notes?: string };
-    south?: { description?: string; length?: string; adjoins?: string; notes?: string };
+    northeast?: { description?: string; length?: string; adjoins?: string; notes?: string };
     east?: { description?: string; length?: string; adjoins?: string; notes?: string };
+    southeast?: { description?: string; length?: string; adjoins?: string; notes?: string };
+    south?: { description?: string; length?: string; adjoins?: string; notes?: string };
+    southwest?: { description?: string; length?: string; adjoins?: string; notes?: string };
     west?: { description?: string; length?: string; adjoins?: string; notes?: string };
+    northwest?: { description?: string; length?: string; adjoins?: string; notes?: string };
   };
 
   // Physical Boundaries
   physical_boundaries_types?: string[];
   physical_boundaries_description?: string;
 
-  // Boundary Types Per Direction (for professional summary)
+  // Boundary Types Per Direction (for professional summary) - supports all 8 directions
   boundary_types_per_direction?: {
     north?: string;
-    south?: string;
+    northeast?: string;
     east?: string;
+    southeast?: string;
+    south?: string;
+    southwest?: string;
     west?: string;
+    northwest?: string;
   };
 
   // Entrance/Gate Type
@@ -511,7 +576,7 @@ export interface Report {
 
   // Infrastructure & Utilities
   has_electricity?: boolean;
-  water_supply_type?: string;
+  water_supply_type?: string[];  // Array of water supply types
   telecommunication_types?: string[];
   internet_types?: string[];
 
@@ -526,7 +591,7 @@ export interface Report {
   // Area Characteristics
   area_type?: string;
   development_level?: string;
-  predominant_building_type?: string;
+  predominant_building_type?: string[];  // Array of predominant building types
 
   // Tourism/Special characteristics
   is_tourist_area?: boolean;
@@ -627,6 +692,12 @@ export interface ReportCreate {
   applicant_province?: string;
   applicant_country?: string;
 
+  // Request Type (client vs organization)
+  request_type?: 'client_request' | 'organization_request';
+
+  // Applicant Contact Number
+  applicant_contact_number?: string;
+
   // Valuation Purpose
   valuation_type?: string;
   property_ownership?: string;
@@ -675,6 +746,7 @@ export interface ReportCreate {
   // Sri Lankan Administrative Subdivisions (Phase 2 Enhancement)
   property_number?: string;
   grama_niladari_division?: string;
+  hathpaththuwa?: string;
   korale?: string;
   pradeshiya_sabha?: string;
   ward_number?: string;
@@ -707,24 +779,32 @@ export interface ReportCreate {
   // Traditional Land Name
   land_traditional_name?: string;
 
-  // Boundaries
+  // Boundaries (4 main directions + 4 optional diagonal directions)
   boundaries?: {
     north?: { description?: string; length?: string; adjoins?: string; notes?: string };
-    south?: { description?: string; length?: string; adjoins?: string; notes?: string };
+    northeast?: { description?: string; length?: string; adjoins?: string; notes?: string };
     east?: { description?: string; length?: string; adjoins?: string; notes?: string };
+    southeast?: { description?: string; length?: string; adjoins?: string; notes?: string };
+    south?: { description?: string; length?: string; adjoins?: string; notes?: string };
+    southwest?: { description?: string; length?: string; adjoins?: string; notes?: string };
     west?: { description?: string; length?: string; adjoins?: string; notes?: string };
+    northwest?: { description?: string; length?: string; adjoins?: string; notes?: string };
   };
 
   // Physical Boundaries
   physical_boundaries_types?: string[];
   physical_boundaries_description?: string;
 
-  // Boundary Types Per Direction (for professional summary)
+  // Boundary Types Per Direction (for professional summary) - supports all 8 directions
   boundary_types_per_direction?: {
     north?: string;
-    south?: string;
+    northeast?: string;
     east?: string;
+    southeast?: string;
+    south?: string;
+    southwest?: string;
     west?: string;
+    northwest?: string;
   };
 
   // Entrance/Gate Type
@@ -774,7 +854,7 @@ export interface ReportCreate {
 
   // Infrastructure & Utilities
   has_electricity?: boolean;
-  water_supply_type?: string;
+  water_supply_type?: string[];  // Array of water supply types
   telecommunication_types?: string[];
   internet_types?: string[];
 
@@ -789,7 +869,7 @@ export interface ReportCreate {
   // Area Characteristics
   area_type?: string;
   development_level?: string;
-  predominant_building_type?: string;
+  predominant_building_type?: string[];  // Array of predominant building types
 
   // Tourism/Special characteristics
   is_tourist_area?: boolean;

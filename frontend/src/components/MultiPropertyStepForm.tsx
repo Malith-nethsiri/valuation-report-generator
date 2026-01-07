@@ -30,8 +30,6 @@ import PropertyComparisonStep from './PropertyComparisonStep';
 // Type definitions for the form data
 export interface InvoiceItem {
   description: string;
-  quantity: number;
-  unit_price: number;
   total: number;
 }
 
@@ -41,8 +39,8 @@ export interface InvoiceData {
   traveling_charges?: number | null;
   discount?: number | null;
   total: number;
-  payment_terms?: string;
-  bank_details?: string;
+  bank_account_ids: string[];
+  manual_bank_details?: string;
 }
 
 export interface PropertyMetadata {
@@ -180,8 +178,8 @@ const steps = [
 // Validation schemas
 const applicantSchema = z.object({
   applicant_full_name: z.string().min(2, 'Full name is required'),
-  applicant_id_type: z.string().optional(),
-  applicant_id_number: z.string().optional(),
+  applicant_id_type: z.string().optional(), // Optional - no checkbox needed
+  applicant_id_number: z.string().optional(), // Optional - no checkbox needed
 });
 
 const purposeSchema = z.object({
@@ -408,12 +406,14 @@ const MultiPropertyStepForm: React.FC<MultiPropertyStepFormProps> = ({
         </div>
 
         <div>
-          <Label htmlFor="applicant_id_type">ID Type</Label>
+          <Label htmlFor="applicant_id_type">
+            ID Type <span className="text-gray-500 text-sm font-normal">(Optional)</span>
+          </Label>
           <select
             {...register('applicant_id_type')}
             className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-violet-500 focus:border-transparent"
           >
-            <option value="">Select ID type</option>
+            <option value="">Select ID type (optional)</option>
             <option value="nic">National Identity Card (NIC)</option>
             <option value="passport">Passport</option>
             <option value="driving_license">Driving License</option>
@@ -421,10 +421,12 @@ const MultiPropertyStepForm: React.FC<MultiPropertyStepFormProps> = ({
         </div>
 
         <div>
-          <Label htmlFor="applicant_id_number">ID Number</Label>
+          <Label htmlFor="applicant_id_number">
+            ID Number <span className="text-gray-500 text-sm font-normal">(Optional)</span>
+          </Label>
           <Input
             {...register('applicant_id_number')}
-            placeholder="Enter ID number"
+            placeholder="Enter ID number (optional)"
           />
         </div>
 

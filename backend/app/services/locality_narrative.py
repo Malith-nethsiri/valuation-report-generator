@@ -6,6 +6,7 @@ import os
 from typing import Dict, List, Optional
 from anthropic import Anthropic
 from dotenv import load_dotenv
+from ..docx_generator import format_list_with_grammar
 
 load_dotenv()
 
@@ -107,11 +108,26 @@ async def generate_locality_narrative(
             infrastructure_items.append("main electricity")
         if water_supply_type:
             water_labels = {
+                "Pipe-borne (NWSDB)": "pipe-borne water (NWSDB)",
+                "Well": "well water",
+                "Bore/Tube Well": "bore/tube well water",
+                "Rainwater Harvesting": "rainwater harvesting",
+                # Backward compatibility for old values
                 "pipe_borne_water": "pipe-borne water",
                 "bore_water": "bore water",
                 "well_water": "well water"
             }
-            infrastructure_items.append(water_labels.get(water_supply_type, water_supply_type))
+            # Handle both string (legacy) and array (new) formats
+            if isinstance(water_supply_type, str):
+                # Legacy single value
+                infrastructure_items.append(water_labels.get(water_supply_type, water_supply_type))
+            elif isinstance(water_supply_type, list):
+                # New multi-select array
+                mapped_values = [
+                    water_labels.get(wtype, wtype.lower())
+                    for wtype in water_supply_type
+                ]
+                infrastructure_items.append(format_list_with_grammar(mapped_values))
         if telecommunication_types:
             if "landline" in telecommunication_types:
                 infrastructure_items.append("telephone services")
@@ -157,7 +173,31 @@ async def generate_locality_narrative(
             context_parts.append(f"Development Level: {dev_labels.get(development_level, development_level)}")
 
         if predominant_building_type:
-            context_parts.append(f"Predominant Buildings: {predominant_building_type}")
+            building_labels = {
+                "Single Storey Residential": "single storey residential",
+                "Multi Storey Residential": "multi storey residential",
+                "Apartments": "apartments",
+                "Commercial Buildings": "commercial buildings",
+                "Mixed": "mixed-use buildings",
+                # Backward compatibility
+                "single_storey_residential": "single storey residential",
+                "multi_storey_residential": "multi storey residential",
+                "apartments": "apartments",
+                "commercial_buildings": "commercial buildings",
+                "mixed": "mixed-use buildings"
+            }
+            # Handle both string (legacy) and array (new) formats
+            if isinstance(predominant_building_type, str):
+                # Legacy single value
+                context_parts.append(f"Predominant Buildings: {predominant_building_type}")
+            elif isinstance(predominant_building_type, list):
+                # New multi-select array
+                mapped_buildings = [
+                    building_labels.get(btype, btype.lower())
+                    for btype in predominant_building_type
+                ]
+                formatted = format_list_with_grammar(mapped_buildings)
+                context_parts.append(f"Predominant Buildings: {formatted}")
 
         # Tourism
         if is_tourist_area and tourist_attractions_nearby:

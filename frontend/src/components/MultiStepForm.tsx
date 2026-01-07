@@ -27,7 +27,8 @@ import {
     Gavel,
     TrendingUp,
     Scale,
-    Award
+    Award,
+    Receipt
 } from 'lucide-react';
 import { Button } from './Button';
 import { Input } from './Input';
@@ -42,6 +43,7 @@ import { LandExtentInput } from './LandExtentInput';
 import { BoundaryInformationSection } from './BoundaryInformationSection';
 import { DocumentUploadOCR } from './DocumentUploadOCR';
 import { PropertyDescriptionStep } from './PropertyDescriptionStep';
+import InvoiceDataStep from './InvoiceDataStep';
 import LocalityInformationSection from './LocalityInformationSection';
 import LegalAspectsSection from './LegalAspectsSection';
 import LandValuesSection from './LandValuesSection';
@@ -172,13 +174,14 @@ const propertyPlanSchema = z.object({
 const baseApplicantPurposeSchema = z.object({
     applicant_title: z.string().min(1, 'Please select a title'),
     applicant_full_name: z.string().min(2, 'Please enter the applicant full name'),
-    applicant_id_type: z.string().min(1, 'Please select ID type'),
-    applicant_id_number: z.string().min(1, 'Please enter the ID number'),
+    applicant_id_type: z.string().optional(), // Optional - no checkbox needed
+    applicant_id_number: z.string().optional(), // Optional - no checkbox needed
     applicant_address_line1: z.string().min(5, 'Please enter address line 1'),
     applicant_address_line2: z.string().optional(),
     applicant_district: z.string().min(2, 'Please enter the district'),
     applicant_province: z.string().min(2, 'Please enter the province'),
     applicant_country: z.string().min(2, 'Please enter the country').default('Sri Lanka'),
+    applicant_contact_number: z.string().nullable().optional(), // Optional contact number
     valuation_type: z.string().min(1, 'Please enter the valuation type'),
     valuation_purpose: z.string().min(1, 'Purpose of valuation is required'),
     property_ownership: z.string().optional(),
@@ -191,9 +194,9 @@ const baseApplicantPurposeSchema = z.object({
 const applicantPurposeSchema = baseApplicantPurposeSchema
     .refine(
         (data) => {
-            // Only validate if both ID type and number are provided
+            // Optional fields - only validate if user provides data
             if (!data.applicant_id_type || !data.applicant_id_number) {
-                return true; // Let individual field validations handle empty values
+                return true; // Empty is valid (optional)
             }
 
             const idType = data.applicant_id_type;
@@ -227,7 +230,7 @@ const applicantPurposeSchema = baseApplicantPurposeSchema
             } else if (idType === 'Passport') {
                 const result = validatePassport(idNumber);
                 return {
-                    message: result.error || 'Invalid passport format. Expected: 1-2 letters followed by 6-9 digits',
+                    message: result.error || 'Passport must be 6-12 alphanumeric characters',
                     path: ['applicant_id_number'],
                 };
             } else if (idType === 'Other') {
@@ -259,8 +262,12 @@ const applicantPurposeSchema = baseApplicantPurposeSchema
 
 // Base schema without refinement (for merging)
 const baseAdditionalDetailsSchema = z.object({
+    submission_recipient_position: z.string().optional(),
     submission_organization: z.string().optional(),
     submission_address: z.string().optional(),
+    request_type: z.enum(['client_request', 'organization_request'], {
+        required_error: 'Please select whether this is a client or organization request'
+    }),
     inspection_date: z.string().min(1, 'Please enter the inspection date (DD-MM-YYYY)'),
     has_special_note: z.string().optional(),
     special_note_text: z.string().nullish(),
@@ -551,6 +558,14 @@ const steps = [
     },
     {
         id: 11,
+        title: 'Invoice',
+        subtitle: 'Professional fees',
+        icon: Receipt,
+        color: 'from-amber-500 to-orange-600',
+        bgColor: 'from-amber-50 to-orange-100',
+    },
+    {
+        id: 12,
         title: 'Valuation',
         subtitle: 'Property valuation breakdown',
         icon: Scale,
@@ -558,7 +573,7 @@ const steps = [
         bgColor: 'from-indigo-50 to-blue-100',
     },
     {
-        id: 12,
+        id: 13,
         title: 'Certification',
         subtitle: 'Valuer certification',
         icon: Award,
@@ -1546,14 +1561,14 @@ const ApplicantPurposeStep: React.FC<StepComponentProps & { getValues: any }> = 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                     <Label htmlFor="applicant_id_type" className="text-gray-700 font-medium">
-                        ID Type *
+                        ID Type <span className="text-gray-500 text-sm font-normal">(Optional)</span>
                     </Label>
                     <select
                         id="applicant_id_type"
                         className="w-full h-14 bg-white/50 border border-gray-200/50 rounded-2xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200 px-4"
                         {...register('applicant_id_type')}
                     >
-                        <option value="">Select ID type</option>
+                        <option value="">Select ID type (optional)</option>
                         <option value="Passport">Passport</option>
                         <option value="NIC">NIC</option>
                         <option value="Other">Other</option>
@@ -1565,7 +1580,7 @@ const ApplicantPurposeStep: React.FC<StepComponentProps & { getValues: any }> = 
 
                 <div className="space-y-2">
                     <Label htmlFor="applicant_id_number" className="text-gray-700 font-medium">
-                        ID Number *
+                        ID Number <span className="text-gray-500 text-sm font-normal">(Optional)</span>
                     </Label>
                     <Input
                         id="applicant_id_number"
@@ -1574,10 +1589,10 @@ const ApplicantPurposeStep: React.FC<StepComponentProps & { getValues: any }> = 
                             idType === 'NIC'
                                 ? 'e.g., 912345678V or 199212345678'
                                 : idType === 'Passport'
-                                    ? 'e.g., N1234567'
-                                    : 'ID number'
+                                    ? 'e.g., N1234567, AB123456, A1234567'
+                                    : 'ID number (optional)'
                         }
-                        className="h-14 bg-white/50 border-gray-200/50 rounded-2xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200"
+                        className="h-14 bg-white/50 border border-gray-200/50 rounded-2xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200"
                         {...register('applicant_id_number')}
                     />
                     {/* Form validation errors take precedence (red) */}
@@ -1684,6 +1699,22 @@ const ApplicantPurposeStep: React.FC<StepComponentProps & { getValues: any }> = 
                         <p className="text-red-500 text-sm">{errors.applicant_country.message}</p>
                     )}
                 </div>
+            </div>
+
+            <div className="space-y-2">
+                <Label htmlFor="applicant_contact_number" className="text-gray-700 font-medium">
+                    Contact Number <span className="text-gray-400">(Optional)</span>
+                </Label>
+                <Input
+                    id="applicant_contact_number"
+                    type="text"
+                    placeholder="e.g., 077-1234567"
+                    className="h-14 bg-white/50 border-gray-200/50 rounded-2xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200"
+                    {...register('applicant_contact_number')}
+                />
+                {errors.applicant_contact_number && (
+                    <p className="text-red-500 text-sm">{errors.applicant_contact_number.message}</p>
+                )}
             </div>
 
             <div className="border-t border-gray-200 pt-6 mt-6">
@@ -1839,6 +1870,7 @@ const AdditionalDetailsStep: React.FC<StepComponentProps> = ({
     setValue
 }) => {
     const hasSpecialNote = watch('has_special_note');
+    const requestType = watch('request_type'); // Watch request_type for controlled radio buttons
 
     return (
         <div className="space-y-6">
@@ -1889,6 +1921,42 @@ const AdditionalDetailsStep: React.FC<StepComponentProps> = ({
                             {...register('submission_address')}
                         />
                     </div>
+                </div>
+            </div>
+
+            {/* Request Information Section */}
+            <div className="space-y-4">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Request Information</h3>
+
+                <div className="space-y-2">
+                    <Label className="text-gray-700 font-medium">
+                        Is this a request from a client or organization? *
+                    </Label>
+                    <div className="flex gap-4">
+                        <label className="flex items-center">
+                            <input
+                                type="radio"
+                                value="client_request"
+                                className="mr-2"
+                                checked={requestType === 'client_request'}
+                                {...register('request_type')}
+                            />
+                            <span>Client Request</span>
+                        </label>
+                        <label className="flex items-center">
+                            <input
+                                type="radio"
+                                value="organization_request"
+                                className="mr-2"
+                                checked={requestType === 'organization_request'}
+                                {...register('request_type')}
+                            />
+                            <span>Organization Request</span>
+                        </label>
+                    </div>
+                    {errors.request_type && (
+                        <p className="text-red-500 text-sm">{errors.request_type.message}</p>
+                    )}
                 </div>
             </div>
 
@@ -2065,17 +2133,20 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
     // Filter steps based on context (multi-property vs standalone)
     const getActiveSteps = () => {
         if (!isEmbeddedInMultiProperty) {
-            return steps;  // All 12 steps for standalone reports
+            return steps;  // All 13 steps for standalone reports
         }
 
-        // Multi-property: Exclude steps 9 (Applicant) and 10 (Additional Details)
-        let filteredSteps = steps.filter(step => step.id !== 9 && step.id !== 10);
+        // Multi-property: Exclude steps 9, 10, and 11
+        // - Step 9 (Applicant): Common data handled at report level
+        // - Step 10 (Additional Details): Common data handled at report level
+        // - Step 11 (Invoice): Handled at report level (step 4 of multi-property flow)
+        let filteredSteps = steps.filter(step => step.id !== 9 && step.id !== 10 && step.id !== 11);
 
         if (hideCertification) {
-            filteredSteps = filteredSteps.filter(step => step.id !== 12);
+            filteredSteps = filteredSteps.filter(step => step.id !== 13);
         }
 
-        // Re-number for display (1-10 instead of 1,2,3,4,5,6,7,8,11,12)
+        // Re-number for display (1-10 instead of 1,2,3,4,5,6,7,8,12,13)
         return filteredSteps.map((step, index) => ({
             ...step,
             displayId: index + 1,  // Display sequential numbers
@@ -2098,17 +2169,7 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
     const [loadingMessage, setLoadingMessage] = useState<string>('');
 
 
-    const {
-        register,
-        handleSubmit,
-        formState: { errors },
-        trigger,
-        watch,
-        getValues,
-        setValue,
-        reset,
-        clearErrors,
-    } = useForm<FormData>({
+    const formMethods = useForm<FormData>({
         resolver: zodResolver(isEmbeddedInMultiProperty ? propertyOnlySchema : completeFormSchema),
         mode: 'onTouched',        // Validate on blur
         reValidateMode: 'onChange', // Re-validate on change after first validation
@@ -2182,6 +2243,18 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
         } as Partial<FormData>,
     });
 
+    // Destructure form methods for convenience
+    const {
+        register,
+        handleSubmit,
+        formState: { errors },
+        trigger,
+        watch,
+        getValues,
+        setValue,
+        reset,
+        clearErrors,
+    } = formMethods;
 
     // Load initial data for edit mode
     useEffect(() => {
@@ -2303,8 +2376,9 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
             case 8: return z.object({}); // Land Values - no required validation
             case 9: return applicantPurposeSchema; // Applicant & Purpose validation
             case 10: return additionalDetailsSchema; // Additional Details validation
-            case 11: return z.object({}); // Valuation - no required validation
-            case 12: return z.object({
+            case 11: return z.object({}); // Invoice - optional, no strict validation
+            case 12: return z.object({}); // Valuation - no required validation
+            case 13: return z.object({
                 certificate_identity_confirmed: z.boolean().refine(val => val === true, {
                     message: "You must confirm the certificate of identity"
                 })
@@ -2792,7 +2866,8 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
             );
             case 9: return <ApplicantPurposeStep {...stepProps} />;
             case 10: return <AdditionalDetailsStep {...stepProps} />;
-            case 11: return (
+            case 11: return <InvoiceDataStep formMethods={formMethods} isMultiProperty={false} />;
+            case 12: return (
                 <ValuationSection
                     data={allValues}
                     onChange={(updates) => {
@@ -2803,7 +2878,7 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
                     buildings={allValues.buildings || []}
                 />
             );
-            case 12: return (
+            case 13: return (
                 <CertificationSection
                     data={allValues}
                     onChange={(updates) => {

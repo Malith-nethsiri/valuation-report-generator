@@ -94,16 +94,29 @@ export const validatePassport = (passport: string): { isValid: boolean; error?: 
     return { isValid: true }; // Optional field
   }
 
-  passport = passport.trim().toUpperCase();
+  passport = passport.trim();
 
-  // Most passports: 6-9 alphanumeric characters
-  // Sri Lankan passport: N followed by 7 digits (e.g., N1234567)
-  const passportRegex = /^[A-Z]{1,2}[0-9]{6,9}$/;
-
-  if (!passportRegex.test(passport)) {
+  // Length check: International passports are typically 6-12 characters
+  if (passport.length < 6 || passport.length > 12) {
     return {
       isValid: false,
-      error: 'Invalid passport format. Expected format: 1-2 letters followed by 6-9 digits',
+      error: 'Passport number must be 6-12 characters',
+    };
+  }
+
+  // FLEXIBLE: Accept alphanumeric characters only (no strict format)
+  // International passports vary widely:
+  // - US: 9 alphanumeric (e.g., 123456789)
+  // - UK: 9 alphanumeric (e.g., 123456789)
+  // - India: 1 letter + 7 digits (e.g., A1234567)
+  // - Sri Lanka: N + 7 digits (e.g., N1234567)
+  // - Canada: 2 letters + 6 digits (e.g., AB123456)
+  const passportRegex = /^[A-Z0-9]{6,12}$/;
+
+  if (!passportRegex.test(passport.toUpperCase())) {
+    return {
+      isValid: false,
+      error: 'Passport must contain only letters and numbers',
     };
   }
 

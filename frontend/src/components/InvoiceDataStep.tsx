@@ -1,16 +1,21 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { UseFormReturn, useFieldArray } from 'react-hook-form';
 import { Plus, Trash2, Receipt } from 'lucide-react';
 import { Input } from './Input';
 import { Label } from './Label';
 import { Button } from './Button';
-import { MultiPropertyFormData } from './MultiPropertyStepForm';
+import { bankAccountApi } from '../services/api';
+import { BankAccount } from '../types';
+import AddBankAccountModal from './AddBankAccountModal';
+import toast from 'react-hot-toast';
 
 interface InvoiceDataStepProps {
-  formMethods: UseFormReturn<MultiPropertyFormData>;
+  formMethods: UseFormReturn<any>;
+  properties?: any[];
+  isMultiProperty?: boolean;
 }
 
-const InvoiceDataStep: React.FC<InvoiceDataStepProps> = ({ formMethods }) => {
+const InvoiceDataStep: React.FC<InvoiceDataStepProps> = ({ formMethods, properties, isMultiProperty = false }) => {
   const { register, watch, setValue, control } = formMethods;
 
   // Use field array for dynamic invoice items
@@ -19,50 +24,104 @@ const InvoiceDataStep: React.FC<InvoiceDataStepProps> = ({ formMethods }) => {
     name: 'invoice_data.items' as any,
   });
 
+  // State for bank accounts
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [selectedAccountIds, setSelectedAccountIds] = useState<string[]>([]);
+  const [showAddAccountModal, setShowAddAccountModal] = useState(false);
+
   // Watch for changes
   const invoiceItems = watch('invoice_data.items') || [];
   const travelingCharges = watch('invoice_data.traveling_charges') || 0;
   const discount = watch('invoice_data.discount') || 0;
-  const properties = watch('properties') || [];
 
-  // Auto-populate invoice items on mount if empty
+  // Fetch bank accounts on mount
   useEffect(() => {
-    if (invoiceItems.length === 0 && properties.length > 0) {
-      // Auto-populate with one line item per property
+    const fetchAccounts = async () => {
+      try {
+        const accounts = await bankAccountApi.getAll();
+        setBankAccounts(accounts);
+      } catch (error) {
+        console.error('Failed to fetch bank accounts:', error);
+      }
+    };
+    fetchAccounts();
+  }, []);
+
+  // Auto-populate invoice items for multi-property
+  useEffect(() => {
+    // Only run once when component mounts with multi-property and no items
+    if (isMultiProperty && properties && properties.length > 0 && fields.length === 0) {
+      console.log('[Invoice Auto-populate] Properties:', properties);
+
       properties.forEach((prop: any, index: number) => {
+        // Access nested data fields correctly
+        const lotDesc = prop.data?.property_lot_description || '';
+        const planNo = prop.data?.plan_number || '';
+
+        console.log(`[Invoice Auto-populate] Property ${index + 1}:`, {
+          lotDesc,
+          planNo,
+          fullData: prop.data
+        });
+
         append({
-          description: `Valuation of Property ${index + 1}${prop.property_lot_description ? ` - ${prop.property_lot_description}` : ''}`,
-          quantity: 1,
-          unit_price: 0,
-          total: 0,
+          description: `Property No.${index + 1} - Lot ${lotDesc} in Plan No:${planNo}`,
+          total: 0
         });
       });
     }
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMultiProperty, properties]);
 
-  // Auto-calculate line item totals
+  // Migrate old invoice data format
   useEffect(() => {
-    invoiceItems?.forEach((item: any, index: number) => {
-      const quantity = item.quantity || 0;
-      const unitPrice = item.unit_price || 0;
-      const total = quantity * unitPrice;
+    const existingInvoiceData = watch('invoice_data');
 
-      if (item.total !== total) {
-        setValue(`invoice_data.items.${index}.total` as any, total);
+    if (existingInvoiceData?.items) {
+      const hasOldFormat = existingInvoiceData.items.some(
+        (item: any) => 'quantity' in item || 'unit_price' in item
+      );
+
+      if (hasOldFormat) {
+        // Migrate to new format
+        const migratedItems = existingInvoiceData.items.map((item: any) => ({
+          description: item.description,
+          total: item.total
+        }));
+
+        setValue('invoice_data.items', migratedItems);
+
+        // Migrate bank_details to manual
+        if (existingInvoiceData.bank_details) {
+          setValue('invoice_data.manual_bank_details', existingInvoiceData.bank_details);
+          setValue('invoice_data.bank_account_ids', []);
+        }
+
+        toast.info('Invoice data migrated to new format');
       }
-    });
-  }, [invoiceItems]);
+    }
+
+    // Load existing bank account selections
+    if (existingInvoiceData?.bank_account_ids) {
+      setSelectedAccountIds(existingInvoiceData.bank_account_ids);
+    }
+  }, []);
 
   // Calculate subtotal and grand total
   useEffect(() => {
-    const subtotal = invoiceItems?.reduce((sum: number, item: any) => sum + (item.total || 0), 0) || 0;
+    const subtotal = invoiceItems?.reduce((sum: number, item: any) => sum + (Number(item.total) || 0), 0) || 0;
     const traveling = Number(travelingCharges) || 0;
     const disc = Number(discount) || 0;
     const grandTotal = subtotal + traveling - disc;
 
     setValue('invoice_data.subtotal' as any, subtotal);
     setValue('invoice_data.total' as any, grandTotal);
-  }, [invoiceItems, travelingCharges, discount]);
+  }, [invoiceItems, travelingCharges, discount, setValue]);
+
+  // Update bank account IDs when selection changes
+  useEffect(() => {
+    setValue('invoice_data.bank_account_ids' as any, selectedAccountIds);
+  }, [selectedAccountIds, setValue]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-LK', {
@@ -74,6 +133,14 @@ const InvoiceDataStep: React.FC<InvoiceDataStepProps> = ({ formMethods }) => {
 
   const subtotal = watch('invoice_data.subtotal') || 0;
   const grandTotal = watch('invoice_data.total') || 0;
+
+  const toggleAccountSelection = (accountId: string) => {
+    if (selectedAccountIds.includes(accountId)) {
+      setSelectedAccountIds(selectedAccountIds.filter(id => id !== accountId));
+    } else {
+      setSelectedAccountIds([...selectedAccountIds, accountId]);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -92,9 +159,7 @@ const InvoiceDataStep: React.FC<InvoiceDataStepProps> = ({ formMethods }) => {
               <thead>
                 <tr className="border-b-2 border-gray-200">
                   <th className="text-left py-3 px-2 font-semibold text-gray-700">Description</th>
-                  <th className="text-center py-3 px-2 font-semibold text-gray-700 w-24">Qty</th>
-                  <th className="text-right py-3 px-2 font-semibold text-gray-700 w-32">Unit Price (LKR)</th>
-                  <th className="text-right py-3 px-2 font-semibold text-gray-700 w-32">Total (LKR)</th>
+                  <th className="text-right py-3 px-2 font-semibold text-gray-700 w-48">Total (LKR)</th>
                   <th className="text-center py-3 px-2 w-16"></th>
                 </tr>
               </thead>
@@ -111,26 +176,12 @@ const InvoiceDataStep: React.FC<InvoiceDataStepProps> = ({ formMethods }) => {
                     <td className="py-3 px-2">
                       <Input
                         type="number"
-                        {...register(`invoice_data.items.${index}.quantity` as any, { valueAsNumber: true })}
-                        min={1}
-                        defaultValue={1}
-                        className="w-full text-center"
-                      />
-                    </td>
-                    <td className="py-3 px-2">
-                      <Input
-                        type="number"
                         step="0.01"
-                        {...register(`invoice_data.items.${index}.unit_price` as any, { valueAsNumber: true })}
+                        {...register(`invoice_data.items.${index}.total` as any, { valueAsNumber: true })}
                         min={0}
                         placeholder="0.00"
                         className="w-full text-right"
                       />
-                    </td>
-                    <td className="py-3 px-2">
-                      <div className="text-right font-semibold text-gray-900">
-                        {formatCurrency(invoiceItems[index]?.total || 0)}
-                      </div>
                     </td>
                     <td className="py-3 px-2 text-center">
                       <button
@@ -154,9 +205,7 @@ const InvoiceDataStep: React.FC<InvoiceDataStepProps> = ({ formMethods }) => {
               onClick={() =>
                 append({
                   description: '',
-                  quantity: 1,
-                  unit_price: 0,
-                  total: 0,
+                  total: 0
                 })
               }
               className="flex items-center px-4 py-2 bg-violet-100 hover:bg-violet-200 text-violet-700 rounded-xl font-medium transition-colors"
@@ -219,42 +268,89 @@ const InvoiceDataStep: React.FC<InvoiceDataStepProps> = ({ formMethods }) => {
         </div>
       </div>
 
-      {/* Payment Details */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div>
-          <Label htmlFor="invoice_data.payment_terms">Payment Terms</Label>
-          <textarea
-            {...register('invoice_data.payment_terms' as any)}
-            className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-violet-500 focus:border-transparent"
-            rows={4}
-            placeholder="e.g., Payment due within 30 days of report date"
-          />
-          <p className="text-xs text-gray-500 mt-1">
-            Specify when payment is expected
-          </p>
+      {/* Bank Account Selection */}
+      <div className="bg-white rounded-2xl border-2 border-gray-200 p-6">
+        <div className="flex items-center justify-between mb-4">
+          <Label className="text-lg font-semibold">Bank Account Details</Label>
+          <Button
+            type="button"
+            onClick={() => setShowAddAccountModal(true)}
+            className="px-3 py-1 bg-violet-600 hover:bg-violet-700 text-white text-sm rounded"
+          >
+            + Add New Account
+          </Button>
         </div>
 
-        <div>
-          <Label htmlFor="invoice_data.bank_details">Bank Details</Label>
-          <textarea
-            {...register('invoice_data.bank_details' as any)}
-            className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-violet-500 focus:border-transparent"
-            rows={4}
-            placeholder="Bank Name&#10;Account Number: 123456789&#10;Branch: Colombo"
-          />
-          <p className="text-xs text-gray-500 mt-1">
-            Bank account details for payment
+        {bankAccounts.length > 0 ? (
+          <div className="space-y-2">
+            <p className="text-sm text-gray-600 mb-3">
+              Select one or more bank accounts to include in the invoice:
+            </p>
+            {bankAccounts.map((account) => (
+              <label
+                key={account.id}
+                className={`flex items-start p-3 border rounded-lg cursor-pointer transition-colors ${
+                  selectedAccountIds.includes(account.id)
+                    ? 'border-violet-500 bg-violet-50'
+                    : 'border-gray-300 hover:border-gray-400'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedAccountIds.includes(account.id)}
+                  onChange={() => toggleAccountSelection(account.id)}
+                  className="mt-1 mr-3"
+                />
+                <div className="flex-1">
+                  <p className="font-semibold text-gray-900">{account.bank_name}</p>
+                  <p className="text-sm text-gray-600">Account: {account.account_number}</p>
+                  <p className="text-sm text-gray-600">Branch: {account.branch_name}</p>
+                </div>
+              </label>
+            ))}
+          </div>
+        ) : (
+          <p className="text-gray-500 text-sm mb-3">
+            No bank accounts found. Add accounts in your profile or use manual entry below.
           </p>
-        </div>
+        )}
+
+        {/* Manual Bank Details Fallback */}
+        {selectedAccountIds.length === 0 && (
+          <div className="mt-4">
+            <Label htmlFor="invoice_data.manual_bank_details">Or Enter Bank Details Manually</Label>
+            <textarea
+              {...register('invoice_data.manual_bank_details' as any)}
+              className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-violet-500 focus:border-transparent"
+              rows={4}
+              placeholder="Bank Name&#10;Account Number: 123456789&#10;Branch: Colombo"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Enter bank account details manually if you haven't added them to your profile
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Info Box */}
       <div className="bg-blue-50 rounded-xl p-4">
         <p className="text-sm text-gray-700">
           <span className="font-semibold">Tip:</span> The invoice will be included in the final DOCX report.
-          Line items are automatically populated based on the number of properties, but you can customize them as needed.
+          {isMultiProperty && ' Line items are automatically populated based on the number of properties, but you can customize them as needed.'}
         </p>
       </div>
+
+      {/* Add Bank Account Modal */}
+      {showAddAccountModal && (
+        <AddBankAccountModal
+          onClose={() => setShowAddAccountModal(false)}
+          onAccountAdded={(newAccount) => {
+            setBankAccounts([...bankAccounts, newAccount]);
+            setSelectedAccountIds([...selectedAccountIds, newAccount.id]);
+            setShowAddAccountModal(false);
+          }}
+        />
+      )}
     </div>
   );
 };

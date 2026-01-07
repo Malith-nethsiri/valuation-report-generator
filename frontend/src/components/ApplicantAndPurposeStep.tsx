@@ -107,14 +107,14 @@ export const ApplicantAndPurposeStep: React.FC<ApplicantAndPurposeStepProps> = (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                     <Label htmlFor="applicant_id_type" className="text-gray-700 font-medium">
-                        ID Type *
+                        ID Type <span className="text-gray-500 text-sm font-normal">(Optional)</span>
                     </Label>
                     <select
                         id="applicant_id_type"
                         className="w-full h-14 bg-white/50 border border-gray-200/50 rounded-2xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200 px-4"
                         {...register('applicant_id_type')}
                     >
-                        <option value="">Select ID type</option>
+                        <option value="">Select ID type (optional)</option>
                         <option value="Passport">Passport</option>
                         <option value="NIC">NIC</option>
                         <option value="Other">Other</option>
@@ -126,7 +126,7 @@ export const ApplicantAndPurposeStep: React.FC<ApplicantAndPurposeStepProps> = (
 
                 <div className="space-y-2">
                     <Label htmlFor="applicant_id_number" className="text-gray-700 font-medium">
-                        ID Number *
+                        ID Number <span className="text-gray-500 text-sm font-normal">(Optional)</span>
                     </Label>
                     <Input
                         id="applicant_id_number"
@@ -135,8 +135,8 @@ export const ApplicantAndPurposeStep: React.FC<ApplicantAndPurposeStepProps> = (
                             idType === 'NIC'
                                 ? 'e.g., 912345678V or 199212345678'
                                 : idType === 'Passport'
-                                    ? 'e.g., N1234567'
-                                    : 'ID number'
+                                    ? 'e.g., N1234567, AB123456, A1234567'
+                                    : 'ID number (optional)'
                         }
                         className="h-14 bg-white/50 border-gray-200/50 rounded-2xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200"
                         {...register('applicant_id_number')}
@@ -245,6 +245,22 @@ export const ApplicantAndPurposeStep: React.FC<ApplicantAndPurposeStepProps> = (
                         <p className="text-red-500 text-sm">{errors.applicant_country.message}</p>
                     )}
                 </div>
+            </div>
+
+            <div className="space-y-2">
+                <Label htmlFor="applicant_contact_number" className="text-gray-700 font-medium">
+                    Contact Number <span className="text-gray-400">(Optional)</span>
+                </Label>
+                <Input
+                    id="applicant_contact_number"
+                    type="text"
+                    placeholder="e.g., 077-1234567"
+                    className="h-14 bg-white/50 border-gray-200/50 rounded-2xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200"
+                    {...register('applicant_contact_number')}
+                />
+                {errors.applicant_contact_number && (
+                    <p className="text-red-500 text-sm">{errors.applicant_contact_number.message}</p>
+                )}
             </div>
 
             <div className="border-t border-gray-200 pt-6 mt-6">

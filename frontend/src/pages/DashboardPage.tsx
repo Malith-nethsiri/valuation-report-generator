@@ -4,13 +4,14 @@ import {
     Plus, FileText, User, Settings, LogOut, Search, Bell,
     Filter, MoreVertical, Calendar, TrendingUp, Award,
     ChevronDown, Menu, X, Home, BarChart3, Users,
-    Shield, Zap, Clock, Eye, AlertCircle, CheckCircle, Trash2, Edit
+    Shield, Zap, Clock, Download, Copy, AlertCircle, CheckCircle, Trash2, Edit
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { reportApi } from '../services/api';
 import { Report } from '../types';
 import { Button } from '../components/Button';
 import { DeleteConfirmDialog } from '../components/DeleteConfirmDialog';
+import toast from 'react-hot-toast';
 
 const DashboardPage: React.FC = () => {
     const { user, logout } = useAuth();
@@ -81,6 +82,19 @@ const DashboardPage: React.FC = () => {
             setReportToDelete(null);
         } catch (error) {
             console.error('Failed to delete report:', error);
+        }
+    };
+
+    const handleDuplicateReport = async (report: Report, e: React.MouseEvent) => {
+        e.stopPropagation();
+
+        try {
+            const newReport = await reportApi.duplicateReport(report.id);
+            setReports(prev => [newReport, ...prev]);
+            toast.success('Report duplicated successfully');
+        } catch (error) {
+            console.error('Failed to duplicate report:', error);
+            toast.error('Failed to duplicate report');
         }
     };
 
@@ -445,8 +459,16 @@ const DashboardPage: React.FC = () => {
                                                             ? 'text-violet-600 hover:bg-violet-100'
                                                             : 'text-gray-400 cursor-not-allowed'
                                                             }`}
+                                                        title="Download Report"
                                                     >
-                                                        <Eye className="h-5 w-5" />
+                                                        <Download className="h-5 w-5" />
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => handleDuplicateReport(report, e)}
+                                                        className="p-2 text-gray-600 hover:bg-gray-100 rounded-xl transition-all duration-200"
+                                                        title="Duplicate Report"
+                                                    >
+                                                        <Copy className="h-5 w-5" />
                                                     </button>
                                                     <button
                                                         onClick={(e) => handleDeleteClick(report, e)}

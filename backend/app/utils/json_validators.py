@@ -2,7 +2,7 @@
 JSON Schema validators for complex JSON fields in the database.
 
 Provides schema validation for:
-- Boundaries (north, south, east, west with descriptions)
+- Boundaries (4 main directions required + 4 diagonal directions optional)
 - Buildings (array of building objects with photos)
 - Comparable properties (property comparison data)
 
@@ -52,6 +52,46 @@ BOUNDARIES_SCHEMA = {
             "required": ["description"]
         },
         "west": {
+            "type": "object",
+            "properties": {
+                "description": {"type": "string"},
+                "length": {"type": ["string", "null"]},
+                "adjoins": {"type": ["string", "null"]},
+                "notes": {"type": ["string", "null"]}
+            },
+            "required": ["description"]
+        },
+        "northeast": {
+            "type": "object",
+            "properties": {
+                "description": {"type": "string"},
+                "length": {"type": ["string", "null"]},
+                "adjoins": {"type": ["string", "null"]},
+                "notes": {"type": ["string", "null"]}
+            },
+            "required": ["description"]
+        },
+        "southeast": {
+            "type": "object",
+            "properties": {
+                "description": {"type": "string"},
+                "length": {"type": ["string", "null"]},
+                "adjoins": {"type": ["string", "null"]},
+                "notes": {"type": ["string", "null"]}
+            },
+            "required": ["description"]
+        },
+        "southwest": {
+            "type": "object",
+            "properties": {
+                "description": {"type": "string"},
+                "length": {"type": ["string", "null"]},
+                "adjoins": {"type": ["string", "null"]},
+                "notes": {"type": ["string", "null"]}
+            },
+            "required": ["description"]
+        },
+        "northwest": {
             "type": "object",
             "properties": {
                 "description": {"type": "string"},

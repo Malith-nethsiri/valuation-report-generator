@@ -6,6 +6,7 @@ import os
 from typing import Dict, List, Optional
 from anthropic import Anthropic
 from dotenv import load_dotenv
+from ..docx_generator import format_list_with_grammar
 
 load_dotenv()
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
@@ -264,12 +265,29 @@ def format_utilities(utilities: Optional[Dict]) -> str:
     parts = []
 
     if utilities.get('water_supply'):
+        water_supply = utilities['water_supply']
         water_map = {
-            'pipe_borne': 'Pipe-borne water (NWSDB)',
-            'well': 'Well water',
-            'tube_well': 'Tube well'
+            'Pipe-borne (NWSDB)': 'pipe-borne water (NWSDB)',
+            'Well': 'well water',
+            'Bore/Tube Well': 'bore/tube well water',
+            'Rainwater Harvesting': 'rainwater harvesting',
+            # Old values for backward compatibility
+            'pipe_borne': 'pipe-borne water (NWSDB)',
+            'well': 'well water',
+            'tube_well': 'tube well'
         }
-        parts.append(water_map.get(utilities['water_supply'], utilities['water_supply']))
+
+        # Handle both string (legacy) and array (new) formats
+        if isinstance(water_supply, str):
+            # Legacy single value
+            parts.append(water_map.get(water_supply, water_supply))
+        elif isinstance(water_supply, list):
+            # New multi-select array
+            mapped_values = [
+                water_map.get(ws, ws.lower())
+                for ws in water_supply
+            ]
+            parts.append(format_list_with_grammar(mapped_values))
 
     elec = utilities.get('electricity', {})
     if elec.get('source'):
@@ -281,6 +299,19 @@ def format_utilities(utilities: Optional[Dict]) -> str:
     total = (parking.get('covered_spaces', 0) + parking.get('uncovered_spaces', 0))
     if total > 0:
         parts.append(f"Parking for {total} vehicle{'s' if total != 1 else ''}")
+
+    # Communication services
+    comm_parts = []
+    if utilities.get('telephone'):
+        comm_parts.append('telephone')
+    if utilities.get('internet'):
+        comm_parts.append('internet')
+    if comm_parts:
+        parts.append(f"Communication: {', '.join(comm_parts)}")
+
+    # Gas connection
+    if utilities.get('gas_connection'):
+        parts.append('Gas connection available')
 
     security = utilities.get('security_features', [])
     if security:

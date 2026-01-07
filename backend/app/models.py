@@ -37,6 +37,9 @@ class User(Base):
     # Letterhead template preference
     preferred_letterhead_template = Column(String(50), nullable=True, default='classic')
 
+    # Bank Account Management
+    bank_accounts = Column(JSON, nullable=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -78,6 +81,12 @@ class Report(Base):
     applicant_district = Column(String(100), nullable=True)
     applicant_province = Column(String(100), nullable=True)
     applicant_country = Column(String(100), nullable=True, default="Sri Lanka")
+
+    # Request Type (client vs organization)
+    request_type = Column(String(50), nullable=True)  # "client_request" or "organization_request"
+
+    # Applicant Contact Number
+    applicant_contact_number = Column(String(50), nullable=True)
 
     # Valuation Purpose
     valuation_type = Column(String(100), nullable=True)  # Market Value, Present Market Value, etc.
@@ -127,6 +136,7 @@ class Report(Base):
     # Sri Lankan Administrative Subdivisions (Phase 2 - Enhancement)
     property_number = Column(String(50), nullable=True)  # Property number within village (e.g., "No: 1202")
     grama_niladari_division = Column(String(200), nullable=True)  # Grama Niladari Division (smallest admin unit)
+    hathpaththuwa = Column(String(300), nullable=True)  # Hathpaththuwa (administrative division between DS and Korale)
     korale = Column(String(300), nullable=True)  # Korale (traditional administrative division)
     pradeshiya_sabha = Column(String(200), nullable=True)  # Pradeshiya Sabha (if applicable)
     ward_number = Column(String(20), nullable=True)  # Ward number (for urban/municipal areas)
@@ -163,7 +173,10 @@ class Report(Base):
     land_traditional_name = Column(String(300), nullable=True)  # e.g., "Hakuruketiyawe Wela alias Hakuruketiyawe watta now Poranewatta"
 
     # Boundary Information (Hybrid: structured + free text)
-    # Structure: {"north": {"description": "...", "length": "...", "adjoins": "...", "notes": "..."}, "south": {...}, "east": {...}, "west": {...}}
+    # Structure: {"north": {...}, "northeast": {...}, "east": {...}, "southeast": {...},
+    #            "south": {...}, "southwest": {...}, "west": {...}, "northwest": {...}}
+    # Each direction: {"description": "...", "length": "...", "adjoins": "...", "notes": "..."}
+    # 4 main directions (north, south, east, west) are required; 4 diagonal directions are optional
     boundaries = Column(JSON, nullable=True)
 
     # Physical Boundaries
@@ -171,7 +184,8 @@ class Report(Base):
     physical_boundaries_description = Column(Text, nullable=True)
 
     # Boundary Types Per Direction (for professional summary generation)
-    # Structure: {"north": "brick_walls", "south": "barbed_wire", "east": "brick_walls", "west": "live_fence"}
+    # Structure: {"north": "brick_walls", "northeast": "barbed_wire", "east": "brick_walls", ...}
+    # Supports all 8 directions (4 main + 4 diagonal)
     boundary_types_per_direction = Column(JSON, nullable=True)
 
     # Entrance/Gate Type
@@ -239,7 +253,7 @@ class Report(Base):
 
     # Infrastructure & Utilities
     has_electricity = Column(Boolean, nullable=True, default=True)
-    water_supply_type = Column(String(50), nullable=True)  # pipe_borne_water, bore_water, well_water, none
+    water_supply_type = Column(JSON, nullable=True)  # Array: ["Pipe-borne (NWSDB)", "Well", "Bore/Tube Well", "Rainwater Harvesting"]
     telecommunication_types = Column(JSON, nullable=True)  # Array: ["landline", "mobile_coverage"]
     internet_types = Column(JSON, nullable=True)  # Array: ["fiber", "mobile_data"]
 
@@ -255,7 +269,7 @@ class Report(Base):
     # Area Characteristics
     area_type = Column(String(50), nullable=True)  # residential, commercial, industrial, mixed, agricultural, tourist
     development_level = Column(String(50), nullable=True)  # well_developed, developing, moderate, undeveloped
-    predominant_building_type = Column(String(100), nullable=True)  # single_storey_residential, multi_storey_residential, apartments, commercial_buildings, mixed
+    predominant_building_type = Column(JSON, nullable=True)  # Array: ["Single Storey Residential", "Multi Storey Residential", "Apartments", "Commercial Buildings", "Mixed"]
 
     # Tourism/Special characteristics
     is_tourist_area = Column(Boolean, nullable=True, default=False)
@@ -387,6 +401,7 @@ class Property(Base):
     property_longitude = Column(Numeric(11, 8), nullable=True)
     property_number = Column(String(50), nullable=True)
     grama_niladari_division = Column(String(200), nullable=True)
+    hathpaththuwa = Column(String(300), nullable=True)
     korale = Column(String(300), nullable=True)
     pradeshiya_sabha = Column(String(200), nullable=True)
     ward_number = Column(String(20), nullable=True)
@@ -417,6 +432,7 @@ class Property(Base):
     land_extent_square_meters = Column(Numeric(12, 2), nullable=True)
     land_extent_formatted = Column(String(50), nullable=True)
     land_traditional_name = Column(String(300), nullable=True)
+    # Boundary Information - supports 4 main directions (required) + 4 diagonal directions (optional)
     boundaries = Column(JSON, nullable=True)
     physical_boundaries_types = Column(JSON, nullable=True)
     physical_boundaries_description = Column(Text, nullable=True)
@@ -460,7 +476,7 @@ class Property(Base):
     major_town_name = Column(String(200), nullable=True)
     nearby_facilities = Column(JSON, nullable=True)
     has_electricity = Column(Boolean, nullable=True)
-    water_supply_type = Column(String(50), nullable=True)
+    water_supply_type = Column(JSON, nullable=True)  # Array: ["Pipe-borne (NWSDB)", "Well", "Bore/Tube Well", "Rainwater Harvesting"]
     telecommunication_types = Column(JSON, nullable=True)
     internet_types = Column(JSON, nullable=True)
     has_public_transport = Column(Boolean, nullable=True)
@@ -472,7 +488,7 @@ class Property(Base):
     nearest_railway_distance_km = Column(Numeric(6, 2), nullable=True)
     area_type = Column(String(50), nullable=True)
     development_level = Column(String(50), nullable=True)
-    predominant_building_type = Column(String(100), nullable=True)
+    predominant_building_type = Column(JSON, nullable=True)  # Array: ["Single Storey Residential", "Multi Storey Residential", "Apartments", "Commercial Buildings", "Mixed"]
     is_tourist_area = Column(Boolean, nullable=True)
     tourist_attractions_nearby = Column(Text, nullable=True)
     locality_description_text = Column(Text, nullable=True)

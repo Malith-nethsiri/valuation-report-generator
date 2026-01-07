@@ -13,9 +13,13 @@ interface BoundaryData {
 
 interface BoundariesData {
   north?: BoundaryData;
-  south?: BoundaryData;
+  northeast?: BoundaryData;
   east?: BoundaryData;
+  southeast?: BoundaryData;
+  south?: BoundaryData;
+  southwest?: BoundaryData;
   west?: BoundaryData;
+  northwest?: BoundaryData;
 }
 
 interface PhysicalBoundariesData {
@@ -25,9 +29,13 @@ interface PhysicalBoundariesData {
 
 interface BoundaryTypesPerDirection {
   north?: string;
-  south?: string;
+  northeast?: string;
   east?: string;
+  southeast?: string;
+  south?: string;
+  southwest?: string;
   west?: string;
+  northwest?: string;
 }
 
 interface BoundaryInformationSectionProps {
@@ -106,10 +114,17 @@ export function BoundaryInformationSection({
     [key: string]: boolean;
   }>({
     north: false,
-    south: false,
+    northeast: false,
     east: false,
+    southeast: false,
+    south: false,
+    southwest: false,
     west: false,
+    northwest: false,
   });
+
+  // State for showing/hiding additional diagonal boundaries section
+  const [showAdditionalBoundaries, setShowAdditionalBoundaries] = useState<boolean>(false);
 
   // Generate boundary summary text based on selections
   const generateSummaryText = (
@@ -139,7 +154,7 @@ export function BoundaryInformationSection({
 
     // Group directions by boundary type
     const typeToDirections: { [key: string]: string[] } = {};
-    const directions = ['north', 'east', 'south', 'west'] as const;
+    const directions = ['north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest'] as const;
 
     for (const dir of directions) {
       const bType = typesPerDir[dir];
@@ -156,8 +171,13 @@ export function BoundaryInformationSection({
     for (const [bType, dirs] of Object.entries(typeToDirections)) {
       const typeLabel = boundaryTypeLabels[bType] || bType;
       let dirText: string;
-      if (dirs.length === 4) {
-        dirText = 'on all four sides';
+      if (dirs.length === 8) {
+        dirText = 'on all eight sides';
+      } else if (dirs.length === 4) {
+        // Check if it's the main 4 directions
+        const mainDirs = ['north', 'south', 'east', 'west'];
+        const isMainFour = dirs.every(d => mainDirs.includes(d)) && dirs.length === 4;
+        dirText = isMainFour ? 'on all four sides' : 'on the ' + dirs.slice(0, -1).join(', ') + ` and ${dirs[dirs.length - 1]}`;
       } else if (dirs.length === 1) {
         dirText = `on the ${dirs[0]}`;
       } else {
@@ -215,7 +235,7 @@ export function BoundaryInformationSection({
   };
 
   const handleBoundaryChange = (
-    direction: 'north' | 'south' | 'east' | 'west',
+    direction: 'north' | 'northeast' | 'east' | 'southeast' | 'south' | 'southwest' | 'west' | 'northwest',
     field: keyof BoundaryData,
     value: string
   ) => {
@@ -250,7 +270,7 @@ export function BoundaryInformationSection({
     notifyParent(localBoundaries, localPhysicalTypes, localPhysicalDesc, value, localBoundaryTypesPerDir, localEntranceType, localSummaryText);
   };
 
-  const handleBoundaryTypePerDirChange = (direction: 'north' | 'south' | 'east' | 'west', typeId: string) => {
+  const handleBoundaryTypePerDirChange = (direction: 'north' | 'northeast' | 'east' | 'southeast' | 'south' | 'southwest' | 'west' | 'northwest', typeId: string) => {
     const updated = {
       ...localBoundaryTypesPerDir,
       [direction]: typeId || undefined,
@@ -281,7 +301,7 @@ export function BoundaryInformationSection({
     notifyParent(localBoundaries, localPhysicalTypes, localPhysicalDesc, localTraditionalName, localBoundaryTypesPerDir, localEntranceType, newSummary);
   };
 
-  const toggleExpanded = (direction: 'north' | 'south' | 'east' | 'west') => {
+  const toggleExpanded = (direction: 'north' | 'northeast' | 'east' | 'southeast' | 'south' | 'southwest' | 'west' | 'northwest') => {
     setExpandedDirections((prev) => ({
       ...prev,
       [direction]: !prev[direction],
@@ -289,7 +309,7 @@ export function BoundaryInformationSection({
   };
 
   const renderBoundaryInput = (
-    direction: 'north' | 'south' | 'east' | 'west',
+    direction: 'north' | 'northeast' | 'east' | 'southeast' | 'south' | 'southwest' | 'west' | 'northwest',
     directionLabel: string,
     icon: string
   ) => {
@@ -455,9 +475,38 @@ export function BoundaryInformationSection({
 
         <div className="grid grid-cols-1 gap-4">
           {renderBoundaryInput('north', 'North Boundary', '⬆️')}
-          {renderBoundaryInput('south', 'South Boundary', '⬇️')}
           {renderBoundaryInput('east', 'East Boundary', '➡️')}
+          {renderBoundaryInput('south', 'South Boundary', '⬇️')}
           {renderBoundaryInput('west', 'West Boundary', '⬅️')}
+        </div>
+
+        {/* Additional Diagonal Boundaries (Optional) */}
+        <div className="mt-6 pt-6 border-t border-gray-200">
+          <button
+            type="button"
+            onClick={() => setShowAdditionalBoundaries(!showAdditionalBoundaries)}
+            className="flex items-center gap-2 text-blue-600 hover:text-blue-800 font-semibold transition-colors"
+            disabled={disabled}
+          >
+            {showAdditionalBoundaries ? (
+              <ChevronUp className="h-5 w-5" />
+            ) : (
+              <ChevronDown className="h-5 w-5" />
+            )}
+            <span>Additional Boundaries (Optional)</span>
+          </button>
+          <p className="text-sm text-gray-600 mt-2 ml-7">
+            For properties with diagonal boundaries (northeast, southeast, southwest, northwest)
+          </p>
+
+          {showAdditionalBoundaries && (
+            <div className="grid grid-cols-1 gap-4 mt-4 bg-gray-50 p-4 rounded-lg">
+              {renderBoundaryInput('northeast', 'North-East Boundary', '↗️')}
+              {renderBoundaryInput('southeast', 'South-East Boundary', '↘️')}
+              {renderBoundaryInput('southwest', 'South-West Boundary', '↙️')}
+              {renderBoundaryInput('northwest', 'North-West Boundary', '↖️')}
+            </div>
+          )}
         </div>
       </div>
 

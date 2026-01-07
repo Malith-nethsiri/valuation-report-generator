@@ -1,6 +1,6 @@
 from pydantic import BaseModel, EmailStr, Field, field_validator, field_serializer
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict
 import re
 from .utils.json_validators import validate_boundaries, validate_buildings, validate_comparable_properties
 
@@ -27,11 +27,20 @@ def validate_sri_lankan_nic(value: str) -> bool:
     return bool(re.match(old_pattern, value) or re.match(new_pattern, value))
 
 def validate_passport(value: str) -> bool:
-    """Validate passport format (alphanumeric, 6-9 characters)"""
+    """Validate passport format (6-12 alphanumeric characters) - INTERNATIONAL SUPPORT"""
     if not value:
         return True  # Optional field
-    # Most passports are 6-9 alphanumeric characters
-    pattern = r'^[A-Z0-9]{6,9}$'
+
+    value = value.strip()
+
+    # International passports: 6-12 alphanumeric characters
+    # No strict format - countries have different conventions
+    # - US: 9 alphanumeric (e.g., 123456789)
+    # - UK: 9 alphanumeric (e.g., 123456789)
+    # - India: 1 letter + 7 digits (e.g., A1234567)
+    # - Sri Lanka: N + 7 digits (e.g., N1234567)
+    # - Canada: 2 letters + 6 digits (e.g., AB123456)
+    pattern = r'^[A-Z0-9]{6,12}$'
     return bool(re.match(pattern, value.upper()))
 
 # Authentication Schemas
@@ -87,6 +96,7 @@ class UserResponse(UserBase):
     id: int
     created_at: datetime
     updated_at: Optional[datetime] = None
+    bank_accounts: Optional[List["BankAccount"]] = None
 
     class Config:
         from_attributes = True
@@ -120,10 +130,30 @@ class UserUpdate(BaseModel):
     # Letterhead template preference
     preferred_letterhead_template: Optional[str] = Field(None, max_length=50, description="Preferred letterhead template ID (e.g., 'classic', 'modern')")
 
+    # Bank Account Management
+    bank_accounts: Optional[List["BankAccount"]] = None
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str
     user: UserResponse
+
+# Bank Account Schemas
+class BankAccount(BaseModel):
+    id: str = Field(..., description="Unique identifier (UUID)")
+    bank_name: str = Field(..., min_length=1, max_length=200, description="Bank name")
+    account_number: str = Field(..., min_length=1, max_length=50, description="Account number")
+    branch_name: str = Field(..., min_length=1, max_length=200, description="Branch name")
+
+class BankAccountCreate(BaseModel):
+    bank_name: str = Field(..., min_length=1, max_length=200)
+    account_number: str = Field(..., min_length=1, max_length=50)
+    branch_name: str = Field(..., min_length=1, max_length=200)
+
+class BankAccountUpdate(BaseModel):
+    bank_name: Optional[str] = Field(None, min_length=1, max_length=200)
+    account_number: Optional[str] = Field(None, min_length=1, max_length=50)
+    branch_name: Optional[str] = Field(None, min_length=1, max_length=200)
 
 # Deed Information Schema
 class DeedInfo(BaseModel):
@@ -209,10 +239,29 @@ class Parking(BaseModel):
     uncovered_spaces: Optional[int] = Field(None, ge=0, description="Number of uncovered parking spaces")
 
 class UtilitiesServices(BaseModel):
-    water_supply: Optional[str] = Field(None, max_length=100, description="Water supply type")
+    # Water and sewage
+    water_supply: Optional[List[str]] = Field(None, description="Array of water supply types")
     sewage: Optional[str] = Field(None, max_length=100, description="Sewage system type")
+
+    # Electricity and parking (detailed objects)
     electricity: Optional[Electricity] = Field(None, description="Electricity details")
     parking: Optional[Parking] = Field(None, description="Parking facilities")
+
+    # Communication services
+    telephone: Optional[bool] = Field(None, description="Telephone connection available")
+    internet: Optional[bool] = Field(None, description="Internet connection available")
+
+    # Gas connection
+    gas_connection: Optional[bool] = Field(None, description="Gas connection available")
+
+    # Security features
+    security_features: Optional[List[str]] = Field(default_factory=list, description="Security features (boundary_wall, main_gate, cctv, security_lights)")
+
+    # Modern amenities
+    amenities: Optional[Dict[str, bool]] = Field(None, description="Modern amenities (air_conditioning, built_in_wardrobes, modern_kitchen, pantry_cupboards)")
+
+    # Hot water system
+    hot_water_system: Optional[str] = Field(None, max_length=50, description="Hot water system type (electric_geyser, solar_heater, gas_heater, none)")
 
 class Room(BaseModel):
     room_type: str = Field(..., description="Room type (Bedroom, Bathroom, Attached Bathroom, Living Room, etc.)")
@@ -222,8 +271,6 @@ class Room(BaseModel):
 class Floor(BaseModel):
     floor_name: str = Field(..., description="Floor name (e.g., 'Ground Floor')")
     floor_area: Optional[float] = Field(None, ge=0, description="Floor area in square feet")
-    rooms: List[Room] = Field(default_factory=list, description="Rooms on this floor")
-    accommodation_summary: Optional[AccommodationSummary] = Field(None, description="Auto-calculated accommodation summary (room counts by type)")
 
 class BuildingPhoto(BaseModel):
     id: str = Field(..., description="Photo ID")
@@ -245,7 +292,9 @@ class Building(BaseModel):
     floor_types: List[str] = Field(default_factory=list, description="Floor types")
     floor_description: Optional[str] = Field(None, description="Floor description")
     total_floor_area: Optional[float] = Field(None, ge=0, description="Total floor area in square feet")
-    floors: List[Floor] = Field(default_factory=list, description="Building floors")
+    floors: List[Floor] = Field(default_factory=list, description="Building floors (simplified - floor names and areas only)")
+    rooms: List[Room] = Field(default_factory=list, description="Rooms at building level (not per-floor)")
+    accommodation_summary: Optional[AccommodationSummary] = Field(None, description="Auto-calculated accommodation summary at building level")
     construction_materials: Optional[ConstructionMaterials] = Field(None, description="Construction materials details")
     utilities_services: Optional[UtilitiesServices] = Field(None, description="Utilities and services")
     conveniences: List[str] = Field(default_factory=list, description="Building conveniences")
@@ -291,6 +340,20 @@ class ReportBase(BaseModel):
     applicant_district: Optional[str] = Field(None, max_length=100, description="District")
     applicant_province: Optional[str] = Field(None, max_length=100, description="Province")
     applicant_country: Optional[str] = Field(default="Sri Lanka", max_length=100, description="Country")
+
+    # Request Type (client vs organization)
+    request_type: Optional[str] = Field(
+        None,
+        max_length=50,
+        description="Request type: 'client_request' or 'organization_request'"
+    )
+
+    # Applicant Contact Number
+    applicant_contact_number: Optional[str] = Field(
+        None,
+        max_length=50,
+        description="Applicant contact/phone number"
+    )
 
     # Valuation Purpose
     valuation_type: Optional[str] = Field(None, max_length=100, description="Type of valuation (Market Value, etc.)")
@@ -344,6 +407,7 @@ class ReportBase(BaseModel):
     # Sri Lankan Administrative Subdivisions (Phase 2 - Enhancement)
     property_number: Optional[str] = Field(None, max_length=50, description="Property number within village (e.g., No: 1202, No:717)")
     grama_niladari_division: Optional[str] = Field(None, max_length=200, description="Grama Niladari Division (smallest admin unit)")
+    hathpaththuwa: Optional[str] = Field(None, max_length=300, description="Hathpaththuwa (administrative division)")
     korale: Optional[str] = Field(None, max_length=300, description="Korale (traditional administrative division)")
     pradeshiya_sabha: Optional[str] = Field(None, max_length=200, description="Pradeshiya Sabha (if applicable)")
     ward_number: Optional[str] = Field(None, max_length=20, description="Ward number (for urban/municipal areas)")
@@ -380,15 +444,16 @@ class ReportBase(BaseModel):
     land_traditional_name: Optional[str] = Field(None, max_length=300, description="Traditional or historical name of the land (e.g., 'Hakuruketiyawe Wela alias...')")
 
     # Boundary Information (Hybrid: structured + free text)
-    # Structure: {"north": {"description": "...", "length": "...", "adjoins": "...", "notes": "..."}, "south": {...}, "east": {...}, "west": {...}}
-    boundaries: Optional[dict] = Field(None, description="Boundary information for all four directions (JSON)")
+    # Structure: {"north": {...}, "northeast": {...}, "east": {...}, "southeast": {...}, "south": {...}, "southwest": {...}, "west": {...}, "northwest": {...}}
+    # Each direction: {"description": "...", "length": "...", "adjoins": "...", "notes": "..."}
+    boundaries: Optional[dict] = Field(None, description="Boundary information (supports 4 main + 4 optional diagonal directions)")
 
     # Physical Boundaries
     physical_boundaries_types: Optional[List[str]] = Field(None, description="Types of physical boundaries (e.g., ['brick_walls', 'barbed_wire', 'live_fence'])")
     physical_boundaries_description: Optional[str] = Field(None, description="Detailed description of physical boundaries")
 
     # Boundary Types Per Direction (for professional summary generation)
-    boundary_types_per_direction: Optional[dict] = Field(None, description="Boundary type for each direction (JSON: {'north': 'brick_walls', ...})")
+    boundary_types_per_direction: Optional[dict] = Field(None, description="Boundary type for each direction - supports all 8 directions (JSON: {'north': 'brick_walls', 'northeast': '...', ...})")
 
     # Entrance/Gate Type
     entrance_type: Optional[str] = Field(None, max_length=100, description="Type of entrance/gate (auto_roller_gate, iron_gate, wooden_gate, no_gate)")
@@ -450,7 +515,7 @@ class ReportBase(BaseModel):
 
     # Infrastructure & Utilities
     has_electricity: Optional[bool] = Field(None, description="Whether electricity is available")
-    water_supply_type: Optional[str] = Field(None, max_length=50, description="Type of water supply (pipe_borne_water, bore_water, well_water, none)")
+    water_supply_type: Optional[List[str]] = Field(None, description="Array of water supply types (Pipe-borne (NWSDB), Well, Bore/Tube Well, Rainwater Harvesting, or custom)")
     telecommunication_types: Optional[List[str]] = Field(None, description="Types of telecommunication available (landline, mobile_coverage)")
     internet_types: Optional[List[str]] = Field(None, description="Types of internet available (fiber, mobile_data)")
 
@@ -466,7 +531,7 @@ class ReportBase(BaseModel):
     # Area Characteristics
     area_type: Optional[str] = Field(None, max_length=50, description="Type of area (residential, commercial, industrial, mixed, agricultural, tourist)")
     development_level: Optional[str] = Field(None, max_length=50, description="Development level (well_developed, developing, moderate, undeveloped)")
-    predominant_building_type: Optional[str] = Field(None, max_length=100, description="Predominant building type in the area")
+    predominant_building_type: Optional[List[str]] = Field(None, description="Array of predominant building types (Single Storey Residential, Multi Storey Residential, Apartments, Commercial Buildings, Mixed, or custom)")
 
     # Tourism/Special characteristics
     is_tourist_area: Optional[bool] = Field(None, description="Whether the area is a tourist area")
@@ -533,6 +598,9 @@ class ReportBase(BaseModel):
     certification_valuer_designation: Optional[str] = Field(None, max_length=200, description="Professional designation for certification")
     certification_date: Optional[str] = Field(None, max_length=50, description="Certification date")
 
+    # ===== INVOICE =====
+    invoice_data: Optional['InvoiceData'] = Field(None, description="Invoice/professional fees data")
+
     # ===== FIELD VALIDATORS =====
 
     @field_validator('applicant_full_name')
@@ -554,19 +622,27 @@ class ReportBase(BaseModel):
     @field_validator('applicant_id_number')
     @classmethod
     def validate_id_number(cls, v, info):
-        """Validate ID number format based on ID type"""
+        """Validate ID number format based on ID type - OPTIONAL field"""
         if not v:
-            return v
+            return v  # Allow empty/None values
 
         # Get the ID type from the model data
         id_type = info.data.get('applicant_id_type', '').lower() if hasattr(info, 'data') else ''
+
+        # If ID type is missing, we can't validate format - just sanitize
+        if not id_type:
+            return sanitize_dangerous_characters(v)
 
         if 'nic' in id_type:
             if not validate_sri_lankan_nic(v):
                 raise ValueError('Invalid Sri Lankan NIC format. Use old format (123456789V) or new format (200012345678)')
         elif 'passport' in id_type:
             if not validate_passport(v):
-                raise ValueError('Invalid passport format. Must be 6-9 alphanumeric characters')
+                raise ValueError('Invalid passport format. Must be 6-12 alphanumeric characters (supports international passports)')
+        elif 'other' in id_type:
+            # For "Other" type, just check minimum length
+            if len(v.strip()) < 3:
+                raise ValueError('ID number must be at least 3 characters')
 
         # Sanitize dangerous characters regardless of type
         return sanitize_dangerous_characters(v)
@@ -675,6 +751,60 @@ class ReportBase(BaseModel):
                 raise ValueError(error_msg)
         return v
 
+    @field_validator('water_supply_type')
+    @classmethod
+    def validate_water_supply_type(cls, v):
+        """Validate water supply type array"""
+        if v is None:
+            return v
+
+        # Max 5 selections
+        if len(v) > 5:
+            raise ValueError("Maximum 5 water supply types allowed")
+
+        # Each value max 50 characters
+        for item in v:
+            if not item or len(item) > 50:
+                raise ValueError(f"Invalid water supply type: must be 1-50 characters")
+
+        # Remove case-insensitive duplicates, preserve order
+        seen = set()
+        unique_values = []
+        for item in v:
+            normalized = item.strip()
+            if normalized.lower() not in seen:
+                seen.add(normalized.lower())
+                unique_values.append(normalized)
+
+        return unique_values
+
+    @field_validator('predominant_building_type')
+    @classmethod
+    def validate_predominant_building_type(cls, v):
+        """Validate predominant building type array"""
+        if v is None:
+            return v
+
+        # Max 5 selections
+        if len(v) > 5:
+            raise ValueError("Maximum 5 building types allowed")
+
+        # Each value max 50 characters
+        for item in v:
+            if not item or len(item) > 50:
+                raise ValueError(f"Invalid building type: must be 1-50 characters")
+
+        # Remove case-insensitive duplicates, preserve order
+        seen = set()
+        unique_values = []
+        for item in v:
+            normalized = item.strip()
+            if normalized.lower() not in seen:
+                seen.add(normalized.lower())
+                unique_values.append(normalized)
+
+        return unique_values
+
 
 class ReportCreate(ReportBase):
     pass
@@ -736,6 +866,7 @@ class ReportResponse(BaseModel):
     property_longitude: Optional[float] = None
     property_number: Optional[str] = None
     grama_niladari_division: Optional[str] = None
+    hathpaththuwa: Optional[str] = None
     korale: Optional[str] = None
     pradeshiya_sabha: Optional[str] = None
     ward_number: Optional[str] = None
@@ -802,7 +933,7 @@ class ReportResponse(BaseModel):
     major_town_name: Optional[str] = None
     nearby_facilities: Optional[List[dict]] = None
     has_electricity: Optional[bool] = None
-    water_supply_type: Optional[str] = None
+    water_supply_type: Optional[List[str]] = None
     telecommunication_types: Optional[List[str]] = None
     internet_types: Optional[List[str]] = None
     has_public_transport: Optional[bool] = None
@@ -814,7 +945,7 @@ class ReportResponse(BaseModel):
     nearest_railway_distance_km: Optional[float] = None
     area_type: Optional[str] = None
     development_level: Optional[str] = None
-    predominant_building_type: Optional[str] = None
+    predominant_building_type: Optional[List[str]] = None
     is_tourist_area: Optional[bool] = None
     tourist_attractions_nearby: Optional[List[str]] = None
     locality_description_text: Optional[str] = None
@@ -895,9 +1026,7 @@ class TemplateListResponse(BaseModel):
 class InvoiceItem(BaseModel):
     """Individual line item in a professional fee invoice"""
     description: str = Field(..., description="Service description (e.g., 'Valuation of Property 1')")
-    quantity: int = Field(default=1, ge=1, description="Quantity of service")
-    unit_price: float = Field(..., ge=0, description="Unit price for the service")
-    total: float = Field(..., ge=0, description="Total for this line item (quantity * unit_price)")
+    total: float = Field(..., ge=0, description="Direct price for this line item")
 
 class InvoiceData(BaseModel):
     """Professional fee invoice data for single or multi-property reports"""
@@ -906,8 +1035,8 @@ class InvoiceData(BaseModel):
     traveling_charges: Optional[float] = Field(None, ge=0, description="Optional traveling/site visit charges")
     discount: Optional[float] = Field(None, ge=0, description="Optional discount amount")
     total: float = Field(..., ge=0, description="Final total amount")
-    payment_terms: Optional[str] = Field(None, description="Payment terms (e.g., 'Due within 30 days')")
-    bank_details: Optional[str] = Field(None, description="Bank account details for payment")
+    bank_account_ids: List[str] = Field(default_factory=list, description="Selected bank account IDs from user profile")
+    manual_bank_details: Optional[str] = Field(None, description="Manual bank details if no accounts selected")
 
 
 # Property Schemas (mirrors Property model fields)
@@ -941,6 +1070,7 @@ class PropertyBase(BaseModel):
     property_longitude: Optional[float] = Field(None, ge=-180, le=180)
     property_number: Optional[str] = Field(None, max_length=50)
     grama_niladari_division: Optional[str] = Field(None, max_length=200)
+    hathpaththuwa: Optional[str] = Field(None, max_length=300)
     korale: Optional[str] = Field(None, max_length=300)
     pradeshiya_sabha: Optional[str] = Field(None, max_length=200)
     ward_number: Optional[str] = Field(None, max_length=20)
@@ -971,9 +1101,11 @@ class PropertyBase(BaseModel):
     land_extent_square_meters: Optional[float] = Field(None, ge=0)
     land_extent_formatted: Optional[str] = Field(None, max_length=50)
     land_traditional_name: Optional[str] = Field(None, max_length=300)
+    # Boundary Information - supports 4 main directions (required) + 4 diagonal directions (optional)
     boundaries: Optional[dict] = None
     physical_boundaries_types: Optional[List[str]] = None
     physical_boundaries_description: Optional[str] = None
+    # Boundary types per direction - supports all 8 directions (4 main + 4 diagonal)
     boundary_types_per_direction: Optional[dict] = None
     entrance_type: Optional[str] = Field(None, max_length=100)
     boundaries_summary_text: Optional[str] = None
@@ -984,12 +1116,12 @@ class PropertyBase(BaseModel):
     land_shape: Optional[str] = Field(None, max_length=50)
     land_type: Optional[str] = Field(None, max_length=50)
     land_frontage_type: Optional[str] = Field(None, max_length=100)
-    land_frontage_width: Optional[float] = Field(None, ge=0)
+    land_frontage_width: Optional[float] = None
     land_frontage_description: Optional[str] = None
     land_level: Optional[str] = Field(None, max_length=50)
     land_level_difference: Optional[float] = None
     soil_type: Optional[str] = Field(None, max_length=50)
-    water_table_depth: Optional[float] = Field(None, ge=0)
+    water_table_depth: Optional[float] = None
     flood_risk: Optional[str] = Field(None, max_length=50)
     inundation_risk: Optional[str] = Field(None, max_length=50)
     earth_slip_risk: Optional[str] = Field(None, max_length=50)
@@ -1014,7 +1146,7 @@ class PropertyBase(BaseModel):
     major_town_name: Optional[str] = Field(None, max_length=200)
     nearby_facilities: Optional[List[dict]] = None
     has_electricity: Optional[bool] = None
-    water_supply_type: Optional[str] = Field(None, max_length=50)
+    water_supply_type: Optional[List[str]] = None
     telecommunication_types: Optional[List[str]] = None
     internet_types: Optional[List[str]] = None
     has_public_transport: Optional[bool] = None
@@ -1026,7 +1158,7 @@ class PropertyBase(BaseModel):
     nearest_railway_distance_km: Optional[float] = Field(None, ge=0)
     area_type: Optional[str] = Field(None, max_length=50)
     development_level: Optional[str] = Field(None, max_length=50)
-    predominant_building_type: Optional[str] = Field(None, max_length=100)
+    predominant_building_type: Optional[List[str]] = None
     is_tourist_area: Optional[bool] = None
     tourist_attractions_nearby: Optional[str] = None
     locality_description_text: Optional[str] = None
@@ -1107,6 +1239,60 @@ class PropertyBase(BaseModel):
             raise ValueError('Longitude must be between -180 and 180')
         return v
 
+    @field_validator('water_supply_type')
+    @classmethod
+    def validate_water_supply_type(cls, v):
+        """Validate water supply type array"""
+        if v is None:
+            return v
+
+        # Max 5 selections
+        if len(v) > 5:
+            raise ValueError("Maximum 5 water supply types allowed")
+
+        # Each value max 50 characters
+        for item in v:
+            if not item or len(item) > 50:
+                raise ValueError(f"Invalid water supply type: must be 1-50 characters")
+
+        # Remove case-insensitive duplicates, preserve order
+        seen = set()
+        unique_values = []
+        for item in v:
+            normalized = item.strip()
+            if normalized.lower() not in seen:
+                seen.add(normalized.lower())
+                unique_values.append(normalized)
+
+        return unique_values
+
+    @field_validator('predominant_building_type')
+    @classmethod
+    def validate_predominant_building_type(cls, v):
+        """Validate predominant building type array"""
+        if v is None:
+            return v
+
+        # Max 5 selections
+        if len(v) > 5:
+            raise ValueError("Maximum 5 building types allowed")
+
+        # Each value max 50 characters
+        for item in v:
+            if not item or len(item) > 50:
+                raise ValueError(f"Invalid building type: must be 1-50 characters")
+
+        # Remove case-insensitive duplicates, preserve order
+        seen = set()
+        unique_values = []
+        for item in v:
+            normalized = item.strip()
+            if normalized.lower() not in seen:
+                seen.add(normalized.lower())
+                unique_values.append(normalized)
+
+        return unique_values
+
 
 class PropertyCreate(PropertyBase):
     """Schema for creating a new property"""
@@ -1116,6 +1302,18 @@ class PropertyCreate(PropertyBase):
 class PropertyUpdate(PropertyBase):
     """Schema for updating an existing property"""
     pass
+
+
+class PropertyStatusUpdate(BaseModel):
+    """Schema for updating property status only"""
+    status: str
+
+    @field_validator('status')
+    @classmethod
+    def validate_status(cls, v):
+        if v not in ['draft', 'completed']:
+            raise ValueError("Status must be 'draft' or 'completed'")
+        return v
 
 
 class PropertyResponse(PropertyBase):

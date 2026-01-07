@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { useNavigate } from 'react-router-dom';
 import {
     User, Mail, Phone, MapPin, GraduationCap, Award, Building,
-    Save, Eye, AlertCircle, CheckCircle, Sparkles
+    Save, Eye, AlertCircle, CheckCircle, Sparkles, CreditCard, Edit, Trash2, Plus
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { AutocompleteInput } from '../components/AutocompleteInput';
@@ -15,7 +15,11 @@ import { Button } from '../components/Button';
 import { Input } from '../components/Input';
 import { Label } from '../components/Label';
 import { Textarea } from '../components/Textarea';
-import { api } from '../services/api';
+import { api, bankAccountApi } from '../services/api';
+import { BankAccount } from '../types';
+import AddBankAccountModal from '../components/AddBankAccountModal';
+import BankAccountForm from '../components/BankAccountForm';
+import toast from 'react-hot-toast';
 
 // Validation schema for professional profile
 const professionalProfileSchema = z.object({
@@ -73,6 +77,11 @@ const ProfessionalProfilePage: React.FC = () => {
     const [panelBanks, setPanelBanks] = useState<string[]>([]);
     const [selectedTemplate, setSelectedTemplate] = useState<string>('classic');
 
+    // Bank Account Management State
+    const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+    const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
+    const [showAddAccountModal, setShowAddAccountModal] = useState(false);
+
     const { user, updateUserProfile } = useAuth();
     const navigate = useNavigate();
 
@@ -120,7 +129,17 @@ const ProfessionalProfilePage: React.FC = () => {
             }
         };
 
+        const loadBankAccounts = async () => {
+            try {
+                const accounts = await bankAccountApi.getAll();
+                setBankAccounts(accounts);
+            } catch (err) {
+                console.error('Failed to load bank accounts:', err);
+            }
+        };
+
         loadAutocompleteData();
+        loadBankAccounts();
 
         // Load existing panel banks
         if (user?.panel_valuer_banks) {
@@ -160,6 +179,44 @@ const ProfessionalProfilePage: React.FC = () => {
             setError(err.message || 'Failed to update profile. Please try again.');
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    // Bank Account CRUD Handlers
+    const handleAddAccount = async (accountData: any) => {
+        try {
+            const newAccount = await bankAccountApi.create(accountData);
+            setBankAccounts([...bankAccounts, newAccount]);
+            setShowAddAccountModal(false);
+            toast.success('Bank account added successfully');
+        } catch (error) {
+            console.error('Failed to add bank account:', error);
+            toast.error('Failed to add bank account');
+        }
+    };
+
+    const handleUpdateAccount = async (accountId: string, updateData: any) => {
+        try {
+            const updated = await bankAccountApi.update(accountId, updateData);
+            setBankAccounts(bankAccounts.map(acc => acc.id === accountId ? updated : acc));
+            setEditingAccountId(null);
+            toast.success('Bank account updated successfully');
+        } catch (error) {
+            console.error('Failed to update bank account:', error);
+            toast.error('Failed to update bank account');
+        }
+    };
+
+    const handleDeleteAccount = async (accountId: string) => {
+        if (!confirm('Are you sure you want to delete this bank account?')) return;
+
+        try {
+            await bankAccountApi.delete(accountId);
+            setBankAccounts(bankAccounts.filter(acc => acc.id !== accountId));
+            toast.success('Bank account deleted successfully');
+        } catch (error) {
+            console.error('Failed to delete bank account:', error);
+            toast.error('Failed to delete bank account');
         }
     };
 
@@ -470,6 +527,75 @@ const ProfessionalProfilePage: React.FC = () => {
                                 </div>
                             </section>
 
+                            {/* Bank Account Management */}
+                            <section>
+                                <div className="flex items-center justify-between mb-4">
+                                    <h2 className="text-xl font-semibold text-gray-900 flex items-center">
+                                        <CreditCard className="mr-2 text-emerald-600" />
+                                        Bank Accounts (Optional)
+                                    </h2>
+                                    <Button
+                                        type="button"
+                                        onClick={() => setShowAddAccountModal(true)}
+                                        className="flex items-center px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-lg text-sm"
+                                    >
+                                        <Plus className="h-4 w-4 mr-2" />
+                                        Add Account
+                                    </Button>
+                                </div>
+
+                                <p className="text-sm text-gray-600 mb-4">
+                                    Add bank accounts to your profile for quick selection when generating invoices. These accounts are optional and can be updated anytime.
+                                </p>
+
+                                {bankAccounts.length === 0 ? (
+                                    <div className="bg-gray-50 rounded-lg p-6 text-center border-2 border-dashed border-gray-300">
+                                        <CreditCard className="mx-auto h-12 w-12 text-gray-400 mb-3" />
+                                        <p className="text-gray-600">No bank accounts added yet.</p>
+                                        <p className="text-sm text-gray-500 mt-1">Add accounts to include in invoices.</p>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-3">
+                                        {bankAccounts.map(account => (
+                                            <div key={account.id} className="bg-white border border-gray-200 rounded-lg p-4">
+                                                {editingAccountId === account.id ? (
+                                                    <BankAccountForm
+                                                        initialData={account}
+                                                        onSave={(updateData) => handleUpdateAccount(account.id, updateData)}
+                                                        onCancel={() => setEditingAccountId(null)}
+                                                        isEdit={true}
+                                                    />
+                                                ) : (
+                                                    <div className="flex justify-between items-start">
+                                                        <div className="flex-1">
+                                                            <p className="font-semibold text-gray-900">{account.bank_name}</p>
+                                                            <p className="text-sm text-gray-600 mt-1">Account: {account.account_number}</p>
+                                                            <p className="text-sm text-gray-600">Branch: {account.branch_name}</p>
+                                                        </div>
+                                                        <div className="flex gap-2">
+                                                            <Button
+                                                                type="button"
+                                                                onClick={() => setEditingAccountId(account.id)}
+                                                                className="p-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded"
+                                                            >
+                                                                <Edit className="h-4 w-4" />
+                                                            </Button>
+                                                            <Button
+                                                                type="button"
+                                                                onClick={() => handleDeleteAccount(account.id)}
+                                                                className="p-2 bg-red-100 hover:bg-red-200 text-red-700 rounded"
+                                                            >
+                                                                <Trash2 className="h-4 w-4" />
+                                                            </Button>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </section>
+
                             {/* Letterhead Template Selection */}
                             <section>
                                 <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
@@ -531,6 +657,17 @@ const ProfessionalProfilePage: React.FC = () => {
                     )}
                 </div>
             </div>
+
+            {/* Add Bank Account Modal */}
+            {showAddAccountModal && (
+                <AddBankAccountModal
+                    onClose={() => setShowAddAccountModal(false)}
+                    onAccountAdded={(newAccount) => {
+                        setBankAccounts([...bankAccounts, newAccount]);
+                        setShowAddAccountModal(false);
+                    }}
+                />
+            )}
         </div>
     );
 };

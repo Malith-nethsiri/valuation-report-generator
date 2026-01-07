@@ -396,6 +396,100 @@ def format_currency(value: float) -> str:
     return f"Rs. {value:,.2f}"
 
 
+def format_currency_words(value: float) -> str:
+    """
+    Convert numeric currency to words in Sri Lankan English format.
+
+    Args:
+        value: Numeric value (e.g., 122300000.00)
+
+    Returns:
+        String like "One Hundred Twenty Two Million Three Hundred Thousand"
+
+    Examples:
+        >>> format_currency_words(122300000.00)
+        'One Hundred Twenty Two Million Three Hundred Thousand'
+        >>> format_currency_words(50000.00)
+        'Fifty Thousand'
+        >>> format_currency_words(1500000.00)
+        'One Million Five Hundred Thousand'
+    """
+    if value is None or value == 0:
+        return "Zero"
+
+    # Round to nearest whole number (ignore cents)
+    value = int(round(abs(value)))
+
+    if value == 0:
+        return "Zero"
+
+    # Number words
+    ones = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine"]
+    teens = ["Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen",
+             "Sixteen", "Seventeen", "Eighteen", "Nineteen"]
+    tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"]
+
+    def convert_group(n):
+        """Convert a number group (1-999) to words"""
+        if n == 0:
+            return ""
+        elif n < 10:
+            return ones[n]
+        elif n < 20:
+            return teens[n - 10]
+        elif n < 100:
+            return tens[n // 10] + (" " + ones[n % 10] if n % 10 != 0 else "")
+        else:
+            return ones[n // 100] + " Hundred" + (" " + convert_group(n % 100) if n % 100 != 0 else "")
+
+    # Split into groups
+    billion = value // 1000000000
+    million = (value % 1000000000) // 1000000
+    thousand = (value % 1000000) // 1000
+    hundred = value % 1000
+
+    parts = []
+    if billion > 0:
+        parts.append(convert_group(billion) + " Billion")
+    if million > 0:
+        parts.append(convert_group(million) + " Million")
+    if thousand > 0:
+        parts.append(convert_group(thousand) + " Thousand")
+    if hundred > 0:
+        parts.append(convert_group(hundred))
+
+    return " ".join(parts)
+
+
+def format_currency_aligned(value: float, min_width: int = 13) -> str:
+    """
+    Format currency with right-padding for digit alignment at tab stops.
+
+    When used with right-aligned tab stops, this ensures that currency values
+    align properly by padding the numeric portion to a consistent width.
+
+    Args:
+        value: Numeric value to format
+        min_width: Minimum width for the numeric portion (default 13)
+
+    Returns:
+        Formatted string like "Rs.   50,000.00" or "Rs. 12,750,000.00"
+
+    Examples:
+        format_currency_aligned(50000) -> "Rs.   50,000.00"
+        format_currency_aligned(12750000) -> "Rs. 12,750,000.00"
+    """
+    if value is None:
+        return "N/A"
+
+    formatted_number = f"{value:,.2f}"
+    # Pad to minimum width, but allow larger numbers to exceed it
+    actual_width = max(min_width, len(formatted_number))
+    padded_number = formatted_number.rjust(actual_width)
+
+    return f"Rs. {padded_number}"
+
+
 def format_room_count(count: int, singular: str, plural: str = None) -> str:
     """
     Format room count with conditional number word display.
@@ -485,10 +579,14 @@ def format_building_valuation_2line(doc, building_name: str, total_floor_area: f
     p2 = doc.add_paragraph()
     p2.paragraph_format.left_indent = Inches(0.3)
 
+    # Add tab stop for right alignment
+    tab_stops = p2.paragraph_format.tab_stops
+    tab_stops.add_tab_stop(Inches(6.0), WD_TAB_ALIGNMENT.RIGHT)
+
     # Calculate depreciation multiplier
     multiplier = (100 - depreciation_rate) / 100
 
-    text2 = f"@ {format_currency(avg_rate)} per square foot less {depreciation_rate:.0f}% for dep[x{multiplier:.2f}] = {format_currency(depreciated_value)}"
+    text2 = f"@ {format_currency(avg_rate)} per square foot less {depreciation_rate:.0f}% for dep[x{multiplier:.2f}]\t= {format_currency_aligned(depreciated_value)}"
     run2 = p2.add_run(text2)
     run2.font.size = Pt(10)
     p2.paragraph_format.space_after = Pt(3)
@@ -556,7 +654,7 @@ def add_value_rounded_line(doc, rounded_value: float) -> None:
 
 def format_addon_compact(doc, description: str, value: float) -> None:
     """
-    Add add-on in compact 2-line format (similar to buildings).
+    Add add-on in single-line format (description and value on same line).
 
     Args:
         doc: Document object
@@ -564,17 +662,15 @@ def format_addon_compact(doc, description: str, value: float) -> None:
         value: Add-on value
     """
     p = doc.add_paragraph()
-    text = f"{description}"
+
+    # Add tab stop for right alignment
+    tab_stops = p.paragraph_format.tab_stops
+    tab_stops.add_tab_stop(Inches(6.0), WD_TAB_ALIGNMENT.RIGHT)
+
+    text = f"{description}\t= {format_currency_aligned(value)}"
     run = p.add_run(text)
     run.font.size = Pt(10)
-    p.paragraph_format.space_after = Pt(2)
-
-    p2 = doc.add_paragraph()
-    p2.paragraph_format.left_indent = Inches(0.3)
-    text2 = f"= {format_currency(value)}"
-    run2 = p2.add_run(text2)
-    run2.font.size = Pt(10)
-    p2.paragraph_format.space_after = Pt(3)
+    p.paragraph_format.space_after = Pt(3)
 
 
 def add_inline_field(doc, label: str, content: str,
@@ -1205,9 +1301,13 @@ def generate_applicant_statement(report: models.Report) -> str:
     # Build applicant full description
     applicant_desc = f"{report.applicant_title or ''} {report.applicant_full_name or '[Applicant Name]'}".strip()
 
-    # ID information
-    id_no_formatted = format_no_field("", report.applicant_id_number or '[ID Number]', include_label=False)
-    id_info = f"holder {report.applicant_id_type or 'Passport'} {id_no_formatted}"
+    # ID information - handle optional fields gracefully
+    if report.applicant_id_number and report.applicant_id_type:
+        id_no_formatted = format_no_field("", report.applicant_id_number, include_label=False)
+        id_info = f"holder {report.applicant_id_type} {id_no_formatted}"
+    else:
+        # No ID provided - skip this part of the introduction
+        id_info = ""
 
     # Address parts
     address_parts = []
@@ -1241,8 +1341,11 @@ def generate_applicant_statement(report: models.Report) -> str:
     # Valuation type
     valuation_type = report.valuation_type or "Market Value"
 
-    # Build paragraph
-    paragraph1 = f"This Valuation Report is furnished at the request of {applicant_desc} {id_info} of {address_str}."
+    # Build paragraph - conditionally include ID info
+    if id_info:
+        paragraph1 = f"This Valuation Report is furnished at the request of {applicant_desc} {id_info} of {address_str}."
+    else:
+        paragraph1 = f"This Valuation Report is furnished at the request of {applicant_desc} of {address_str}."
 
     # Second part - wishes to know
     wish_text = f"{applicant_desc} wishes to know the {valuation_type} of {property_type} {ownership_text} in the Democratic Socialist Republic of Sri Lanka."
@@ -1252,6 +1355,146 @@ def generate_applicant_statement(report: models.Report) -> str:
         wish_text = wish_text.replace(f"{ownership_text}", f"{ownership_text} & {pronouns['possessive']} family {report.additional_owner_names}")
 
     return [paragraph1, wish_text]
+
+def generate_organization_side_introduction(report: models.Report) -> List[str]:
+    """
+    Generate organization-side introduction format.
+
+    Format:
+    - Paragraph 1: "At the request of [position] [organization] [address],
+                    I am furnishing a Valuation Report of the above property
+                    for the [purpose] purpose."
+    - Paragraph 2-4: Formatted applicant details
+    - Paragraph 5: Inspection date (handled separately in main function)
+
+    Returns:
+        List of paragraph strings
+    """
+    paragraphs = []
+
+    # Paragraph 1: Request statement
+    request_parts = []
+
+    if report.submission_recipient_position:
+        request_parts.append(report.submission_recipient_position)
+
+    if report.submission_organization:
+        request_parts.append(report.submission_organization)
+
+    if report.submission_address:
+        request_parts.append(report.submission_address)
+
+    requester_text = ", ".join(request_parts) if request_parts else "[Requesting Organization]"
+
+    # Get purpose text
+    purpose = report.valuation_purpose or "[purpose]"
+
+    para1 = f"At the request of {requester_text}, I am furnishing a Valuation Report of the above property for the {purpose} purpose."
+    paragraphs.append(para1)
+
+    # Paragraph 2: Applicant info
+    applicant_desc = f"{report.applicant_title or ''} {report.applicant_full_name or '[Applicant Name]'}".strip()
+
+    # ID information
+    id_text = ""
+    if report.applicant_id_number and report.applicant_id_type:
+        id_no_formatted = format_no_field("", report.applicant_id_number, include_label=False)
+        id_text = f" holder {report.applicant_id_type} {id_no_formatted}"
+
+    para2 = f"Applicant        :-{applicant_desc}{id_text}"
+    paragraphs.append(para2)
+
+    # Paragraph 3: Address
+    address_parts = []
+    if report.applicant_address_line1:
+        address_parts.append(report.applicant_address_line1)
+    if report.applicant_address_line2:
+        address_parts.append(report.applicant_address_line2)
+    if report.applicant_district:
+        cleaned = clean_spelling_errors(report.applicant_district)
+        district_text = append_label_if_missing(cleaned, "District", variants=["district"])
+        address_parts.append(district_text)
+    if report.applicant_province:
+        address_parts.append(report.applicant_province)
+    if report.applicant_country:
+        address_parts.append(report.applicant_country)
+
+    address_str = ", ".join(address_parts) if address_parts else "[Address]"
+    para3 = f"Address          :-{address_str}"
+    paragraphs.append(para3)
+
+    # Paragraph 4: Contact Number
+    contact = report.applicant_contact_number or "[Contact Number]"
+    para4 = f"Contact No       :-{contact}"
+    paragraphs.append(para4)
+
+    return paragraphs
+
+
+def generate_multi_property_concluding_statement(
+    report: models.Report,
+    user: models.User,
+    grand_total: float
+) -> List[str]:
+    """
+    Generate concluding statement for multi-property CLIENT REQUEST reports.
+
+    This function creates the closing statement that appears after the property
+    summary table and inspection date, including the total market value in words
+    and the valuer's signature.
+
+    Args:
+        report: Report model instance
+        user: User model instance (for valuer name and credentials)
+        grand_total: Total valuation amount from property table
+
+    Returns:
+        List of paragraph text strings:
+        - [0]: Market value statement with amount in words
+        - [1]: Valuer name line (Vlr.[Honorific] [Full Name])
+        - [2]: Professional designation line
+
+        Returns empty list if report is organization request.
+
+    Example output:
+        [
+            "Present Market Value of the Properties claimed by Mr. John Doe & his family...",
+            "Vlr.K D A Nimalsiri",
+            "Chartered Valuer"
+        ]
+    """
+    # Only generate for client requests
+    if report.request_type != 'client_request':
+        return []
+
+    # Get pronoun based on applicant title
+    pronouns = get_pronoun(report.applicant_title, report.property_ownership)
+    gender_pronoun = pronouns['possessive']  # "his" or "her"
+
+    # Build applicant name
+    title = report.applicant_title or "Mr."
+    full_name = report.applicant_full_name or "[Applicant Name]"
+
+    # Convert amount to words
+    amount_words = format_currency_words(grand_total)
+
+    # Construct statement
+    statement = (
+        f"Present Market Value of the Properties claimed by {title} {full_name} "
+        f"& {gender_pronoun} family in the Democratic Socialist Republic of Sri Lanka "
+        f"are in a sum of Lanka Rupees {amount_words} only."
+    )
+
+    # Build valuer signature lines
+    honorific = user.honorific or ""
+    valuer_name = user.full_name or "[Valuer Name]"
+    designation = user.professional_designation or "[Professional Designation]"
+
+    # Format valuer name line: "Vlr.Honorific FullName" (remove extra spaces)
+    valuer_line = f"Vlr.{honorific} {valuer_name}".replace("  ", " ").strip()
+
+    return [statement, valuer_line, designation]
+
 
 def generate_deed_description(deeds: Optional[List[Dict]]) -> Optional[str]:
     """Generate deed description text if deeds are provided"""
@@ -1401,6 +1644,12 @@ def generate_situation_text(report: models.Report) -> Optional[str]:
         else:
             parts.append(f"within the {ds_text} division of")
 
+    # Add Hathpaththuwa (with intelligent label handling)
+    if report.hathpaththuwa:
+        cleaned = clean_spelling_errors(report.hathpaththuwa)
+        hathpaththuwa_text = append_label_if_missing(cleaned, "Hathpaththuwa", variants=["hathpaththuwa", "hatpattu"])
+        parts.append(f"in {hathpaththuwa_text}")
+
     # Add Korale (with intelligent label handling)
     if report.korale:
         cleaned = clean_spelling_errors(report.korale)
@@ -1474,6 +1723,10 @@ def generate_smart_address(report: models.Report) -> Optional[str]:
     # Divisional Secretariat (if available)
     if hasattr(report, 'property_divisional_secretariat') and report.property_divisional_secretariat:
         components.append(f"{report.property_divisional_secretariat} Divisional Secretariat Division")
+
+    # Hathpaththuwa (if available)
+    if report.hathpaththuwa:
+        components.append(report.hathpaththuwa)
 
     # Korale (if available)
     if report.korale:
@@ -1571,7 +1824,7 @@ def generate_boundary_summary_text(report: models.Report) -> Optional[str]:
     if boundary_types_per_dir:
         # Group directions by boundary type
         type_to_directions = {}
-        directions_order = ['north', 'east', 'south', 'west']
+        directions_order = ['north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest']
 
         for direction in directions_order:
             b_type = boundary_types_per_dir.get(direction)
@@ -1586,12 +1839,19 @@ def generate_boundary_summary_text(report: models.Report) -> Optional[str]:
             type_label = boundary_type_labels.get(b_type, b_type)
             dir_labels = [d for d in directions]
 
-            if len(dir_labels) == 4:
-                dir_text = "on all four sides"
+            if len(dir_labels) == 8:
+                dir_text = "on all eight sides"
+            elif len(dir_labels) == 4:
+                # Check if it's the main 4 directions
+                main_dirs = {'north', 'south', 'east', 'west'}
+                if set(dir_labels) == main_dirs:
+                    dir_text = "on all four sides"
+                else:
+                    dir_text = "on the " + ", ".join(dir_labels[:-1]) + f" and {dir_labels[-1]}"
             elif len(dir_labels) == 1:
                 dir_text = f"on the {dir_labels[0]}"
             else:
-                # Format as "north, east and south"
+                # Format as "north, northeast, east and south"
                 dir_text = "on the " + ", ".join(dir_labels[:-1]) + f" and {dir_labels[-1]}"
 
             boundary_descriptions.append(f"demarcated by {type_label} {dir_text}")
@@ -1645,16 +1905,25 @@ def format_list_with_grammar(items: List[str]) -> str:
         return ", ".join(items[:-1]) + f", and {items[-1]}"
 
 
-def aggregate_accommodation_across_floors(floors: List[Dict]) -> Dict:
+def aggregate_accommodation_across_building(building: Dict) -> Dict:
     """
-    Aggregate room counts from all floors into single property-wide totals.
+    Get accommodation summary from building (new structure) or aggregate from floors (old structure).
+
+    NEW STRUCTURE: building.accommodation_summary (rooms at building level)
+    OLD STRUCTURE: building.floors[].accommodation_summary (rooms per floor)
 
     Args:
-        floors: List of floor dicts, each with optional 'accommodation_summary'
+        building: Building dict with either new or old structure
 
     Returns:
         Dict with aggregated room counts by type
     """
+    # NEW STRUCTURE: Check if building has accommodation_summary at building level
+    if building.get('accommodation_summary'):
+        return building['accommodation_summary']
+
+    # OLD STRUCTURE: Fallback to aggregating from floors (backward compatibility)
+    floors = building.get('floors', [])
     totals = {
         'bedrooms': 0, 'bathrooms': 0, 'living_rooms': 0,
         'dining_rooms': 0, 'kitchens': 0, 'pantries': 0,
@@ -2006,10 +2275,10 @@ def render_construction_details(doc, building: Dict) -> None:
         run.font.color.rgb = RGBColor(0, 0, 0)
 
 
-def render_utilities_services(doc, building: Dict) -> None:
+def render_utilities_and_conveniences(doc, building: Dict) -> None:
     """
-    Render utilities and services section for a building.
-    Includes water, electricity, sewage, parking, security, and amenities.
+    Render unified utilities and conveniences section for a building.
+    Includes water, electricity, sewage, parking, communication, gas, security, and amenities.
     """
     utilities = building.get('utilities_services', {})
     if not utilities:
@@ -2021,11 +2290,24 @@ def render_utilities_services(doc, building: Dict) -> None:
     water = utilities.get('water_supply', '')
     if water:
         water_labels = {
+            'Pipe-borne (NWSDB)': 'pipe-borne water (NWSDB)',
+            'Well': 'well water',
+            'Bore/Tube Well': 'bore/tube well water',
+            'Rainwater Harvesting': 'rainwater harvesting',
+            # Backward compatibility
             'pipe_borne': 'pipe-borne water (NWSDB)',
             'well': 'well water',
             'tube_well': 'tube well'
         }
-        parts.append(water_labels.get(water, water.replace('_', ' ')))
+
+        # Handle both string (legacy) and array (new) formats
+        if isinstance(water, str):
+            # Legacy single value
+            parts.append(water_labels.get(water, water.replace('_', ' ')))
+        elif isinstance(water, list):
+            # New array format - use existing format_list_with_grammar
+            mapped = [water_labels.get(w, w.lower()) for w in water]
+            parts.append(format_list_with_grammar(mapped))
 
     # Sewage system
     sewage = utilities.get('sewage_system', '')
@@ -2060,6 +2342,19 @@ def render_utilities_services(doc, building: Dict) -> None:
         elif covered > 0:
             parking_text += " (covered)"
         parts.append(parking_text)
+
+    # Communication services
+    comm_parts = []
+    if utilities.get('telephone'):
+        comm_parts.append('telephone connection')
+    if utilities.get('internet'):
+        comm_parts.append('internet connection')
+    if comm_parts:
+        parts.append(", ".join(comm_parts))
+
+    # Gas connection
+    if utilities.get('gas_connection'):
+        parts.append('gas connection')
 
     # Security features
     security = utilities.get('security_features', [])
@@ -2100,7 +2395,7 @@ def render_utilities_services(doc, building: Dict) -> None:
         # Capitalize first letter
         utilities_text = "; ".join(parts)
         utilities_text = utilities_text[0].upper() + utilities_text[1:] + "."
-        add_inline_field(doc, "Utilities and services", utilities_text)
+        add_inline_field(doc, "Utilities & Conveniences", utilities_text)
 
 
 def generate_multi_property_report_docx(report: models.Report, user: models.User) -> BytesIO:
@@ -2164,7 +2459,8 @@ def generate_multi_property_report_docx(report: models.Report, user: models.User
         title_para.paragraph_format.space_after = Pt(12)
         title_run = title_para.add_run("VALUATION REPORT")
         title_run.bold = True
-        title_run.font.size = Pt(11)
+        title_run.font.size = Pt(14)  # Updated from 11 to 14
+        title_run.font.underline = True  # Add underline
         title_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Add spacing before applicant statements (matching residential/bare land)
@@ -2172,52 +2468,89 @@ def generate_multi_property_report_docx(report: models.Report, user: models.User
         spacing_para1.paragraph_format.space_before = Pt(8)
         spacing_para1.paragraph_format.space_after = Pt(0)
 
-        # Add professional applicant statements using the same helper function as residential/bare land
-        applicant_statements = generate_applicant_statement(report)
-        for statement in applicant_statements:
-            para = doc.add_paragraph()
-            para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-            para.paragraph_format.space_before = Pt(0)
-            para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
-            para.paragraph_format.line_spacing = 0.9
-            run = para.add_run(statement)
-            run.font.size = Pt(9)
-            run.font.color.rgb = RGBColor(0, 0, 0)
-
-        # Add deed/certificate description if applicable (matching residential/bare land logic)
-        should_show_deed_sentence = (
-            report.property_identification_type in ['deed', 'certificate_of_sale']
-            and report.has_deed_info == "yes"
-            and report.deeds
-        )
-
-        # Backward compatibility: Old reports (NULL type) with deed data should show sentence
-        if not report.property_identification_type and report.has_deed_info == "yes" and report.deeds:
-            should_show_deed_sentence = True
-
-        if should_show_deed_sentence:
-            deed_text = generate_deed_description(report.deeds)
-            if deed_text:
+        # Determine which introduction format to use based on request_type
+        if report.request_type == 'organization_request':
+            # Organization-side format
+            org_intro_paragraphs = generate_organization_side_introduction(report)
+            for statement in org_intro_paragraphs:
                 para = doc.add_paragraph()
                 para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
                 para.paragraph_format.space_before = Pt(0)
                 para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
                 para.paragraph_format.line_spacing = 0.9
-                run = para.add_run(deed_text)
+
+                # Parse label and value for proper formatting
+                if ":-" in statement:
+                    # This is a label-value pair (Applicant/Address/Contact No)
+                    label, value = statement.split(":-", 1)
+
+                    # Add bold label
+                    run_label = para.add_run(label.strip())
+                    run_label.font.size = Pt(9)
+                    run_label.font.bold = True
+                    run_label.font.color.rgb = RGBColor(0, 0, 0)
+
+                    # Add separator with proper spacing
+                    run_sep = para.add_run(" : ")
+                    run_sep.font.size = Pt(9)
+                    run_sep.font.color.rgb = RGBColor(0, 0, 0)
+
+                    # Add value
+                    run_value = para.add_run(value)
+                    run_value.font.size = Pt(9)
+                    run_value.font.color.rgb = RGBColor(0, 0, 0)
+                else:
+                    # This is the introductory paragraph (paragraph 1)
+                    run = para.add_run(statement)
+                    run.font.size = Pt(9)
+                    run.font.color.rgb = RGBColor(0, 0, 0)
+        else:
+            # Client-side format (default for backward compatibility)
+            applicant_statements = generate_applicant_statement(report)
+            for statement in applicant_statements:
+                para = doc.add_paragraph()
+                para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                para.paragraph_format.space_before = Pt(0)
+                para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
+                para.paragraph_format.line_spacing = 0.9
+                run = para.add_run(statement)
                 run.font.size = Pt(9)
                 run.font.color.rgb = RGBColor(0, 0, 0)
 
-        # Add submission statement (matching residential/bare land format)
-        submission_text = generate_submission_statement(report)
-        if submission_text:
-            para = doc.add_paragraph()
-            para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-            para.paragraph_format.space_before = Pt(0)
-            para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
-            para.paragraph_format.line_spacing = 0.9
-            run = para.add_run(submission_text)
-            run.font.size = Pt(9)
-            run.font.color.rgb = RGBColor(0, 0, 0)
+            # Add deed/certificate description if applicable (matching residential/bare land logic)
+            should_show_deed_sentence = (
+                report.property_identification_type in ['deed', 'certificate_of_sale']
+                and report.has_deed_info == "yes"
+                and report.deeds
+            )
+
+            # Backward compatibility: Old reports (NULL type) with deed data should show sentence
+            if not report.property_identification_type and report.has_deed_info == "yes" and report.deeds:
+                should_show_deed_sentence = True
+
+            if should_show_deed_sentence:
+                deed_text = generate_deed_description(report.deeds)
+                if deed_text:
+                    para = doc.add_paragraph()
+                    para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                    para.paragraph_format.space_before = Pt(0)
+                    para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
+                    para.paragraph_format.line_spacing = 0.9
+                    run = para.add_run(deed_text)
+                    run.font.size = Pt(9)
+                    run.font.color.rgb = RGBColor(0, 0, 0)
+
+            # Add submission statement (matching residential/bare land format)
+            submission_text = generate_submission_statement(report)
+            if submission_text:
+                para = doc.add_paragraph()
+                para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                para.paragraph_format.space_before = Pt(0)
+                para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
+                para.paragraph_format.line_spacing = 0.9
+                run = para.add_run(submission_text)
+                run.font.size = Pt(9)
+                run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Add multi-property specific statement about the summary table
         summary_intro_para = doc.add_paragraph()
@@ -2238,6 +2571,11 @@ def generate_multi_property_report_docx(report: models.Report, user: models.User
         table = doc.add_table(rows=1, cols=5)
         table.style = 'Table Grid'
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
+
+        # Set custom column widths: #(8%), Location(25%), Description(35%), Extent(12%), Value(20%)
+        column_widths = [Inches(0.52), Inches(1.625), Inches(2.275), Inches(0.78), Inches(1.3)]
+        for idx_col, width in enumerate(column_widths):
+            table.columns[idx_col].width = width
 
         # Header row
         header_cells = table.rows[0].cells
@@ -2322,9 +2660,54 @@ def generate_multi_property_report_docx(report: models.Report, user: models.User
             para.paragraph_format.space_before = Pt(6)
             para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
             para.paragraph_format.line_spacing = 0.9
-            run = para.add_run(f"Date of Inspection: {report.inspection_date}")
+
+            # Bold label
+            run_label = para.add_run("Date of Inspection")
+            run_label.font.size = Pt(9)
+            run_label.font.bold = True
+            run_label.font.color.rgb = RGBColor(0, 0, 0)
+
+            # Separator with proper spacing
+            run_sep = para.add_run(" : ")
+            run_sep.font.size = Pt(9)
+            run_sep.font.color.rgb = RGBColor(0, 0, 0)
+
+            # Regular date value
+            run_date = para.add_run(report.inspection_date)
+            run_date.font.size = Pt(9)
+            run_date.font.color.rgb = RGBColor(0, 0, 0)
+
+        # Add concluding statement for CLIENT REQUESTS only (after Date of Inspection)
+        concluding_parts = generate_multi_property_concluding_statement(report, user, grand_total)
+        if concluding_parts:
+            # Statement paragraph (reduced spacing after Date of Inspection)
+            para = doc.add_paragraph()
+            para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+            para.paragraph_format.space_before = Pt(6)
+            para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
+            para.paragraph_format.line_spacing = 0.9
+            run = para.add_run(concluding_parts[0])
             run.font.size = Pt(9)
             run.font.color.rgb = RGBColor(0, 0, 0)
+
+            # Valuer name (bold) - increased space for signature
+            name_para = doc.add_paragraph()
+            name_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            name_para.paragraph_format.space_before = Pt(30)
+            name_para.paragraph_format.space_after = Pt(2)
+            name_run = name_para.add_run(concluding_parts[1])
+            name_run.font.size = Pt(9)
+            name_run.font.bold = True
+            name_run.font.color.rgb = RGBColor(0, 0, 0)
+
+            # Professional designation
+            desig_para = doc.add_paragraph()
+            desig_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            desig_para.paragraph_format.space_before = Pt(0)
+            desig_para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
+            desig_run = desig_para.add_run(concluding_parts[2])
+            desig_run.font.size = Pt(9)
+            desig_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Add special note if applicable (matching residential/bare land format)
         if report.has_special_note == "yes" and report.special_note_text:
@@ -2349,8 +2732,10 @@ def generate_multi_property_report_docx(report: models.Report, user: models.User
             note_run.font.size = Pt(9)
             note_run.font.color.rgb = RGBColor(0, 0, 0)
 
-        # Page break before individual property sections
-        doc.add_page_break()
+        # REMOVED: Forced page break - let natural pagination handle page breaks
+        # This allows better space utilization, especially for organization requests
+        # where the table ends earlier and there's often significant space remaining on page 1
+        # doc.add_page_break()
 
         # ===== INDIVIDUAL PROPERTY SECTIONS =====
         logger.info("[MULTI-PROPERTY DOCX] Generating individual property sections")
@@ -2392,7 +2777,8 @@ def generate_multi_property_report_docx(report: models.Report, user: models.User
                 prop_desc_para.paragraph_format.line_spacing = 1.0  # Single line spacing
                 prop_desc_run = prop_desc_para.add_run(prop_desc)
                 prop_desc_run.bold = True
-                prop_desc_run.font.size = Pt(10)
+                prop_desc_run.font.size = Pt(12)  # Updated from 10 to 12
+                prop_desc_run.font.underline = True  # Add underline
                 prop_desc_run.font.color.rgb = RGBColor(0, 0, 0)
 
                 # Second line starts with "made by" - no spacing between lines
@@ -2405,7 +2791,8 @@ def generate_multi_property_report_docx(report: models.Report, user: models.User
                     plan_info_para.paragraph_format.line_spacing = 1.0  # Single line spacing
                     plan_info_run = plan_info_para.add_run(plan_info)
                     plan_info_run.bold = True
-                    plan_info_run.font.size = Pt(10)
+                    plan_info_run.font.size = Pt(12)  # Updated from 10 to 12
+                    plan_info_run.font.underline = True  # Add underline
                     plan_info_run.font.color.rgb = RGBColor(0, 0, 0)
                 else:
                     # Just add spacing if no plan info
@@ -2432,8 +2819,8 @@ def generate_multi_property_report_docx(report: models.Report, user: models.User
         # ===== INVOICE SECTION =====
         if report.invoice_data:
             logger.info("[MULTI-PROPERTY DOCX] Generating invoice section")
-            doc.add_page_break()
-            _generate_invoice_section(doc, report.invoice_data, user)
+            # Page break handled inside _generate_invoice_section()
+            _generate_invoice_section(doc, report.invoice_data, user, report)
 
         # Note: Per-property certification now included in individual property sections
         # This allows different valuers to certify different properties in the same report
@@ -2646,12 +3033,16 @@ def _generate_property_sections(doc, prop, report, user):
             boundary_label.font.size = Pt(9)
             boundary_label.font.color.rgb = RGBColor(0, 0, 0)
 
-            # Add each direction boundary
-            for direction in ['North', 'South', 'East', 'West']:
-                direction_key = direction.lower()
+            # Add each direction boundary (4 main + 4 optional diagonal)
+            for direction in ['North', 'North-East', 'East', 'South-East', 'South', 'South-West', 'West', 'North-West']:
+                direction_key = direction.lower().replace('-', '')  # 'North-East' -> 'northeast'
                 if isinstance(boundaries, dict) and direction_key in boundaries:
                     boundary_data = boundaries[direction_key]
                     description = boundary_data.get('description', '') if isinstance(boundary_data, dict) else str(boundary_data)
+
+                    # Skip diagonal boundaries if empty
+                    if not description and direction_key in ['northeast', 'southeast', 'southwest', 'northwest']:
+                        continue
 
                     if description:
                         boundary_text = f"{direction}: {description}\n"
@@ -2674,34 +3065,6 @@ def _generate_property_sections(doc, prop, report, user):
         desc_run = desc_para.add_run(land_desc_text)
         desc_run.font.size = Pt(9)
         desc_run.font.color.rgb = RGBColor(0, 0, 0)
-
-    # === OCCUPIER INFORMATION (Residential properties only) ===
-    if prop.property_type != 'bare_land' and prop.occupier_name:
-        occupier_text = f"The property is occupied by {prop.occupier_name}"
-        if prop.occupier_relationship:
-            rel_labels = {
-                'owner': 'the owner',
-                'tenant': 'a tenant',
-                'family_member': 'a family member',
-                'caretaker': 'caretaker'
-            }
-            occupier_text += f" who is {rel_labels.get(prop.occupier_relationship, prop.occupier_relationship)}"
-        occupier_text += "."
-
-        occupier_para = doc.add_paragraph()
-        occupier_para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-        occupier_para.paragraph_format.space_before = Pt(6)
-        occupier_para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
-        occupier_para.paragraph_format.line_spacing = 0.9
-
-        label_run = occupier_para.add_run("Occupation: ")
-        label_run.font.bold = True
-        label_run.font.size = Pt(9)
-        label_run.font.color.rgb = RGBColor(0, 0, 0)
-
-        value_run = occupier_para.add_run(occupier_text)
-        value_run.font.size = Pt(9)
-        value_run.font.color.rgb = RGBColor(0, 0, 0)
 
     # Buildings (if applicable - skip for bare land) - USE SAME FORMAT AS STANDALONE REPORTS
     buildings = safe_get_json_field(prop, 'buildings', [])
@@ -2787,109 +3150,64 @@ def _generate_property_sections(doc, prop, report, user):
                     opening_run.font.color.rgb = RGBColor(0, 0, 0)
 
             # === ACCOMMODATION - USE SAME AGGREGATED FORMAT AS STANDALONE ===
+            # Check if building has accommodation data (new structure at building level or old structure at floor level)
+            has_new_building_format = building.get('accommodation_summary') is not None
             floors = building.get('floors', [])
-            if floors:
-                has_new_format = any(floor.get('accommodation_summary') for floor in floors)
+            has_old_floor_format = any(floor.get('accommodation_summary') for floor in floors)
 
-                if has_new_format:
-                    # NEW FORMAT: Aggregate rooms across all floors
-                    aggregated_rooms = aggregate_accommodation_across_floors(floors)
+            if has_new_building_format or has_old_floor_format:
+                # Get accommodation summary (supports both new and old structures)
+                aggregated_rooms = aggregate_accommodation_across_building(building)
 
-                    room_parts = []
+                room_parts = []
 
-                    if aggregated_rooms.get('bedrooms', 0) > 0:
-                        count = aggregated_rooms['bedrooms']
-                        room_parts.append(format_room_count(count, 'bedroom'))
+                if aggregated_rooms.get('bedrooms', 0) > 0:
+                    count = aggregated_rooms['bedrooms']
+                    room_parts.append(format_room_count(count, 'bedroom'))
 
-                    if aggregated_rooms.get('bathrooms', 0) > 0:
-                        count = aggregated_rooms['bathrooms']
-                        room_parts.append(format_room_count(count, 'bathroom'))
+                if aggregated_rooms.get('bathrooms', 0) > 0:
+                    count = aggregated_rooms['bathrooms']
+                    room_parts.append(format_room_count(count, 'bathroom'))
 
-                    if aggregated_rooms.get('living_rooms', 0) > 0:
-                        count = aggregated_rooms['living_rooms']
-                        room_parts.append(format_room_count(count, 'living room'))
+                if aggregated_rooms.get('living_rooms', 0) > 0:
+                    count = aggregated_rooms['living_rooms']
+                    room_parts.append(format_room_count(count, 'living room'))
 
-                    if aggregated_rooms.get('dining_rooms', 0) > 0:
-                        count = aggregated_rooms['dining_rooms']
-                        room_parts.append(format_room_count(count, 'dining room'))
+                if aggregated_rooms.get('dining_rooms', 0) > 0:
+                    count = aggregated_rooms['dining_rooms']
+                    room_parts.append(format_room_count(count, 'dining room'))
 
-                    if aggregated_rooms.get('kitchens', 0) > 0:
-                        count = aggregated_rooms['kitchens']
-                        room_parts.append(format_room_count(count, 'kitchen'))
+                if aggregated_rooms.get('kitchens', 0) > 0:
+                    count = aggregated_rooms['kitchens']
+                    room_parts.append(format_room_count(count, 'kitchen'))
 
-                    if aggregated_rooms.get('pantries', 0) > 0:
-                        count = aggregated_rooms['pantries']
-                        room_parts.append(format_room_count(count, 'pantry', 'pantries'))
+                if aggregated_rooms.get('pantries', 0) > 0:
+                    count = aggregated_rooms['pantries']
+                    room_parts.append(format_room_count(count, 'pantry', 'pantries'))
 
-                    if aggregated_rooms.get('verandahs', 0) > 0:
-                        count = aggregated_rooms['verandahs']
-                        room_parts.append(format_room_count(count, 'verandah'))
+                if aggregated_rooms.get('verandahs', 0) > 0:
+                    count = aggregated_rooms['verandahs']
+                    room_parts.append(format_room_count(count, 'verandah'))
 
-                    if aggregated_rooms.get('balconies', 0) > 0:
-                        count = aggregated_rooms['balconies']
-                        room_parts.append(format_room_count(count, 'balcony', 'balconies'))
+                if aggregated_rooms.get('balconies', 0) > 0:
+                    count = aggregated_rooms['balconies']
+                    room_parts.append(format_room_count(count, 'balcony', 'balconies'))
 
-                    if aggregated_rooms.get('garages', 0) > 0:
-                        count = aggregated_rooms['garages']
-                        room_parts.append(format_room_count(count, 'garage'))
+                if aggregated_rooms.get('garages', 0) > 0:
+                    count = aggregated_rooms['garages']
+                    room_parts.append(format_room_count(count, 'garage'))
 
-                    if aggregated_rooms.get('store_rooms', 0) > 0:
-                        count = aggregated_rooms['store_rooms']
-                        room_parts.append(format_room_count(count, 'store room'))
+                if aggregated_rooms.get('store_rooms', 0) > 0:
+                    count = aggregated_rooms['store_rooms']
+                    room_parts.append(format_room_count(count, 'store room'))
 
-                    if aggregated_rooms.get('other_rooms', 0) > 0:
-                        count = aggregated_rooms['other_rooms']
-                        room_parts.append(format_room_count(count, 'other room'))
+                if aggregated_rooms.get('other_rooms', 0) > 0:
+                    count = aggregated_rooms['other_rooms']
+                    room_parts.append(format_room_count(count, 'other room'))
 
-                    if room_parts:
-                        accommodation_text = f"The property comprises {format_list_with_grammar(room_parts)}."
-                        add_inline_field(doc, "Accommodation", accommodation_text)
-
-                else:
-                    # OLD FORMAT: Backward compatibility
-                    all_floor_rooms = []
-
-                    for floor in floors:
-                        floor_name = floor.get('floor_name', 'Ground Floor')
-                        rooms = floor.get('rooms', [])
-
-                        if rooms:
-                            floor_rooms = []
-
-                            for room in rooms:
-                                room_name = room.get('room_name', 'Room')
-                                room_count = room.get('count', 1)
-
-                                if room_count > 1:
-                                    floor_rooms.append(f"{room_count} {room_name}s")
-                                else:
-                                    floor_rooms.append(room_name)
-
-                            if floor_rooms:
-                                all_floor_rooms.append(f"{floor_name}: {', '.join(floor_rooms)}")
-
-                    if all_floor_rooms:
-                        accommodation_text = "; ".join(all_floor_rooms) + "."
-                        add_inline_field(doc, "Accommodation", accommodation_text)
-
-            # === CONVENIENCES - USE SAME FORMAT AS STANDALONE ===
-            conveniences = building.get('conveniences', [])
-            if conveniences:
-                conveniences = deduplicate_water_sources(conveniences)
-
-                conv_labels = {
-                    'electricity': 'Electricity', 'water': 'Well water',
-                    'pipe_water': 'Pipe-borne water', 'telephone': 'Telephone',
-                    'internet': 'Internet', 'ac': 'Air conditioning',
-                    'hot_water': 'Hot water', 'sewage': 'Sewage system',
-                    'septic': 'Septic tank', 'gas': 'Gas connection',
-                    'solar': 'Solar panels', 'generator': 'Generator backup'
-                }
-                conv_list = [conv_labels.get(c, c.replace('_', ' ').title()) for c in conveniences]
-
-                if conv_list:
-                    conveniences_text = ", ".join(conv_list) + "."
-                    add_inline_field(doc, "Conveniences", conveniences_text)
+                if room_parts:
+                    accommodation_text = f"The property comprises {format_list_with_grammar(room_parts)}."
+                    add_inline_field(doc, "Accommodation", accommodation_text)
 
             # === FLOOR AREA BREAKDOWN - CONDITIONAL FORMAT ===
             total_area = building.get('total_floor_area', 0)
@@ -2965,8 +3283,28 @@ def _generate_property_sections(doc, prop, report, user):
                 age_text = "; ".join(parts) + "." if parts else "Information not provided."
                 add_inline_field(doc, "Age and condition", age_text)
 
-            # === UTILITIES AND SERVICES - USE SAME FORMAT AS STANDALONE ===
-            render_utilities_services(doc, building)
+            # === UTILITIES AND CONVENIENCES - UNIFIED SECTION ===
+            render_utilities_and_conveniences(doc, building)
+
+            # === OCCUPATION (SENTENCE FORMAT WITH SUBHEADING) ===
+            if prop.occupier_name:
+                occupier_text = f"The property is occupied by {prop.occupier_name}"
+                if prop.occupier_relationship:
+                    rel_labels = {
+                        'owner': 'the owner',
+                        'tenant': 'a tenant',
+                        'family_member': 'a family member',
+                        'caretaker': 'caretaker'
+                    }
+                    occupier_text += f" who is {rel_labels.get(prop.occupier_relationship, prop.occupier_relationship)}"
+                occupier_text += "."
+
+                add_inline_field(
+                    doc,
+                    "Occupation",
+                    occupier_text,
+                    space_after=Pt(6)
+                )
 
             # === BUILDING PHOTOS - USE SAME GRID TABLE FORMAT AS STANDALONE ===
             building_photos = building.get('building_photos', [])
@@ -3324,7 +3662,12 @@ def _generate_property_sections(doc, prop, report, user):
             land_value = prop.valuation_total_land_value
 
             p = doc.add_paragraph()
-            text = f"Land – {extent:,.2f} perches @ {format_currency(rate)} per perch = {format_currency(land_value)}"
+
+            # Add tab stop for right alignment
+            tab_stops = p.paragraph_format.tab_stops
+            tab_stops.add_tab_stop(Inches(6.0), WD_TAB_ALIGNMENT.RIGHT)
+
+            text = f"Land – {extent:,.2f} perches @ {format_currency(rate)} per perch\t= {format_currency_aligned(land_value)}"
             run = p.add_run(text)
             run.font.size = Pt(10)
             p.paragraph_format.space_after = Pt(3)
@@ -3368,7 +3711,12 @@ def _generate_property_sections(doc, prop, report, user):
                 else:
                     # No depreciation: Use single-line format
                     p = doc.add_paragraph()
-                    text = f"{building_name} – {total_floor_area:,.0f} sq.ft @ {format_currency(avg_rate)} per square foot = {format_currency(subtotal)}"
+
+                    # Add tab stop for right alignment
+                    tab_stops = p.paragraph_format.tab_stops
+                    tab_stops.add_tab_stop(Inches(6.0), WD_TAB_ALIGNMENT.RIGHT)
+
+                    text = f"{building_name} – {total_floor_area:,.0f} sq.ft @ {format_currency(avg_rate)} per square foot\t= {format_currency_aligned(subtotal)}"
                     run = p.add_run(text)
                     run.font.size = Pt(10)
                     p.paragraph_format.space_after = Pt(3)
@@ -3504,8 +3852,77 @@ def _generate_property_sections(doc, prop, report, user):
         date_run.font.color.rgb = RGBColor(0, 0, 0)
 
 
-def _generate_invoice_section(doc, invoice_data, user):
-    """Generate professional fee invoice section"""
+def migrate_invoice_data(invoice_dict):
+    """Migrate old invoice structure (qty, unit_price) to new structure (direct total)"""
+    if not invoice_dict:
+        return invoice_dict
+
+    # Check if migration needed
+    items = invoice_dict.get('items', [])
+    needs_migration = any('quantity' in item or 'unit_price' in item for item in items)
+
+    if not needs_migration:
+        return invoice_dict  # Already new format
+
+    # Migrate items - keep total, remove quantity/unit_price
+    migrated_items = [
+        {'description': item.get('description', ''), 'total': item.get('total', 0)}
+        for item in items
+    ]
+
+    # Convert bank_details (string) → manual_bank_details
+    return {
+        'items': migrated_items,
+        'subtotal': invoice_dict.get('subtotal', 0),
+        'traveling_charges': invoice_dict.get('traveling_charges'),
+        'discount': invoice_dict.get('discount'),
+        'total': invoice_dict.get('total', 0),
+        'bank_account_ids': [],
+        'manual_bank_details': invoice_dict.get('bank_details')  # Old string field
+    }
+
+
+def _generate_invoice_section(doc, invoice_data, user, report=None):
+    """Generate professional fee invoice section with letterhead and recipient address"""
+    # Add page break for new invoice page
+    doc.add_page_break()
+
+    # ===== LETTERHEAD =====
+    # Render letterhead matching the rest of the report
+    template_id = user.preferred_letterhead_template or 'classic'
+    template = get_template(template_id)
+    template.render_letterhead(doc, user, report)
+
+    # Add spacing after letterhead
+    doc.add_paragraph()
+
+    # ===== RECIPIENT ADDRESS =====
+    if report:
+        # Extract recipient information from report
+        recipient_para = doc.add_paragraph()
+        recipient_run = recipient_para.add_run("To:\n")
+        recipient_run.bold = True
+        recipient_run.font.size = Pt(10)
+
+        # Add applicant name if available
+        if hasattr(report, 'applicant_full_name') and report.applicant_full_name:
+            name_run = recipient_para.add_run(f"{report.applicant_full_name}\n")
+            name_run.font.size = Pt(10)
+
+        # Add applicant address if available
+        address_parts = []
+        if hasattr(report, 'applicant_address_line1') and report.applicant_address_line1:
+            address_parts.append(report.applicant_address_line1)
+        if hasattr(report, 'applicant_address_line2') and report.applicant_address_line2:
+            address_parts.append(report.applicant_address_line2)
+
+        if address_parts:
+            address_run = recipient_para.add_run(f"{', '.join(address_parts)}\n")
+            address_run.font.size = Pt(10)
+
+        # Add spacing after recipient address
+        doc.add_paragraph()
+
     # Invoice heading
     invoice_heading = doc.add_paragraph()
     invoice_heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -3516,14 +3933,28 @@ def _generate_invoice_section(doc, invoice_data, user):
     invoice_run.font.size = Pt(11)
     invoice_run.font.color.rgb = RGBColor(0, 0, 0)
 
-    # Invoice table
-    table = doc.add_table(rows=1, cols=4)
+    # Parse and migrate invoice_data
+    if isinstance(invoice_data, str):
+        import json
+        invoice_dict = json.loads(invoice_data)
+    else:
+        invoice_dict = invoice_data
+
+    # Migrate old format to new format
+    invoice_dict = migrate_invoice_data(invoice_dict)
+
+    # Invoice table - SIMPLIFIED (2 columns)
+    table = doc.add_table(rows=1, cols=2)
     table.style = 'Table Grid'
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
 
+    # Set column widths
+    table.columns[0].width = Inches(4.5)  # Description - wider
+    table.columns[1].width = Inches(2.0)  # Total
+
     # Header row
     header_cells = table.rows[0].cells
-    headers = ['Description', 'Quantity', 'Unit Price (LKR)', 'Total (LKR)']
+    headers = ['Description', 'Total (LKR)']
     for i, header_text in enumerate(headers):
         cell = header_cells[i]
         cell.text = header_text
@@ -3531,25 +3962,22 @@ def _generate_invoice_section(doc, invoice_data, user):
             for run in paragraph.runs:
                 run.font.bold = True
                 run.font.size = Pt(9)
-            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-    # Parse invoice_data (could be dict or JSON string)
-    if isinstance(invoice_data, str):
-        import json
-        invoice_dict = json.loads(invoice_data)
-    else:
-        invoice_dict = invoice_data
+            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER if i == 1 else WD_ALIGN_PARAGRAPH.LEFT
+        # Shading for header
+        from docx.oxml import OxmlElement
+        from docx.oxml.ns import qn
+        cell_xml = cell._element
+        cell_properties = cell_xml.get_or_add_tcPr()
+        shading_element = OxmlElement('w:shd')
+        shading_element.set(qn('w:fill'), 'D9D9D9')  # Light gray
+        cell_properties.append(shading_element)
 
     # Item rows
     for item in invoice_dict.get('items', []):
         row_cells = table.add_row().cells
         row_cells[0].text = item.get('description', '')
-        row_cells[1].text = str(item.get('quantity', 1))
-        row_cells[1].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-        row_cells[2].text = format_currency(item.get('unit_price', 0))
-        row_cells[2].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        row_cells[3].text = format_currency(item.get('total', 0))
-        row_cells[3].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        row_cells[1].text = format_currency(item.get('total', 0))
+        row_cells[1].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
 
         for cell in row_cells:
             for paragraph in cell.paragraphs:
@@ -3558,69 +3986,110 @@ def _generate_invoice_section(doc, invoice_data, user):
 
     # Subtotal row
     subtotal_row = table.add_row().cells
-    subtotal_row[0].merge(subtotal_row[2])
     subtotal_row[0].text = "Subtotal:"
     subtotal_row[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    subtotal_row[3].text = format_currency(invoice_dict.get('subtotal', 0))
-    subtotal_row[3].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    subtotal_row[1].text = format_currency(invoice_dict.get('subtotal', 0))
+    subtotal_row[1].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
 
     # Traveling charges if present
     if invoice_dict.get('traveling_charges'):
         travel_row = table.add_row().cells
-        travel_row[0].merge(travel_row[2])
         travel_row[0].text = "Traveling Charges:"
         travel_row[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        travel_row[3].text = format_currency(invoice_dict.get('traveling_charges', 0))
-        travel_row[3].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        travel_row[1].text = format_currency(invoice_dict.get('traveling_charges', 0))
+        travel_row[1].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
 
     # Discount if present
     if invoice_dict.get('discount'):
         discount_row = table.add_row().cells
-        discount_row[0].merge(discount_row[2])
         discount_row[0].text = "Discount:"
         discount_row[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        discount_row[3].text = f"-{format_currency(invoice_dict.get('discount', 0))}"
-        discount_row[3].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        discount_row[1].text = f"-{format_currency(invoice_dict.get('discount', 0))}"
+        discount_row[1].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
 
-    # Total row
+    # Grand Total row
     total_row = table.add_row().cells
-    total_row[0].merge(total_row[2])
-    total_row[0].text = "TOTAL:"
+    total_row[0].text = "GRAND TOTAL:"
     total_row[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
     for paragraph in total_row[0].paragraphs:
         for run in paragraph.runs:
             run.font.bold = True
             run.font.size = Pt(10)
 
-    total_row[3].text = format_currency(invoice_dict.get('total', 0))
-    total_row[3].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
-    for paragraph in total_row[3].paragraphs:
+    total_row[1].text = format_currency(invoice_dict.get('total', 0))
+    total_row[1].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    for paragraph in total_row[1].paragraphs:
         for run in paragraph.runs:
             run.font.bold = True
             run.font.size = Pt(10)
 
-    # Payment terms
-    if invoice_dict.get('payment_terms'):
-        doc.add_paragraph()
-        terms_para = doc.add_paragraph()
-        terms_para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-        terms_para.paragraph_format.line_spacing = 0.9
-        terms_label = terms_para.add_run("Payment Terms: ")
-        terms_label.bold = True
-        terms_label.font.size = Pt(9)
-        terms_value = terms_para.add_run(invoice_dict.get('payment_terms'))
-        terms_value.font.size = Pt(9)
+    # Shade total row
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    for cell in [total_row[0], total_row[1]]:
+        cell_xml = cell._element
+        cell_properties = cell_xml.get_or_add_tcPr()
+        shading_element = OxmlElement('w:shd')
+        shading_element.set(qn('w:fill'), 'E6E6E6')
+        cell_properties.append(shading_element)
 
-    # Bank details
-    if invoice_dict.get('bank_details'):
+    doc.add_paragraph()  # Spacing
+
+    # Bank Details - NEW: Show all selected accounts
+    bank_account_ids = invoice_dict.get('bank_account_ids', [])
+    manual_bank_details = invoice_dict.get('manual_bank_details')
+
+    if bank_account_ids and len(bank_account_ids) > 0 and user:
+        # Fetch user's bank accounts
+        user_accounts = user.bank_accounts or []
+        selected_accounts = [acc for acc in user_accounts if acc['id'] in bank_account_ids]
+
+        if selected_accounts:
+            bank_heading = doc.add_paragraph()
+            bank_heading_run = bank_heading.add_run("Bank Account Details:")
+            bank_heading_run.bold = True
+            bank_heading_run.font.size = Pt(10)
+            bank_heading.paragraph_format.space_before = Pt(6)
+            bank_heading.paragraph_format.space_after = Pt(3)
+
+            # Render each account
+            for account in selected_accounts:
+                acc_para = doc.add_paragraph(style='List Bullet')
+                acc_para.paragraph_format.left_indent = Inches(0.25)
+                acc_para.paragraph_format.line_spacing = 1.0
+                acc_run = acc_para.add_run(
+                    f"{account['bank_name']}\n"
+                    f"Account Number: {account['account_number']}\n"
+                    f"Branch: {account['branch_name']}"
+                )
+                acc_run.font.size = Pt(9)
+
+    elif manual_bank_details:
+        # Fallback to manual entry
+        bank_heading = doc.add_paragraph()
+        bank_heading_run = bank_heading.add_run("Bank Account Details:")
+        bank_heading_run.bold = True
+        bank_heading_run.font.size = Pt(10)
+        bank_heading.paragraph_format.space_before = Pt(6)
+        bank_heading.paragraph_format.space_after = Pt(3)
+
         bank_para = doc.add_paragraph()
-        bank_para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-        bank_para.paragraph_format.line_spacing = 0.9
-        bank_label = bank_para.add_run("Bank Details: ")
-        bank_label.bold = True
-        bank_label.font.size = Pt(9)
-        bank_value = bank_para.add_run(invoice_dict.get('bank_details'))
-        bank_value.font.size = Pt(9)
+        bank_para.paragraph_format.line_spacing = 1.0
+        bank_run = bank_para.add_run(manual_bank_details)
+        bank_run.font.size = Pt(9)
+
+    # Signature space
+    doc.add_paragraph()
+    doc.add_paragraph()
+    signature_para = doc.add_paragraph()
+    signature_para.paragraph_format.space_before = Pt(24)
+    signature_run = signature_para.add_run("_" * 40)
+    signature_run.font.size = Pt(9)
+
+    sig_label = doc.add_paragraph()
+    sig_label_run = sig_label.add_run("Signature")
+    sig_label_run.font.size = Pt(9)
+    sig_label_run.font.italic = True
 
 
 def generate_user_data_docx(report: models.Report, user: models.User = None) -> BytesIO:
@@ -3692,12 +4161,16 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
             run = para.add_run(line)
             if i == 0:  # "VALUATION REPORT"
                 run.bold = True
-                run.font.size = Pt(11)
+                run.font.size = Pt(14)  # Updated from 11 to 14
+                run.font.underline = True  # Add underline
             elif i == 2 or i == 3:  # Both property description lines
                 run.bold = True
                 run.font.size = Pt(9)
+                run.font.underline = True  # Add underline for continuous block effect
             else:
                 run.font.size = Pt(9)
+                if i == 1:  # "of" line
+                    run.font.underline = True  # Add underline for continuous block effect
             run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Add spacing before applicant statements
@@ -3705,53 +4178,90 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
         spacing_para1.paragraph_format.space_before = Pt(8)
         spacing_para1.paragraph_format.space_after = Pt(0)
 
-        # Add applicant statements (justified)
-        applicant_statements = generate_applicant_statement(report)
-        for statement in applicant_statements:
-            para = doc.add_paragraph()
-            para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-            para.paragraph_format.space_before = Pt(0)
-            para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
-            para.paragraph_format.line_spacing = 0.9
-            run = para.add_run(statement)
-            run.font.size = Pt(9)
-            run.font.color.rgb = RGBColor(0, 0, 0)
-
-        # Add deed/certificate description ONLY if not plan-based identification
-        # (Plan-based reports don't show the deed sentence for cleaner appearance)
-        should_show_deed_sentence = (
-            report.property_identification_type in ['deed', 'certificate_of_sale']
-            and report.has_deed_info == "yes"
-            and report.deeds
-        )
-
-        # Backward compatibility: Old reports (NULL type) with deed data should show sentence
-        if not report.property_identification_type and report.has_deed_info == "yes" and report.deeds:
-            should_show_deed_sentence = True
-
-        if should_show_deed_sentence:
-            deed_text = generate_deed_description(report.deeds)
-            if deed_text:
+        # Determine which introduction format to use based on request_type
+        if report.request_type == 'organization_request':
+            # Organization-side format
+            org_intro_paragraphs = generate_organization_side_introduction(report)
+            for statement in org_intro_paragraphs:
                 para = doc.add_paragraph()
                 para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
                 para.paragraph_format.space_before = Pt(0)
                 para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
                 para.paragraph_format.line_spacing = 0.9
-                run = para.add_run(deed_text)
+
+                # Parse label and value for proper formatting
+                if ":-" in statement:
+                    # This is a label-value pair (Applicant/Address/Contact No)
+                    label, value = statement.split(":-", 1)
+
+                    # Add bold label
+                    run_label = para.add_run(label.strip())
+                    run_label.font.size = Pt(9)
+                    run_label.font.bold = True
+                    run_label.font.color.rgb = RGBColor(0, 0, 0)
+
+                    # Add separator with proper spacing
+                    run_sep = para.add_run(" : ")
+                    run_sep.font.size = Pt(9)
+                    run_sep.font.color.rgb = RGBColor(0, 0, 0)
+
+                    # Add value
+                    run_value = para.add_run(value)
+                    run_value.font.size = Pt(9)
+                    run_value.font.color.rgb = RGBColor(0, 0, 0)
+                else:
+                    # This is the introductory paragraph (paragraph 1)
+                    run = para.add_run(statement)
+                    run.font.size = Pt(9)
+                    run.font.color.rgb = RGBColor(0, 0, 0)
+        else:
+            # Client-side format (default for backward compatibility)
+            applicant_statements = generate_applicant_statement(report)
+            for statement in applicant_statements:
+                para = doc.add_paragraph()
+                para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                para.paragraph_format.space_before = Pt(0)
+                para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
+                para.paragraph_format.line_spacing = 0.9
+                run = para.add_run(statement)
                 run.font.size = Pt(9)
                 run.font.color.rgb = RGBColor(0, 0, 0)
 
-        # Add submission statement
-        submission_text = generate_submission_statement(report)
-        if submission_text:
-            para = doc.add_paragraph()
-            para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-            para.paragraph_format.space_before = Pt(0)
-            para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
-            para.paragraph_format.line_spacing = 0.9
-            run = para.add_run(submission_text)
-            run.font.size = Pt(9)
-            run.font.color.rgb = RGBColor(0, 0, 0)
+            # Add deed/certificate description ONLY if not plan-based identification
+            # (Plan-based reports don't show the deed sentence for cleaner appearance)
+            should_show_deed_sentence = (
+                report.property_identification_type in ['deed', 'certificate_of_sale']
+                and report.has_deed_info == "yes"
+                and report.deeds
+            )
+
+            # Backward compatibility: Old reports (NULL type) with deed data should show sentence
+            if not report.property_identification_type and report.has_deed_info == "yes" and report.deeds:
+                should_show_deed_sentence = True
+
+            if should_show_deed_sentence:
+                deed_text = generate_deed_description(report.deeds)
+                if deed_text:
+                    para = doc.add_paragraph()
+                    para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                    para.paragraph_format.space_before = Pt(0)
+                    para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
+                    para.paragraph_format.line_spacing = 0.9
+                    run = para.add_run(deed_text)
+                    run.font.size = Pt(9)
+                    run.font.color.rgb = RGBColor(0, 0, 0)
+
+            # Add submission statement
+            submission_text = generate_submission_statement(report)
+            if submission_text:
+                para = doc.add_paragraph()
+                para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                para.paragraph_format.space_before = Pt(0)
+                para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
+                para.paragraph_format.line_spacing = 0.9
+                run = para.add_run(submission_text)
+                run.font.size = Pt(9)
+                run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Add inspection date
         if report.inspection_date:
@@ -3760,9 +4270,17 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
             para.paragraph_format.space_before = Pt(6)
             para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
             para.paragraph_format.line_spacing = 0.9
-            run = para.add_run(f"Date of Inspection: {report.inspection_date}")
-            run.font.size = Pt(9)
-            run.font.color.rgb = RGBColor(0, 0, 0)
+
+            # Bold label
+            run_label = para.add_run("Date of Inspection:")
+            run_label.font.size = Pt(9)
+            run_label.font.bold = True
+            run_label.font.color.rgb = RGBColor(0, 0, 0)
+
+            # Regular date value
+            run_date = para.add_run(f" {report.inspection_date}")
+            run_date.font.size = Pt(9)
+            run_date.font.color.rgb = RGBColor(0, 0, 0)
 
         # Add special note if applicable
         if report.has_special_note == "yes" and report.special_note_text:
@@ -4006,9 +4524,9 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                     'none': 'None'
                 }
 
-                # Enhanced format for each boundary direction
-                directions = ['north', 'south', 'east', 'west']
-                direction_labels = ['North', 'South', 'East', 'West']
+                # Enhanced format for each boundary direction (4 main + 4 optional diagonal)
+                directions = ['north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest']
+                direction_labels = ['North', 'North-East', 'East', 'South-East', 'South', 'South-West', 'West', 'North-West']
 
                 # SAFE: Get boundaries with None check
                 boundaries = safe_get_json_field(report, 'boundaries', {})
@@ -4018,8 +4536,13 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                 for direction, label in zip(directions, direction_labels):
                     boundary_data = boundaries.get(direction, {}) if isinstance(boundaries, dict) else {}
 
-                    # Main description line: "North  : Lot 7"
-                    boundary_line = f"{label:<6} : "
+                    # Skip diagonal boundaries if they have no description
+                    if direction in ['northeast', 'southeast', 'southwest', 'northwest']:
+                        if not boundary_data or not boundary_data.get('description'):
+                            continue
+
+                    # Main description line: "North  : Lot 7" or "North-East: Lot 7"
+                    boundary_line = f"{label:<11} : "
                     boundary_text = boundary_data.get('description') or 'Not specified'
 
                     # Create paragraph for main boundary description
@@ -4478,115 +5001,67 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                             opening_run.font.color.rgb = RGBColor(0, 0, 0)
 
                     # === ACCOMMODATION ===
+                    # Check if building has accommodation data (new structure at building level or old structure at floor level)
+                    has_new_building_format = building.get('accommodation_summary') is not None
                     floors = building.get('floors', [])
-                    if floors:
-                        # Check if any floor has new accommodation_summary format
-                        has_new_format = any(floor.get('accommodation_summary') for floor in floors)
+                    has_old_floor_format = any(floor.get('accommodation_summary') for floor in floors)
 
-                        if has_new_format:
-                            # NEW FORMAT: Aggregate rooms across all floors
-                            aggregated_rooms = aggregate_accommodation_across_floors(floors)
+                    if has_new_building_format or has_old_floor_format:
+                        # Get accommodation summary (supports both new and old structures)
+                        aggregated_rooms = aggregate_accommodation_across_building(building)
 
-                            room_parts = []
+                        room_parts = []
 
-                            # Build room counts list from aggregated data using format_room_count()
-                            if aggregated_rooms.get('bedrooms', 0) > 0:
-                                count = aggregated_rooms['bedrooms']
-                                room_parts.append(format_room_count(count, 'bedroom'))
+                        # Build room counts list from aggregated data using format_room_count()
+                        if aggregated_rooms.get('bedrooms', 0) > 0:
+                            count = aggregated_rooms['bedrooms']
+                            room_parts.append(format_room_count(count, 'bedroom'))
 
-                            if aggregated_rooms.get('bathrooms', 0) > 0:
-                                count = aggregated_rooms['bathrooms']
-                                room_parts.append(format_room_count(count, 'bathroom'))
+                        if aggregated_rooms.get('bathrooms', 0) > 0:
+                            count = aggregated_rooms['bathrooms']
+                            room_parts.append(format_room_count(count, 'bathroom'))
 
-                            if aggregated_rooms.get('living_rooms', 0) > 0:
-                                count = aggregated_rooms['living_rooms']
-                                room_parts.append(format_room_count(count, 'living room'))
+                        if aggregated_rooms.get('living_rooms', 0) > 0:
+                            count = aggregated_rooms['living_rooms']
+                            room_parts.append(format_room_count(count, 'living room'))
 
-                            if aggregated_rooms.get('dining_rooms', 0) > 0:
-                                count = aggregated_rooms['dining_rooms']
-                                room_parts.append(format_room_count(count, 'dining room'))
+                        if aggregated_rooms.get('dining_rooms', 0) > 0:
+                            count = aggregated_rooms['dining_rooms']
+                            room_parts.append(format_room_count(count, 'dining room'))
 
-                            if aggregated_rooms.get('kitchens', 0) > 0:
-                                count = aggregated_rooms['kitchens']
-                                room_parts.append(format_room_count(count, 'kitchen'))
+                        if aggregated_rooms.get('kitchens', 0) > 0:
+                            count = aggregated_rooms['kitchens']
+                            room_parts.append(format_room_count(count, 'kitchen'))
 
-                            if aggregated_rooms.get('pantries', 0) > 0:
-                                count = aggregated_rooms['pantries']
-                                room_parts.append(format_room_count(count, 'pantry', 'pantries'))
+                        if aggregated_rooms.get('pantries', 0) > 0:
+                            count = aggregated_rooms['pantries']
+                            room_parts.append(format_room_count(count, 'pantry', 'pantries'))
 
-                            if aggregated_rooms.get('verandahs', 0) > 0:
-                                count = aggregated_rooms['verandahs']
-                                room_parts.append(format_room_count(count, 'verandah'))
+                        if aggregated_rooms.get('verandahs', 0) > 0:
+                            count = aggregated_rooms['verandahs']
+                            room_parts.append(format_room_count(count, 'verandah'))
 
-                            if aggregated_rooms.get('balconies', 0) > 0:
-                                count = aggregated_rooms['balconies']
-                                room_parts.append(format_room_count(count, 'balcony', 'balconies'))
+                        if aggregated_rooms.get('balconies', 0) > 0:
+                            count = aggregated_rooms['balconies']
+                            room_parts.append(format_room_count(count, 'balcony', 'balconies'))
 
-                            if aggregated_rooms.get('garages', 0) > 0:
-                                count = aggregated_rooms['garages']
-                                room_parts.append(format_room_count(count, 'garage'))
+                        if aggregated_rooms.get('garages', 0) > 0:
+                            count = aggregated_rooms['garages']
+                            room_parts.append(format_room_count(count, 'garage'))
 
-                            if aggregated_rooms.get('store_rooms', 0) > 0:
-                                count = aggregated_rooms['store_rooms']
-                                room_parts.append(format_room_count(count, 'store room'))
+                        if aggregated_rooms.get('store_rooms', 0) > 0:
+                            count = aggregated_rooms['store_rooms']
+                            room_parts.append(format_room_count(count, 'store room'))
 
-                            if aggregated_rooms.get('other_rooms', 0) > 0:
-                                count = aggregated_rooms['other_rooms']
-                                room_parts.append(format_room_count(count, 'other room'))
+                        if aggregated_rooms.get('other_rooms', 0) > 0:
+                            count = aggregated_rooms['other_rooms']
+                            room_parts.append(format_room_count(count, 'other room'))
 
-                            if room_parts:
-                                # Create single-line accommodation text
-                                accommodation_text = f"The property comprises {format_list_with_grammar(room_parts)}."
-                                add_inline_field(doc, "Accommodation", accommodation_text)
+                        if room_parts:
+                            # Create single-line accommodation text
+                            accommodation_text = f"The property comprises {format_list_with_grammar(room_parts)}."
+                            add_inline_field(doc, "Accommodation", accommodation_text)
 
-                        else:
-                            # OLD FORMAT: Backward compatibility for old data without accommodation_summary
-                            # Aggregate rooms from old format across all floors
-                            all_floor_rooms = []
-
-                            for floor in floors:
-                                floor_name = floor.get('floor_name', 'Ground Floor')
-                                rooms = floor.get('rooms', [])
-
-                                if rooms:
-                                    floor_rooms = []
-
-                                    for room in rooms:
-                                        room_name = room.get('room_name', 'Room')
-                                        room_count = room.get('count', 1)
-
-                                        if room_count > 1:
-                                            floor_rooms.append(f"{room_count} {room_name}s")
-                                        else:
-                                            floor_rooms.append(room_name)
-
-                                    if floor_rooms:
-                                        all_floor_rooms.append(f"{floor_name}: {', '.join(floor_rooms)}")
-
-                            if all_floor_rooms:
-                                # Use inline field for old format too
-                                accommodation_text = "; ".join(all_floor_rooms) + "."
-                                add_inline_field(doc, "Accommodation", accommodation_text)
-
-                    # === CONVENIENCES ===
-                    conveniences = building.get('conveniences', [])
-                    if conveniences:
-                        # Deduplicate water sources (prefer pipe-borne over well)
-                        conveniences = deduplicate_water_sources(conveniences)
-
-                        conv_labels = {
-                            'electricity': 'Electricity', 'water': 'Well water',
-                            'pipe_water': 'Pipe-borne water', 'telephone': 'Telephone',
-                            'internet': 'Internet', 'ac': 'Air conditioning',
-                            'hot_water': 'Hot water', 'sewage': 'Sewage system',
-                            'septic': 'Septic tank', 'gas': 'Gas connection',
-                            'solar': 'Solar panels', 'generator': 'Generator backup'
-                        }
-                        conv_list = [conv_labels.get(c, c.replace('_', ' ').title()) for c in conveniences]
-
-                        if conv_list:
-                            conveniences_text = ", ".join(conv_list) + "."
-                            add_inline_field(doc, "Conveniences", conveniences_text)
 
                     # === FLOOR AREA (CONDITIONAL FORMAT) ===
                     floors = building.get('floors', [])
@@ -4672,8 +5147,8 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
 
                         add_inline_field(doc, "Age and condition", age_text)
 
-                    # === UTILITIES AND SERVICES ===
-                    render_utilities_services(doc, building)
+                    # === UTILITIES AND CONVENIENCES ===
+                    render_utilities_and_conveniences(doc, building)
 
                     # === OCCUPATION (SENTENCE FORMAT WITH SUBHEADING) ===
                     if report.occupier_name:
@@ -4948,7 +5423,12 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                 land_value = report.valuation_total_land_value
 
                 p = doc.add_paragraph()
-                text = f"Land – {extent:,.2f} perches @ {format_currency(rate)} per perch = {format_currency(land_value)}"
+
+                # Add tab stop for right alignment
+                tab_stops = p.paragraph_format.tab_stops
+                tab_stops.add_tab_stop(Inches(6.0), WD_TAB_ALIGNMENT.RIGHT)
+
+                text = f"Land – {extent:,.2f} perches @ {format_currency(rate)} per perch\t= {format_currency_aligned(land_value)}"
                 run = p.add_run(text)
                 run.font.size = Pt(10)
                 p.paragraph_format.space_after = Pt(3)
@@ -4993,7 +5473,12 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                     else:
                         # No depreciation: Use single-line format (backward compatible)
                         p = doc.add_paragraph()
-                        text = f"{building_name} – {total_floor_area:,.0f} sq.ft @ {format_currency(avg_rate)} per square foot = {format_currency(subtotal)}"
+
+                        # Add tab stop for right alignment
+                        tab_stops = p.paragraph_format.tab_stops
+                        tab_stops.add_tab_stop(Inches(6.0), WD_TAB_ALIGNMENT.RIGHT)
+
+                        text = f"{building_name} – {total_floor_area:,.0f} sq.ft @ {format_currency(avg_rate)} per square foot\t= {format_currency_aligned(subtotal)}"
                         run = p.add_run(text)
                         run.font.size = Pt(10)
                         p.paragraph_format.space_after = Pt(3)
@@ -5196,6 +5681,11 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                     run.font.size = Pt(9)
 
             doc.add_paragraph()
+
+        # ===== INVOICE SECTION =====
+        if report.invoice_data:
+            logger.info("[DOCX] Generating invoice section")
+            _generate_invoice_section(doc, report.invoice_data, user, report)
 
         # ===== SAVE DOCUMENT =====
         # This MUST be outside the certification block!
