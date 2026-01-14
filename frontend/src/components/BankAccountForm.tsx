@@ -105,6 +105,7 @@ const BankAccountForm: React.FC<BankAccountFormProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    e.stopPropagation();
 
     if (validateForm()) {
       onSave(formData);
@@ -112,7 +113,7 @@ const BankAccountForm: React.FC<BankAccountFormProps> = ({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4 bg-white rounded-lg p-4 border border-gray-200">
+    <form onSubmit={handleSubmit} action="#" className="space-y-4 bg-white rounded-lg p-4 border border-gray-200">
       <div>
         <Label htmlFor="bank_name">Bank Name</Label>
         <div className="relative">

@@ -311,25 +311,10 @@ const InvoiceDataStep: React.FC<InvoiceDataStepProps> = ({ formMethods, properti
           </div>
         ) : (
           <p className="text-gray-500 text-sm mb-3">
-            No bank accounts found. Add accounts in your profile or use manual entry below.
+            No bank accounts found. Click "+ Add New Account" to add your bank details.
           </p>
         )}
 
-        {/* Manual Bank Details Fallback */}
-        {selectedAccountIds.length === 0 && (
-          <div className="mt-4">
-            <Label htmlFor="invoice_data.manual_bank_details">Or Enter Bank Details Manually</Label>
-            <textarea
-              {...register('invoice_data.manual_bank_details' as any)}
-              className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-violet-500 focus:border-transparent"
-              rows={4}
-              placeholder="Bank Name&#10;Account Number: 123456789&#10;Branch: Colombo"
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Enter bank account details manually if you haven't added them to your profile
-            </p>
-          </div>
-        )}
       </div>
 
       {/* Info Box */}

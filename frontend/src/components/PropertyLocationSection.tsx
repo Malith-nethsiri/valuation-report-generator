@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { MapPin, Building2, Navigation, Info } from 'lucide-react';
+import React, { useEffect } from 'react';
+import { MapPin, Building2, Navigation } from 'lucide-react';
 import { useAdministrativeDivisions, useDSDivisionsLocal } from '../hooks/useAdministrativeDivisions';
 import { AutocompleteInput } from './AutocompleteInput';
 import type { Report } from '../types';
@@ -7,34 +7,11 @@ import type { Report } from '../types';
 interface Props {
   formData: Partial<Report>;
   updateFormData: (updates: Partial<Report>) => void;
-  applicantAddress?: {
-    line1?: string;
-    line2?: string;
-    district?: string;
-    province?: string;
-  };
 }
 
-export function PropertyLocationSection({ formData, updateFormData, applicantAddress }: Props) {
-  const [useSameAddress, setUseSameAddress] = useState(formData.use_applicant_address_as_property || false);
+export function PropertyLocationSection({ formData, updateFormData }: Props) {
   const { divisions, districts, loading: divisionsLoading } = useAdministrativeDivisions();
   const dsDivisions = useDSDivisionsLocal(divisions, formData.property_district);
-
-  // Handle "same as applicant" toggle
-  useEffect(() => {
-    if (useSameAddress && applicantAddress) {
-      // Copy applicant address to property
-      updateFormData({
-        use_applicant_address_as_property: true,
-        property_district: applicantAddress.district,
-        property_province: applicantAddress.province,
-      });
-    } else {
-      updateFormData({
-        use_applicant_address_as_property: false,
-      });
-    }
-  }, [useSameAddress]);
 
   // Auto-calculate direction when location changes
   useEffect(() => {
@@ -51,35 +28,6 @@ export function PropertyLocationSection({ formData, updateFormData, applicantAdd
         <MapPin className="w-5 h-5 text-blue-600" />
         <h3 className="text-lg font-semibold">Property Location & Situation</h3>
       </div>
-
-      {/* Same as Applicant Address Toggle */}
-      {applicantAddress && (applicantAddress.line1 || applicantAddress.district) ? (
-        <div className="bg-blue-50 p-4 rounded-lg">
-          <label className="flex items-center gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={useSameAddress}
-              onChange={(e) => setUseSameAddress(e.target.checked)}
-              className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
-            />
-            <span className="font-medium">Property address is same as applicant address</span>
-          </label>
-          {useSameAddress && (
-            <div className="mt-2 text-sm text-gray-600">
-              Using: {applicantAddress.line1}, {applicantAddress.district}
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg">
-          <div className="flex items-start gap-2">
-            <Info className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0" />
-            <p className="text-sm text-amber-800">
-              <span className="font-medium">Tip:</span> Fill in <strong>Applicant Information</strong> (Step 7) first, then you can return here and copy the applicant address to the property address with one click.
-            </p>
-          </div>
-        </div>
-      )}
 
       {/* Auto-filled Google Maps Data */}
       {formData.property_village && (

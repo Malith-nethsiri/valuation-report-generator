@@ -476,70 +476,7 @@ interface StepComponentProps {
 }
 
 const steps = [
-    {
-        id: 1,
-        title: 'Property & Plan',
-        subtitle: 'Property and plan information',
-        icon: Home,
-        color: 'from-blue-500 to-indigo-600',
-        bgColor: 'from-blue-50 to-indigo-100',
-    },
-    {
-        id: 2,
-        title: 'Extent & Boundaries',
-        subtitle: 'Land extent, boundaries, and physical features',
-        icon: Compass,
-        color: 'from-green-500 to-emerald-600',
-        bgColor: 'from-green-50 to-emerald-100',
-    },
-    {
-        id: 3,
-        title: 'Property Search',
-        subtitle: 'Find property on Google Maps',
-        icon: MapPin,
-        color: 'from-orange-500 to-red-600',
-        bgColor: 'from-orange-50 to-red-100',
-    },
-    {
-        id: 4,
-        title: 'Property Details',
-        subtitle: 'Verify location and administrative info',
-        icon: Building,
-        color: 'from-cyan-500 to-blue-600',
-        bgColor: 'from-cyan-50 to-blue-100',
-    },
-    {
-        id: 5,
-        title: 'Locality Information',
-        subtitle: 'Nearby facilities, infrastructure, and area',
-        icon: MapPin,
-        color: 'from-pink-500 to-rose-600',
-        bgColor: 'from-pink-50 to-rose-100',
-    },
-    {
-        id: 6,
-        title: 'Property Description',
-        subtitle: 'Land, building details and photos',
-        icon: ClipboardList,
-        color: 'from-amber-500 to-orange-600',
-        bgColor: 'from-amber-50 to-orange-100',
-    },
-    {
-        id: 7,
-        title: 'Legal Aspects',
-        subtitle: 'Ownership and legal status',
-        icon: Gavel,
-        color: 'from-purple-500 to-violet-600',
-        bgColor: 'from-purple-50 to-violet-100',
-    },
-    {
-        id: 8,
-        title: 'Land Values',
-        subtitle: 'Comparable properties',
-        icon: TrendingUp,
-        color: 'from-green-500 to-teal-600',
-        bgColor: 'from-green-50 to-teal-100',
-    },
+    // Step 1: Applicant & Purpose (moved from position 9 to match report order)
     {
         id: 9,
         title: 'Applicant & Purpose',
@@ -548,6 +485,7 @@ const steps = [
         color: 'from-emerald-500 to-green-600',
         bgColor: 'from-emerald-50 to-green-100',
     },
+    // Step 2: Additional Details (moved from position 10 to match report order)
     {
         id: 10,
         title: 'Additional Details',
@@ -556,6 +494,79 @@ const steps = [
         color: 'from-purple-500 to-violet-600',
         bgColor: 'from-purple-50 to-violet-100',
     },
+    // Step 3: Property & Plan (was step 1)
+    {
+        id: 1,
+        title: 'Property & Plan',
+        subtitle: 'Property and plan information',
+        icon: Home,
+        color: 'from-blue-500 to-indigo-600',
+        bgColor: 'from-blue-50 to-indigo-100',
+    },
+    // Step 4: Extent & Boundaries (was step 2)
+    {
+        id: 2,
+        title: 'Extent & Boundaries',
+        subtitle: 'Land extent, boundaries, and physical features',
+        icon: Compass,
+        color: 'from-green-500 to-emerald-600',
+        bgColor: 'from-green-50 to-emerald-100',
+    },
+    // Step 5: Property Search (was step 3)
+    {
+        id: 3,
+        title: 'Property Search',
+        subtitle: 'Find property on Google Maps',
+        icon: MapPin,
+        color: 'from-orange-500 to-red-600',
+        bgColor: 'from-orange-50 to-red-100',
+    },
+    // Step 6: Property Details (was step 4)
+    {
+        id: 4,
+        title: 'Property Details',
+        subtitle: 'Verify location and administrative info',
+        icon: Building,
+        color: 'from-cyan-500 to-blue-600',
+        bgColor: 'from-cyan-50 to-blue-100',
+    },
+    // Step 7: Locality Information (was step 5)
+    {
+        id: 5,
+        title: 'Locality Information',
+        subtitle: 'Nearby facilities, infrastructure, and area',
+        icon: MapPin,
+        color: 'from-pink-500 to-rose-600',
+        bgColor: 'from-pink-50 to-rose-100',
+    },
+    // Step 8: Property Description (was step 6)
+    {
+        id: 6,
+        title: 'Property Description',
+        subtitle: 'Land, building details and photos',
+        icon: ClipboardList,
+        color: 'from-amber-500 to-orange-600',
+        bgColor: 'from-amber-50 to-orange-100',
+    },
+    // Step 9: Legal Aspects (was step 7)
+    {
+        id: 7,
+        title: 'Legal Aspects',
+        subtitle: 'Ownership and legal status',
+        icon: Gavel,
+        color: 'from-purple-500 to-violet-600',
+        bgColor: 'from-purple-50 to-violet-100',
+    },
+    // Step 10: Land Values (was step 8)
+    {
+        id: 8,
+        title: 'Land Values',
+        subtitle: 'Comparable properties',
+        icon: TrendingUp,
+        color: 'from-green-500 to-teal-600',
+        bgColor: 'from-green-50 to-teal-100',
+    },
+    // Step 11: Valuation (unchanged)
     {
         id: 11,
         title: 'Valuation',
@@ -564,6 +575,7 @@ const steps = [
         color: 'from-indigo-500 to-blue-600',
         bgColor: 'from-indigo-50 to-blue-100',
     },
+    // Step 12: Invoice (unchanged)
     {
         id: 12,
         title: 'Invoice',
@@ -572,6 +584,7 @@ const steps = [
         color: 'from-amber-500 to-orange-600',
         bgColor: 'from-amber-50 to-orange-100',
     },
+    // Step 13: Certification (unchanged)
     {
         id: 13,
         title: 'Certification',
@@ -1407,20 +1420,11 @@ const PropertyLocationNewStep: React.FC<StepComponentProps & { getValues: any }>
         });
     };
 
-    // Use watch() for reactive applicant address from form state
-    const applicantAddress = {
-        line1: watch('applicant_address_line1') || '',
-        line2: watch('applicant_address_line2') || '',
-        district: watch('applicant_district') || '',
-        province: watch('applicant_province') || '',
-    };
-
     return (
         <div className="space-y-6">
             <PropertyLocationSection
                 formData={formData}
                 updateFormData={updateFormData}
-                applicantAddress={applicantAddress}
             />
 
             {/* Show map if available */}
@@ -1475,50 +1479,6 @@ const ApplicantPurposeStep: React.FC<StepComponentProps & { getValues: any }> = 
 
     return (
         <div className="space-y-6">
-
-            {/* Same as Property Address Checkbox - Moved to Top */}
-            <div className="col-span-full">
-                <div className="flex items-center space-x-2 p-4 bg-blue-50 border border-blue-200 rounded-xl">
-                    <input
-                        type="checkbox"
-                        id="use_property_address_as_applicant"
-                        checked={watch('use_property_address_as_applicant') || false}
-                        onChange={(e) => {
-                            const isChecked = e.target.checked;
-                            setValue('use_property_address_as_applicant', isChecked);
-
-                            if (isChecked) {
-                                // Auto-fill applicant address from property address (Step 4)
-                                const propertyVillage = watch('property_village') || '';
-                                const propertyDistrict = watch('property_district') || '';
-                                const propertyProvince = watch('property_province') || '';
-
-                                // Use village and district as address
-                                setValue('applicant_address_line1', propertyVillage || 'Property Address');
-                                setValue('applicant_address_line2', propertyDistrict || '');
-                                setValue('applicant_district', propertyDistrict);
-                                setValue('applicant_province', propertyProvince);
-
-                                toast.success('Applicant address filled with property address', {
-                                    duration: 3000,
-                                    icon: '✓'
-                                });
-                            }
-                        }}
-                        className="h-4 w-4 text-emerald-600 rounded border-gray-300 focus:ring-emerald-500"
-                    />
-                    <label
-                        htmlFor="use_property_address_as_applicant"
-                        className="text-sm font-medium text-gray-700 cursor-pointer select-none"
-                    >
-                        Same as property address (auto-fill from Step 4)
-                    </label>
-                </div>
-                <p className="text-xs text-gray-500 mt-1 ml-1">
-                    Check this box if the applicant's address is the same as the property address
-                </p>
-            </div>
-
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                     <Label htmlFor="applicant_title" className="text-gray-700 font-medium">
@@ -2403,8 +2363,13 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
 
 
     const getCurrentStepSchema = () => {
-        switch (currentStep) {
-            case 1: return propertyPlanSchema;
+        // Get the actual step ID (originalId for multi-property, id for standalone)
+        // This ensures validation matches the component being rendered regardless of display order
+        const currentStepConfig = activeSteps[currentStep - 1];
+        const actualStepId = currentStepConfig?.originalId || currentStepConfig?.id || currentStep;
+
+        switch (actualStepId) {
+            case 1: return propertyPlanSchema; // Property & Plan validation
             case 2: return extentBoundariesSchema; // Extent & Boundaries validation
             case 3: return propertySearchSchema; // Property Search - location required
             case 4: return propertyDetailsSchema; // Property Details - village/district required
@@ -2417,7 +2382,7 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
             case 11: return z.object({}); // Valuation - no required validation
             case 12: return z.object({}); // Invoice - optional, no strict validation
             case 13: return z.object({}); // Certification - certificate_identity_confirmed validation removed (now optional)
-            default: return propertyPlanSchema;
+            default: return z.object({});
         }
     };
 
@@ -2581,6 +2546,9 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
             const nextStepNum = currentStep + 1;
             setCurrentStep(nextStepNum);
 
+            // Smooth scroll to top when navigating to next step
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+
             // Check data quality when entering the final certification step
             if (nextStepNum === maxStep) {
                 setTimeout(() => {
@@ -2596,8 +2564,37 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
 
         if (currentStep > 1) {
             setCurrentStep(currentStep - 1);
+            // Smooth scroll to top when navigating to previous step
+            window.scrollTo({ top: 0, behavior: 'smooth' });
         }
     };
+
+    // Handle click on progress bar step indicators for direct navigation
+    const handleStepClick = async (targetStepIndex: number) => {
+        // targetStepIndex is 1-based (like currentStep)
+
+        // In new report mode: only allow going back to completed steps (not forward)
+        if (!isEditMode && targetStepIndex > currentStep) {
+            return; // No feedback, just don't navigate (as per user requirement)
+        }
+
+        // Don't navigate if clicking current step
+        if (targetStepIndex === currentStep) {
+            return;
+        }
+
+        // Validate current step before navigating away
+        const isValid = await validateCurrentStep();
+        if (!isValid) {
+            return; // Stay on current step if validation fails
+        }
+
+        // Navigate to target step
+        setCurrentStep(targetStepIndex);
+        // Smooth scroll to top
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
     // Save and Continue handler (new)
     const handleSaveAndContinue = async (e?: React.MouseEvent<HTMLButtonElement>) => {
         e?.preventDefault();
@@ -2962,32 +2959,45 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
             <Toaster />
             <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50 py-12">
                 <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-                    {/* Progress Steps */}
+                    {/* Progress Steps - Clickable navigation */}
                     <div className="mb-12">
                         <div className="flex items-center justify-between relative">
                             <div className="absolute top-5 left-0 w-full h-1 bg-gray-200 rounded-full">
                                 <div
                                     className="h-1 bg-gradient-to-r from-violet-500 to-purple-600 rounded-full transition-all duration-500"
-                                    style={{ width: `${((currentStep - 1) / 11) * 100}%` }}
+                                    style={{ width: `${((currentStep - 1) / (maxStep - 1)) * 100}%` }}
                                 />
                             </div>
 
-                            {steps.map((step) => (
-                                <div key={step.id} className="relative z-10">
-                                    <div className={`w-10 h-10 rounded-full border-4 flex items-center justify-center transition-all duration-300 ${currentStep > step.id
-                                            ? 'bg-green-500 border-green-500 text-white'
-                                            : currentStep === step.id
-                                                ? 'bg-white border-violet-500 text-violet-500'
-                                                : 'bg-white border-gray-300 text-gray-300'
-                                        }`}>
-                                        {currentStep > step.id ? (
-                                            <CheckCircle2 className="h-5 w-5" />
-                                        ) : (
-                                            <step.icon className="h-5 w-5" />
-                                        )}
+                            {activeSteps.map((step, index) => {
+                                const stepNumber = index + 1; // 1-based step number
+                                const isCompleted = currentStep > stepNumber;
+                                const isCurrent = currentStep === stepNumber;
+                                // In edit mode: all steps clickable. In new mode: only completed steps + current
+                                const isClickable = isEditMode || stepNumber <= currentStep;
+
+                                return (
+                                    <div
+                                        key={step.id}
+                                        className="relative z-10"
+                                        onClick={() => handleStepClick(stepNumber)}
+                                    >
+                                        <div className={`w-10 h-10 rounded-full border-4 flex items-center justify-center transition-all duration-300 ${
+                                            isCompleted
+                                                ? 'bg-green-500 border-green-500 text-white'
+                                                : isCurrent
+                                                    ? 'bg-white border-violet-500 text-violet-500'
+                                                    : 'bg-white border-gray-300 text-gray-300'
+                                            } ${isClickable ? 'cursor-pointer hover:scale-110' : ''}`}>
+                                            {isCompleted ? (
+                                                <CheckCircle2 className="h-5 w-5" />
+                                            ) : (
+                                                <step.icon className="h-5 w-5" />
+                                            )}
+                                        </div>
                                     </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     </div>
 

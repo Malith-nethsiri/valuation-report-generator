@@ -19,6 +19,7 @@ import { api, bankAccountApi } from '../services/api';
 import { BankAccount } from '../types';
 import AddBankAccountModal from '../components/AddBankAccountModal';
 import BankAccountForm from '../components/BankAccountForm';
+import { DeleteConfirmDialog } from '../components/DeleteConfirmDialog';
 import toast from 'react-hot-toast';
 
 // Validation schema for professional profile
@@ -81,6 +82,8 @@ const ProfessionalProfilePage: React.FC = () => {
     const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
     const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
     const [showAddAccountModal, setShowAddAccountModal] = useState(false);
+    const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+    const [accountToDelete, setAccountToDelete] = useState<BankAccount | null>(null);
 
     const { user, updateUserProfile } = useAuth();
     const navigate = useNavigate();
@@ -207,16 +210,24 @@ const ProfessionalProfilePage: React.FC = () => {
         }
     };
 
-    const handleDeleteAccount = async (accountId: string) => {
-        if (!confirm('Are you sure you want to delete this bank account?')) return;
+    const handleDeleteClick = (account: BankAccount) => {
+        setAccountToDelete(account);
+        setDeleteConfirmOpen(true);
+    };
+
+    const handleDeleteConfirm = async () => {
+        if (!accountToDelete) return;
 
         try {
-            await bankAccountApi.delete(accountId);
-            setBankAccounts(bankAccounts.filter(acc => acc.id !== accountId));
+            await bankAccountApi.delete(accountToDelete.id);
+            setBankAccounts(bankAccounts.filter(acc => acc.id !== accountToDelete.id));
             toast.success('Bank account deleted successfully');
         } catch (error) {
             console.error('Failed to delete bank account:', error);
             toast.error('Failed to delete bank account');
+        } finally {
+            setAccountToDelete(null);
+            setDeleteConfirmOpen(false);
         }
     };
 
@@ -582,7 +593,7 @@ const ProfessionalProfilePage: React.FC = () => {
                                                             </Button>
                                                             <Button
                                                                 type="button"
-                                                                onClick={() => handleDeleteAccount(account.id)}
+                                                                onClick={() => handleDeleteClick(account)}
                                                                 className="p-2 bg-red-100 hover:bg-red-200 text-red-700 rounded"
                                                             >
                                                                 <Trash2 className="h-4 w-4" />
@@ -668,6 +679,19 @@ const ProfessionalProfilePage: React.FC = () => {
                     }}
                 />
             )}
+
+            {/* Delete Bank Account Confirmation Dialog */}
+            <DeleteConfirmDialog
+                isOpen={deleteConfirmOpen}
+                onClose={() => {
+                    setDeleteConfirmOpen(false);
+                    setAccountToDelete(null);
+                }}
+                onConfirm={handleDeleteConfirm}
+                title="Delete Bank Account"
+                description={`Are you sure you want to delete the bank account "${accountToDelete?.bank_name}"? This action cannot be undone.`}
+                confirmButtonText="Delete Account"
+            />
         </div>
     );
 };

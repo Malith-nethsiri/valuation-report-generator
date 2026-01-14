@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { BankAccount } from '../types';
 import { bankAccountApi } from '../services/api';
 import BankAccountForm from './BankAccountForm';
@@ -30,13 +31,19 @@ const AddBankAccountModal: React.FC<AddBankAccountModalProps> = ({
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+  // Use portal to render modal outside the parent form context
+  // This prevents nested form issues that cause "Leave site?" warnings
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50"
+      onClick={(e) => e.stopPropagation()}
+    >
       <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <h2 className="text-xl font-bold text-gray-900">Add Bank Account</h2>
           <button
+            type="button"
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 transition-colors"
             disabled={isLoading}
@@ -63,7 +70,8 @@ const AddBankAccountModal: React.FC<AddBankAccountModalProps> = ({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

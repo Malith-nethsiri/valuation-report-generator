@@ -15,14 +15,6 @@ export function TestComponents() {
         setFormData(prev => ({ ...prev, ...updates }));
     };
 
-    // Sample applicant address
-    const applicantAddress = {
-        line1: 'No: 43, Highway City',
-        line2: 'Kadawatha',
-        district: 'Gampaha',
-        province: 'Western Province',
-    };
-
     return (
         <div className="min-h-screen bg-gray-50">
             {/* Header */}
@@ -42,7 +34,6 @@ export function TestComponents() {
                     <PropertyLocationSection
                         formData={formData}
                         updateFormData={updateFormData}
-                        applicantAddress={applicantAddress}
                     />
                 </div>
 

@@ -8,6 +8,7 @@ interface DeleteConfirmDialogProps {
   reportReference?: string;
   title?: string;
   description?: string;
+  confirmButtonText?: string;
 }
 
 export const DeleteConfirmDialog: React.FC<DeleteConfirmDialogProps> = ({
@@ -17,6 +18,7 @@ export const DeleteConfirmDialog: React.FC<DeleteConfirmDialogProps> = ({
   reportReference,
   title = 'Delete Report',
   description = 'Are you sure you want to delete this report? This action cannot be undone.',
+  confirmButtonText = 'Delete',
 }) => {
   if (!isOpen) return null;
 
@@ -80,7 +82,7 @@ export const DeleteConfirmDialog: React.FC<DeleteConfirmDialogProps> = ({
               onClick={handleConfirm}
               className="px-5 py-2.5 text-white font-medium bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl"
             >
-              Delete Report
+              {confirmButtonText}
             </button>
           </div>
         </div>
