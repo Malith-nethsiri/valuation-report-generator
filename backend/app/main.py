@@ -1656,7 +1656,7 @@ async def generate_building_description_endpoint(
             construction_materials=request.get("construction_materials"),
             utilities_services=request.get("utilities_services"),
             total_floor_area=request.get("total_floor_area"),
-            age_description=request.get("age_description"),
+            building_age=request.get("building_age"),
             condition=request.get("condition"),
             roof_types=request.get("roof_types"),
             wall_types=request.get("wall_types"),
@@ -1811,6 +1811,137 @@ async def migrate_rooms_to_building_level(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Migration failed: {str(e)}"
+        )
+
+
+@app.post("/api/admin/migrate-occupier")
+async def migrate_occupier_to_building_level(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Admin endpoint: Migrate occupier information from property-level to building-level.
+
+    This endpoint:
+    1. Finds all reports and properties with property-level occupier data
+    2. Copies occupier_name and occupier_relationship to all buildings
+    3. Preserves property-level fields for backward compatibility
+
+    Returns count of migrated reports, properties, and buildings.
+    """
+    try:
+        from .migrations.migrate_occupier_to_building_level import migrate_report, migrate_property
+
+        # Get all reports with property-level occupier and buildings
+        reports = db.query(models.Report).filter(
+            models.Report.occupier_name.isnot(None),
+            models.Report.buildings.isnot(None)
+        ).all()
+
+        # Get all properties with property-level occupier and buildings
+        properties = db.query(models.Property).filter(
+            models.Property.occupier_name.isnot(None),
+            models.Property.buildings.isnot(None)
+        ).all()
+
+        migrated_reports = 0
+        migrated_properties = 0
+        migrated_buildings = 0
+
+        # Migrate reports
+        for report in reports:
+            if report.buildings and report.occupier_name:
+                report_data = {
+                    'occupier_name': report.occupier_name,
+                    'occupier_relationship': report.occupier_relationship,
+                    'buildings': report.buildings
+                }
+                migrated_data = migrate_report(report_data)
+                report.buildings = migrated_data['buildings']
+                migrated_reports += 1
+                migrated_buildings += len(report.buildings)
+
+        # Migrate properties
+        for prop in properties:
+            if prop.buildings and prop.occupier_name:
+                property_data = {
+                    'occupier_name': prop.occupier_name,
+                    'occupier_relationship': prop.occupier_relationship,
+                    'buildings': prop.buildings
+                }
+                migrated_data = migrate_property(property_data)
+                prop.buildings = migrated_data['buildings']
+                migrated_properties += 1
+                migrated_buildings += len(prop.buildings)
+
+        # Commit all changes
+        db.commit()
+
+        return {
+            "status": "success",
+            "message": "Occupier migration completed successfully",
+            "reports_processed": migrated_reports,
+            "properties_processed": migrated_properties,
+            "total_buildings_migrated": migrated_buildings,
+            "migrated_at": datetime.utcnow().isoformat()
+        }
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"[ERROR] Occupier migration failed: {str(e)}")
+        import traceback
+        error_details = traceback.format_exc()
+        logger.error(f"[ERROR] Migration traceback: {error_details}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Occupier migration failed: {str(e)}"
+        )
+
+
+@app.post("/api/admin/migrate-certificate-fields")
+async def migrate_certificate_fields(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Admin endpoint: Migrate certificate_survey_plan_ref to plan_number.
+
+    This is a one-time migration that:
+    1. Copies certificate_survey_plan_ref to plan_number if plan_number is empty
+    2. Copies certificate_survey_plan_date to plan_date if plan_date is empty
+    3. Preserves original certificate fields for backward compatibility
+
+    The migration allows consolidation of certificate identification fields,
+    enabling a flexible Certificate of Identity system in reports.
+
+    Returns:
+        Dict with migration statistics including total reports and migrated count
+    """
+    try:
+        from .migrations.migrate_certificate_to_plan_number import migrate_all_reports
+
+        logger.info("[ADMIN] Starting certificate fields migration")
+        result = migrate_all_reports(db)
+        logger.info(f"[ADMIN] Migration complete: {result}")
+
+        return {
+            "status": "success",
+            "message": "Certificate fields migration completed successfully",
+            "total_reports": result['total_reports'],
+            "migrated_reports": result['migrated_reports'],
+            "skipped_reports": result['skipped_reports'],
+            "migrated_at": datetime.utcnow().isoformat()
+        }
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"[ERROR] Certificate migration failed: {str(e)}")
+        import traceback
+        error_details = traceback.format_exc()
+        logger.error(f"[ERROR] Migration traceback: {error_details}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Certificate migration failed: {str(e)}"
         )
 
 

@@ -460,7 +460,8 @@ def duplicate_property(db: Session, report_id: int, property_id: int, user_id: i
 
     # Create a deep copy of the property
     property_dict = {
-        "property_lot_description": db_property.property_lot_description,
+        "property_lot_description": db_property.property_lot_description,  # DEPRECATED
+        "lot_number": db_property.lot_number,
         "plan_number": db_property.plan_number,
         "plan_date": db_property.plan_date,
         "licensed_surveyor_name": db_property.licensed_surveyor_name,

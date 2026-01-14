@@ -7,7 +7,8 @@
 const FIELD_LABELS: Record<string, string> = {
   // Step 1: Property & Plan
   property_identification_type: "Property Identification Type",
-  property_lot_description: "Lot Description",
+  property_lot_description: "Lot Description",  // DEPRECATED
+  lot_number: "Lot Number",
   plan_number: "Plan Number",
   plan_date: "Plan Date",
   licensed_surveyor_name: "Licensed Surveyor Name",

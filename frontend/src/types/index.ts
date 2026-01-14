@@ -273,8 +273,10 @@ export interface Building {
   building_name?: string;
   building_type: string;
   stories?: number;
-  age_description?: string;
+  building_age?: number;  // Age of building in years
   condition?: string;
+  occupier_name?: string;
+  occupier_relationship?: string;
   roof_types: string[];
   /** @deprecated Use roof_types array instead. This field is not displayed in UI and will be auto-generated from roof_types selections. */
   roof_description?: string;
@@ -334,10 +336,7 @@ export interface BuildingValuation {
   components: ValuationComponent[];
   subtotal: number;
   // Depreciation fields
-  economic_life_years?: number;
-  construction_year?: number;
-  age_years?: number;
-  depreciation_rate_percent?: number;
+  depreciation_rate_percent?: number;  // User enters manually
   depreciation_amount?: number;
   depreciated_value?: number;
 }
@@ -389,13 +388,15 @@ export interface Report {
   status: string;
 
   // Property & Plan Information
+  /** @deprecated Use lot_number instead */
   property_lot_description?: string;
+  lot_number?: string;  // e.g., "Lot 15", "Lots 1 & 2"
   plan_number?: string;
   plan_date?: string;
   licensed_surveyor_name?: string;
 
   // Property Identification Type
-  property_identification_type?: 'plan' | 'deed' | 'certificate_of_sale';
+  property_identification_type?: 'plan' | 'deed' | 'plan_and_deed' | 'certificate_of_sale';
 
   // Certificate fields (form-only, not in backend)
   certificate_number?: string;
@@ -667,13 +668,15 @@ export interface ReportCreate {
   status?: string;
 
   // Property & Plan Information
+  /** @deprecated Use lot_number instead */
   property_lot_description?: string;
+  lot_number?: string;  // e.g., "Lot 15", "Lots 1 & 2"
   plan_number?: string;
   plan_date?: string;
   licensed_surveyor_name?: string;
 
   // Property Identification Type
-  property_identification_type?: 'plan' | 'deed' | 'certificate_of_sale';
+  property_identification_type?: 'plan' | 'deed' | 'plan_and_deed' | 'certificate_of_sale';
 
   // Certificate fields (form-only, not in backend)
   certificate_number?: string;

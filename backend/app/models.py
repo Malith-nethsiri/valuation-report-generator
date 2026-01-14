@@ -59,7 +59,8 @@ class Report(Base):
     status = Column(String(50), nullable=False, default="draft")  # draft, completed
 
     # Property & Plan Information
-    property_lot_description = Column(String(200), nullable=True)  # e.g., "Lot 15", "Lots 1 & 2"
+    property_lot_description = Column(String(200), nullable=True)  # DEPRECATED: Use lot_number instead
+    lot_number = Column(String(200), nullable=True)  # e.g., "Lot 15", "Lots 1 & 2"
     plan_number = Column(String(100), nullable=True)  # e.g., "1035", "2005/65"
     plan_date = Column(String(50), nullable=True)  # DD-MM-YYYY format
     licensed_surveyor_name = Column(String(255), nullable=True)
@@ -329,9 +330,12 @@ class Report(Base):
 
     # ===== CERTIFICATION =====
     certification_text = Column(Text, nullable=True)
+
+    # DEPRECATED: Use plan_number and plan_date instead (after migration, these fields can be removed)
     certificate_survey_plan_ref = Column(String(200), nullable=True)
     certificate_survey_plan_date = Column(String(50), nullable=True)
     certificate_identity_confirmed = Column(Boolean, default=False)
+
     certification_valuer_name = Column(String(300), nullable=True)
     certification_valuer_designation = Column(String(200), nullable=True)
     certification_date = Column(String(50), nullable=True)
@@ -379,7 +383,8 @@ class Property(Base):
     property_type = Column(String(50), nullable=False, default="residential")  # 'residential' or 'bare_land'
 
     # Property Identification
-    property_lot_description = Column(String(200), nullable=True)
+    property_lot_description = Column(String(200), nullable=True)  # DEPRECATED: Use lot_number instead
+    lot_number = Column(String(200), nullable=True)  # e.g., "Lot 15", "Lots 1 & 2"
     plan_number = Column(String(100), nullable=True)
     plan_date = Column(String(50), nullable=True)
     licensed_surveyor_name = Column(String(255), nullable=True)

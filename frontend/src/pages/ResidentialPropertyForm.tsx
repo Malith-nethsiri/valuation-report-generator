@@ -94,17 +94,41 @@ const ResidentialPropertyForm: React.FC = () => {
       // Clean up old fields from rooms data before sending to API
       const cleanedData = { ...data };
       if (cleanedData.buildings && Array.isArray(cleanedData.buildings)) {
-        cleanedData.buildings = cleanedData.buildings.map((building: any) => ({
-          ...building,
-          floors: building.floors?.map((floor: any) => ({
-            ...floor,
-            rooms: floor.rooms?.map((room: any) => {
-              // Remove length and width fields if they exist
-              const { length, width, ...cleanRoom } = room;
-              return cleanRoom;
-            }) || []
-          })) || []
-        }));
+        cleanedData.buildings = cleanedData.buildings.map((building: any) => {
+          // Migrate utilities_services string values to arrays
+          let utilities = building.utilities_services || {};
+          if (utilities) {
+            // Convert string to array for water_supply
+            if (utilities.water_supply && typeof utilities.water_supply === 'string') {
+              utilities.water_supply = [utilities.water_supply];
+            }
+            // Convert string to array for electricity_supply
+            if (utilities.electricity_supply && typeof utilities.electricity_supply === 'string') {
+              utilities.electricity_supply = [utilities.electricity_supply];
+            }
+            // Convert string to array for telephone_connection
+            if (utilities.telephone_connection && typeof utilities.telephone_connection === 'string') {
+              utilities.telephone_connection = [utilities.telephone_connection];
+            }
+            // Ensure arrays are not null
+            if (!Array.isArray(utilities.water_supply)) utilities.water_supply = [];
+            if (!Array.isArray(utilities.electricity_supply)) utilities.electricity_supply = [];
+            if (!Array.isArray(utilities.telephone_connection)) utilities.telephone_connection = [];
+          }
+
+          return {
+            ...building,
+            utilities_services: utilities,
+            floors: building.floors?.map((floor: any) => ({
+              ...floor,
+              rooms: floor.rooms?.map((room: any) => {
+                // Remove length and width fields if they exist
+                const { length, width, ...cleanRoom } = room;
+                return cleanRoom;
+              }) || []
+            })) || []
+          };
+        });
       }
 
       const reportData = {
@@ -126,8 +150,9 @@ const ResidentialPropertyForm: React.FC = () => {
           setReportCreated(savedReport);
           toast.success('Report updated successfully!');
         } else {
-          toast.success('Draft saved successfully');
-          navigate('/dashboard');
+          // Draft saved - toast is shown by MultiStepForm handlers
+          // Navigation is handled by MultiStepForm based on which button was clicked
+          // (Save and Continue = no navigation, Save & Exit = navigate to dashboard)
         }
       } else {
         // Create new report
@@ -136,8 +161,7 @@ const ResidentialPropertyForm: React.FC = () => {
         if (submissionType === 'complete') {
           setReportCreated(savedReport);
         } else {
-          toast.success('Draft saved successfully');
-          navigate('/dashboard');
+          // Draft saved - toast and navigation handled by MultiStepForm
         }
       }
 
@@ -256,7 +280,7 @@ const ResidentialPropertyForm: React.FC = () => {
                 </div>
                 <div>
                   <span className="font-semibold text-gray-700">Property:</span>
-                  <span className="ml-2 text-gray-600">{reportCreated.property_lot_description || 'N/A'}</span>
+                  <span className="ml-2 text-gray-600">{reportCreated.lot_number || reportCreated.property_lot_description || 'N/A'}</span>
                 </div>
                 <div>
                   <span className="font-semibold text-gray-700">Created:</span>

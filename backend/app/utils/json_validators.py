@@ -110,40 +110,92 @@ BOUNDARIES_SCHEMA = {
 BUILDING_PHOTO_SCHEMA = {
     "type": "object",
     "properties": {
-        "url": {"type": "string"},
+        "id": {"type": "string"},
+        "image_data": {"type": "string"},
         "caption": {"type": ["string", "null"]},
-        "filename": {"type": ["string", "null"]},
-        "uploaded_at": {"type": ["string", "null"]}
+        "order": {"type": "integer", "minimum": 0}
     },
-    "required": ["url"]
+    "required": ["id", "image_data", "order"]
+}
+
+# New format schemas
+FLOOR_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "floor_name": {"type": "string"},
+        "floor_area": {"type": ["number", "null"], "minimum": 0}
+    },
+    "required": ["floor_name"]
+}
+
+ROOM_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "room_type": {"type": "string"},
+        "count": {"type": ["integer", "null"], "minimum": 0},
+        "has_attached_bathroom": {"type": ["boolean", "null"]}
+    }
+}
+
+ACCOMMODATION_SUMMARY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "bedrooms": {"type": ["integer", "null"], "minimum": 0},
+        "bathrooms": {"type": ["integer", "null"], "minimum": 0},
+        "living_rooms": {"type": ["integer", "null"], "minimum": 0},
+        "dining_rooms": {"type": ["integer", "null"], "minimum": 0},
+        "kitchens": {"type": ["integer", "null"], "minimum": 0},
+        "pantries": {"type": ["integer", "null"], "minimum": 0},
+        "verandahs": {"type": ["integer", "null"], "minimum": 0},
+        "balconies": {"type": ["integer", "null"], "minimum": 0},
+        "garages": {"type": ["integer", "null"], "minimum": 0},
+        "store_rooms": {"type": ["integer", "null"], "minimum": 0},
+        "other_rooms": {"type": ["integer", "null"], "minimum": 0}
+    }
 }
 
 BUILDING_SCHEMA = {
     "type": "object",
     "properties": {
-        "building_type": {"type": "string"},
+        "id": {"type": "string"},
         "building_name": {"type": ["string", "null"]},
-        "building_purpose": {"type": ["string", "null"]},
+        "building_type": {"type": "string"},
+        "stories": {"type": ["integer", "null"], "minimum": 1},
+        "building_age": {"type": ["integer", "null"], "minimum": 0, "maximum": 200},
+        "condition": {"type": ["string", "null"]},
+        "occupier_name": {"type": ["string", "null"], "maxLength": 300},
+        "occupier_relationship": {
+            "type": ["string", "null"],
+            "enum": [None, "", "owner", "tenant", "caretaker", "family_member", "vacant"]
+        },
+        "roof_types": {"type": ["array", "null"], "items": {"type": "string"}},
+        "roof_description": {"type": ["string", "null"]},
+        "wall_types": {"type": ["array", "null"], "items": {"type": "string"}},
+        "wall_description": {"type": ["string", "null"]},
+        "floor_types": {"type": ["array", "null"], "items": {"type": "string"}},
+        "floor_description": {"type": ["string", "null"]},
+        "total_floor_area": {"type": ["number", "null"], "minimum": 0},
+        "floors": {"type": ["array", "null"], "items": FLOOR_SCHEMA},
+        "rooms": {"type": ["array", "null"], "items": ROOM_SCHEMA},
+        "accommodation_summary": {"anyOf": [ACCOMMODATION_SUMMARY_SCHEMA, {"type": "null"}]},
+        "construction_materials": {"type": ["object", "null"]},
+        "utilities_services": {"type": ["object", "null"]},
+        "conveniences": {"type": ["array", "null"], "items": {"type": "string"}},
+        "building_description_text": {"type": ["string", "null"]},
+        "building_photos": {
+            "type": ["array", "null"],
+            "items": BUILDING_PHOTO_SCHEMA,
+            "maxItems": 5
+        },
+        "additional_structures_description": {"type": ["string", "null"]},
+
+        # Legacy fields (keep for backward compatibility)
         "plinth_area": {"type": ["number", "null"]},
-        "plinth_area_unit": {"type": ["string", "null"]},
         "floor_area": {"type": ["number", "null"]},
-        "floor_area_unit": {"type": ["string", "null"]},
         "num_floors": {"type": ["integer", "null"]},
-        "building_condition": {"type": ["string", "null"]},
-        "construction_quality": {"type": ["string", "null"]},
-        "roof_type": {"type": ["string", "null"]},
-        "wall_type": {"type": ["string", "null"]},
-        "floor_type": {"type": ["string", "null"]},
-        "foundation_type": {"type": ["string", "null"]},
         "num_bedrooms": {"type": ["integer", "null"]},
         "num_bathrooms": {"type": ["integer", "null"]},
-        "num_living_rooms": {"type": ["integer", "null"]},
-        "num_kitchens": {"type": ["integer", "null"]},
-        "has_attached_bathroom": {"type": ["boolean", "null"]},
-        "amenities": {
-            "type": ["array", "null"],
-            "items": {"type": "string"}
-        },
+        "amenities": {"type": ["array", "null"], "items": {"type": "string"}},
         "description_text": {"type": ["string", "null"]},
         "photos": {
             "type": ["array", "null"],

@@ -32,12 +32,12 @@ const PropertyDetailsStep: React.FC<PropertyDetailsStepProps> = ({
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="md:col-span-2">
-            <Label htmlFor={`${fieldPrefix}.property_lot_description`}>
-              Lot Description
+            <Label htmlFor={`${fieldPrefix}.lot_number`}>
+              Lot Number
             </Label>
             <Input
-              {...register(`${fieldPrefix}.property_lot_description` as any)}
-              placeholder="e.g., Lot 15, Plan 123"
+              {...register(`${fieldPrefix}.lot_number` as any)}
+              placeholder="e.g., Lot 15, Lots 1 & 2"
             />
           </div>
 

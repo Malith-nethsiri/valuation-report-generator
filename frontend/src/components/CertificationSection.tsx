@@ -40,15 +40,9 @@ export default function CertificationSection({ data, onChange, userProfile }: Pr
   useEffect(() => {
     const updates: Partial<CertificationData> = {};
 
-    // Auto-fill plan reference from Step 1
-    if (data.plan_number && !data.certificate_survey_plan_ref) {
-      updates.certificate_survey_plan_ref = data.plan_number;
-    }
-
-    // Auto-fill plan date from Step 1
-    if (data.plan_date && !data.certificate_survey_plan_date) {
-      updates.certificate_survey_plan_date = data.plan_date;
-    }
+    // Note: certificate_survey_plan_ref/date are deprecated
+    // Certificate of Identity now uses plan_number and plan_date directly
+    // These fields are kept for backward compatibility only
 
     // Auto-fill valuer info from user profile
     if (userProfile) {
@@ -67,7 +61,7 @@ export default function CertificationSection({ data, onChange, userProfile }: Pr
       updates.certification_date = formattedDate;
     }
 
-    // Generate default certification text if not set - DYNAMIC based on property_identification_type
+    // Generate simplified certification text if not set - DYNAMIC based on property_identification_type
     if (!data.certification_text) {
       const valuerName = userProfile?.full_name || '[Valuer Name]';
       const designation = userProfile?.professional_designation || '[Designation]';
@@ -77,38 +71,27 @@ export default function CertificationSection({ data, onChange, userProfile }: Pr
       const idType = data.property_identification_type;
 
       if (idType === 'plan' || idType === 'plan_and_deed') {
-        // Plan information available
+        // Plan information available (ignore deed as per requirements)
         const planRef = data.plan_number || '[Plan Reference]';
         const planDate = data.plan_date || '[Plan Date]';
         const surveyorName = data.licensed_surveyor_name || '[Surveyor Name]';
-        identificationText = `the land depicted as Plan ${planRef} dated ${planDate} made by ${surveyorName}, Licensed Surveyor`;
+        const lotNum = data.lot_number;
+
+        // Include lot number if available (new format)
+        if (lotNum && lotNum.trim()) {
+          identificationText = `the property depicted as Lot ${lotNum} in Plan No ${planRef} dated ${planDate} made by ${surveyorName}, Licensed Surveyor`;
+        } else {
+          identificationText = `the property depicted as Plan No ${planRef} dated ${planDate} made by ${surveyorName}, Licensed Surveyor`;
+        }
       }
 
       if (idType === 'deed') {
-        // Deed only
+        // Deed only (fallback when no plan available)
         const firstDeed = data.deeds?.[0];
         const deedType = firstDeed?.deed_type || 'Deed';
         const deedNumber = firstDeed?.deed_number || '[Deed Number]';
         const deedDate = firstDeed?.deed_date || '[Deed Date]';
         identificationText = `the property described in ${deedType} No. ${deedNumber} dated ${deedDate}`;
-      }
-
-      if (idType === 'plan_and_deed') {
-        // Both plan and deed
-        const planRef = data.plan_number || '[Plan Reference]';
-        const firstDeed = data.deeds?.[0];
-        const deedNumber = firstDeed?.deed_number;
-
-        // Only include deed information if deed number exists
-        if (deedNumber && deedNumber.trim() !== '') {
-          const deedType = firstDeed?.deed_type || 'Deed';
-          identificationText = `the land depicted as Plan ${planRef} and described in ${deedType} No. ${deedNumber}`;
-        } else {
-          // No deed number available - show only plan information
-          const planDate = data.plan_date || '[Plan Date]';
-          const surveyorName = data.licensed_surveyor_name || '[Surveyor Name]';
-          identificationText = `the land depicted as Plan ${planRef} dated ${planDate} made by ${surveyorName}, Licensed Surveyor`;
-        }
       }
 
       if (idType === 'certificate_of_sale') {
@@ -120,14 +103,11 @@ export default function CertificationSection({ data, onChange, userProfile }: Pr
 
       // Fallback if no identification type specified
       if (!identificationText) {
-        identificationText = 'the property as described in the relevant legal documents';
+        identificationText = 'the property described in this report';
       }
 
-      updates.certification_text = `I, ${valuerName}, ${designation}, do hereby certify that the property inspected by me and valued above is identical to ${identificationText}.
-
-I further certify that the property has legal, motorable access at all times.
-
-In view of the above analysis, I am of the opinion that the values of the said property at the time of inspection subject to clear title and vacant possession are as above.`;
+      // Simplified single-paragraph certification (removed multi-paragraph format)
+      updates.certification_text = `I, ${valuerName}, ${designation}, do hereby certify that the property inspected by me and valued above is identical to ${identificationText}.`;
     }
 
     if (Object.keys(updates).length > 0) {
@@ -136,6 +116,7 @@ In view of the above analysis, I am of the opinion that the values of the said p
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     userProfile,
+    data.lot_number, // NEW: Re-generate when lot number changes
     data.plan_number,
     data.plan_date,
     data.licensed_surveyor_name,
@@ -181,63 +162,60 @@ In view of the above analysis, I am of the opinion that the values of the said p
         </p>
       </div>
 
-      {/* Certificate of Identity */}
-      <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-6">
+      {/* Certificate of Identity - DEPRECATED FIELDS */}
+      <div className="bg-yellow-50 border-2 border-yellow-200 rounded-lg p-6">
         <div className="flex items-center gap-2 mb-4">
-          <CheckCircle2 className="h-5 w-5 text-blue-600" />
-          <h3 className="font-semibold text-blue-900">Certificate of Identity</h3>
+          <CheckCircle2 className="h-5 w-5 text-yellow-600" />
+          <h3 className="font-semibold text-yellow-900">Certificate of Identity (Deprecated)</h3>
+        </div>
+
+        <div className="bg-yellow-100 border border-yellow-300 rounded-lg p-4 mb-4">
+          <p className="text-sm text-yellow-800 font-medium mb-2">
+            Note: These fields are deprecated
+          </p>
+          <p className="text-xs text-yellow-700">
+            Certificate of Identity now automatically uses Plan Number and Plan Date from the Property Description step.
+            These fields are displayed for backward compatibility only and cannot be edited.
+          </p>
         </div>
 
         <div className="bg-white rounded-lg p-4 mb-4 space-y-2">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <Label className="text-sm">Survey Plan Reference</Label>
+              <Label className="text-sm text-gray-600">Survey Plan Reference (Read-Only)</Label>
               <Input
                 type="text"
-                value={data.certificate_survey_plan_ref || ''}
-                onChange={(e) => onChange({ certificate_survey_plan_ref: e.target.value })}
-                className="mt-1 bg-gray-50"
-                placeholder="e.g., Plan 1035"
+                value={data.plan_number || data.certificate_survey_plan_ref || ''}
+                disabled
+                className="mt-1 bg-gray-100 cursor-not-allowed"
+                placeholder="Uses plan_number from Property Description"
               />
+              <p className="text-xs text-gray-500 mt-1">
+                Value from Property Description: plan_number
+              </p>
             </div>
 
             <div>
-              <Label className="text-sm">Survey Plan Date</Label>
+              <Label className="text-sm text-gray-600">Survey Plan Date (Read-Only)</Label>
               <Input
                 type="text"
-                value={data.certificate_survey_plan_date || ''}
-                onChange={(e) => onChange({ certificate_survey_plan_date: e.target.value })}
-                className="mt-1 bg-gray-50"
-                placeholder="e.g., 15-01-2024"
+                value={data.plan_date || data.certificate_survey_plan_date || ''}
+                disabled
+                className="mt-1 bg-gray-100 cursor-not-allowed"
+                placeholder="Uses plan_date from Property Description"
               />
+              <p className="text-xs text-gray-500 mt-1">
+                Value from Property Description: plan_date
+              </p>
             </div>
           </div>
         </div>
 
-        {/* Required Checkbox */}
-        <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-4">
-          <label className="flex items-start gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={data.certificate_identity_confirmed || false}
-              onChange={(e) => onChange({ certificate_identity_confirmed: e.target.checked })}
-              className="mt-1 h-5 w-5 text-blue-600 focus:ring-2 focus:ring-blue-500 rounded border-gray-300"
-            />
-            <div className="flex-1">
-              <p className="text-sm font-medium text-gray-900">
-                I certify that the inspected property is identical to the survey plan reference above
-              </p>
-              <p className="text-xs text-gray-600 mt-1">
-                This confirmation is required before proceeding to the next step
-              </p>
-            </div>
-          </label>
-          {!data.certificate_identity_confirmed && (
-            <p className="text-xs text-red-600 mt-3 flex items-center gap-1">
-              <span className="font-semibold">⚠</span>
-              Please confirm the certificate of identity to proceed
-            </p>
-          )}
+        <div className="bg-green-50 border border-green-300 rounded-lg p-4">
+          <p className="text-sm text-green-800">
+            <span className="font-semibold">Certificate of Identity is now optional.</span> It will be automatically generated in the report
+            if property identification data (plan or deed information) is available.
+          </p>
         </div>
       </div>
 

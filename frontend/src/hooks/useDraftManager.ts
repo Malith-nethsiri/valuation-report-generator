@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { UseFormReturn } from 'react-hook-form';
 import { reportApi } from '../services/api';
 import toast from 'react-hot-toast';
@@ -11,6 +11,7 @@ interface DraftManagerConfig {
     getValues: UseFormReturn<any>['getValues'];
     setValue: UseFormReturn<any>['setValue'];
   };
+  debounceMs?: number; // Optional debounce time in milliseconds (default: 300)
 }
 
 interface DraftManagerReturn {
@@ -19,6 +20,7 @@ interface DraftManagerReturn {
   lastSaved: Date | null;
   saveDraft: () => Promise<any>;
   setIsDirty: (dirty: boolean) => void;
+  canSave: boolean; // Indicates if save operation can be triggered (not already in progress)
 }
 
 /**
@@ -29,11 +31,20 @@ interface DraftManagerReturn {
  * - Saves drafts to backend (create or update)
  * - Provides loading state and last saved timestamp
  * - Handles both new reports and editing existing reports
+ * - Prevents duplicate saves via ref-based flag and debouncing
  */
 export const useDraftManager = (config: DraftManagerConfig): DraftManagerReturn => {
+  const { debounceMs = 300 } = config;
+
   const [isDirty, setIsDirty] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
+
+  // Duplicate prevention: Track if save is in progress using ref (synchronous)
+  const saveInProgressRef = useRef(false);
+
+  // Debouncing: Track last save time to prevent rapid successive saves
+  const lastSaveTimeRef = useRef<number>(0);
 
   // Auto-track form changes to set dirty flag
   useEffect(() => {
@@ -45,9 +56,25 @@ export const useDraftManager = (config: DraftManagerConfig): DraftManagerReturn 
   }, [config.formMethods]);
 
   /**
-   * Save draft to backend with retry logic
+   * Save draft to backend with duplicate prevention and debouncing
    */
   const saveDraft = async (): Promise<any> => {
+    // DUPLICATE PREVENTION: Check if save already in progress
+    if (saveInProgressRef.current) {
+      console.log('[useDraftManager] Save already in progress, ignoring duplicate request');
+      return;
+    }
+
+    // DEBOUNCING: Prevent rapid successive saves
+    const now = Date.now();
+    if (now - lastSaveTimeRef.current < debounceMs) {
+      console.log('[useDraftManager] Save request too soon after previous save, debouncing');
+      return;
+    }
+
+    // Set flags immediately (synchronous) before any async operations
+    saveInProgressRef.current = true;
+    lastSaveTimeRef.current = now;
     setIsSaving(true);
 
     try {
@@ -85,6 +112,7 @@ export const useDraftManager = (config: DraftManagerConfig): DraftManagerReturn 
       throw error;
     } finally {
       setIsSaving(false);
+      saveInProgressRef.current = false; // Clear the flag
     }
   };
 
@@ -129,6 +157,7 @@ export const useDraftManager = (config: DraftManagerConfig): DraftManagerReturn 
     isSaving,
     lastSaved,
     saveDraft: saveDraftWithRetry,
-    setIsDirty
+    setIsDirty,
+    canSave: !saveInProgressRef.current // Indicates if save can be triggered
   };
 };

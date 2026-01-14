@@ -20,7 +20,7 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 // ===== ENHANCED API CLIENT WITH TIMEOUT AND RETRY =====
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 30000, // 30 second timeout
+  timeout: 300000, // 5 minute timeout - extended for large file uploads and complex operations
   headers: {
     'Content-Type': 'application/json',
   },
@@ -98,7 +98,8 @@ api.interceptors.response.use(
         throw new Error('Request timeout. Please check your internet connection and try again.');
       }
 
-      throw new Error('Network error. Please check your internet connection.');
+      console.error('[API] Network error details:', error);
+      throw new Error('Network error. Please check your internet connection or try again later.');
     }
 
     const status = error.response.status;
@@ -181,7 +182,15 @@ api.interceptors.response.use(
           await sleep(delay);
           return api.request(originalRequest);
         }
+        console.error('[API] Server error details:', {
+          status,
+          data: responseData,
+          message: responseData?.message,
+          detail: responseData?.detail,
+          error: error.message
+        });
         throw new Error(
+          responseData?.detail ||
           responseData?.message ||
           'Server error. Please try again later or contact support if the problem persists.'
         );

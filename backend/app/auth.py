@@ -18,7 +18,7 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY:
     raise ValueError("SECRET_KEY environment variable is not set")
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60  # 1 hour - with auto-refresh for multi-step forms
+ACCESS_TOKEN_EXPIRE_MINUTES = 480  # 8 hours - extended for long report data entry sessions
 
 # Password hashing context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")

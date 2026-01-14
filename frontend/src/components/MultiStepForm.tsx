@@ -52,6 +52,8 @@ import CertificationSection from './CertificationSection';
 import { DatePicker } from './DatePicker';
 import { LoadingOverlay } from './LoadingOverlay';
 import { validateSriLankanNIC, validatePassport, useFieldValidation } from '../utils/validators';
+import { PREDEFINED_VALUATION_PURPOSES } from '../constants/valuationPurposes';
+import { toTitleCase } from '../utils/textFormatters';
 
 // Common deed types in Sri Lanka
 const COMMON_DEED_TYPES = [
@@ -77,7 +79,7 @@ const propertyPlanSchema = z.object({
         required_error: 'Please select what information you have'
     }),
     // All fields as optional initially
-    property_lot_description: z.string().optional(),
+    lot_number: z.string().optional(),
     plan_number: z.string().optional(),
     plan_date: z.string().optional(),
     licensed_surveyor_name: z.string().optional(),
@@ -328,11 +330,12 @@ const propertyDescriptionSchema = z.object({
         floors: z.array(z.object({
             floor_name: z.string().min(1, 'Floor name is required'),
             floor_area: z.number().min(0, 'Floor area must be positive').optional(),
-            rooms: z.array(z.object({
-                room_type: z.string().optional(),
-                count: z.number().optional(),
-            })),
         })),
+        rooms: z.array(z.object({
+            room_type: z.string().min(1, 'Room type is required'),
+            count: z.number().min(1, 'Count must be at least 1'),
+            has_attached_bathroom: z.boolean().optional(),
+        })).optional(),
     })).optional(),
     property_photos: z.array(z.any()).max(20, 'Maximum 20 property photos').optional(),
 });
@@ -342,7 +345,7 @@ const basePropertyPlanSchema = z.object({
     property_identification_type: z.enum(['plan', 'deed', 'plan_and_deed', 'certificate_of_sale'], {
         required_error: 'Please select what information you have'
     }),
-    property_lot_description: z.string().optional(),
+    lot_number: z.string().optional(),
     plan_number: z.string().optional(),
     plan_date: z.string().optional(),
     licensed_surveyor_name: z.string().optional(),
@@ -358,11 +361,8 @@ const basePropertyPlanSchema = z.object({
 });
 
 // Certification schema (for final submission validation)
-const baseCertificationSchema = z.object({
-    certificate_identity_confirmed: z.boolean().refine(val => val === true, {
-        message: "You must confirm the certificate of identity"
-    })
-});
+// Note: certificate_identity_confirmed validation removed - Certificate of Identity is now optional
+const baseCertificationSchema = z.object({});
 
 const completeFormSchema = basePropertyPlanSchema
     .merge(baseApplicantPurposeSchema)
@@ -558,19 +558,19 @@ const steps = [
     },
     {
         id: 11,
-        title: 'Invoice',
-        subtitle: 'Professional fees',
-        icon: Receipt,
-        color: 'from-amber-500 to-orange-600',
-        bgColor: 'from-amber-50 to-orange-100',
-    },
-    {
-        id: 12,
         title: 'Valuation',
         subtitle: 'Property valuation breakdown',
         icon: Scale,
         color: 'from-indigo-500 to-blue-600',
         bgColor: 'from-indigo-50 to-blue-100',
+    },
+    {
+        id: 12,
+        title: 'Invoice',
+        subtitle: 'Professional fees',
+        icon: Receipt,
+        color: 'from-amber-500 to-orange-600',
+        bgColor: 'from-amber-50 to-orange-100',
     },
     {
         id: 13,
@@ -603,7 +603,7 @@ const PropertyPlanStep: React.FC<StepComponentProps> = ({ register, errors, setV
                 if (extractedData.plan_number) setValue('plan_number', extractedData.plan_number);
                 if (extractedData.plan_date) setValue('plan_date', extractedData.plan_date);
                 if (extractedData.licensed_surveyor_name) setValue('licensed_surveyor_name', extractedData.licensed_surveyor_name);
-                if (extractedData.property_lot_description) setValue('property_lot_description', extractedData.property_lot_description);
+                if (extractedData.lot_number) setValue('lot_number', extractedData.lot_number);
 
                 // Fill deed fields
                 const firstDeed = extractedData.deeds[0];
@@ -620,7 +620,7 @@ const PropertyPlanStep: React.FC<StepComponentProps> = ({ register, errors, setV
                 if (extractedData.plan_number) setValue('plan_number', extractedData.plan_number);
                 if (extractedData.plan_date) setValue('plan_date', extractedData.plan_date);
                 if (extractedData.licensed_surveyor_name) setValue('licensed_surveyor_name', extractedData.licensed_surveyor_name);
-                if (extractedData.property_lot_description) setValue('property_lot_description', extractedData.property_lot_description);
+                if (extractedData.lot_number) setValue('lot_number', extractedData.lot_number);
             }
             // Priority 2: Deed/certificate only
             else if (hasDeed) {
@@ -858,19 +858,19 @@ const PropertyPlanStep: React.FC<StepComponentProps> = ({ register, errors, setV
                     <h3 className="text-lg font-semibold text-gray-900 mb-4">Property Plan Information</h3>
 
                     <div className="space-y-2">
-                        <Label htmlFor="property_lot_description" className="text-gray-700 font-medium">
-                            Lot Description
+                        <Label htmlFor="lot_number" className="text-gray-700 font-medium">
+                            Lot Number
                         </Label>
                         <div className="relative">
                             <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                                 <Home className="h-5 w-5 text-gray-400" />
                             </div>
                             <Input
-                                id="property_lot_description"
+                                id="lot_number"
                                 type="text"
                                 placeholder="e.g., Lot 15, Lots 1 & 2"
                                 className="pl-12 h-14 bg-white/50 border-gray-200/50 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
-                                {...register('property_lot_description')}
+                                {...register('lot_number')}
                             />
                         </div>
                     </div>
@@ -1082,19 +1082,19 @@ const PropertyPlanStep: React.FC<StepComponentProps> = ({ register, errors, setV
                         </div>
 
                         <div className="space-y-2">
-                            <Label htmlFor="property_lot_description" className="text-gray-700 font-medium">
-                                Lot Description
+                            <Label htmlFor="lot_number" className="text-gray-700 font-medium">
+                                Lot Number
                             </Label>
                             <div className="relative">
                                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                                     <Home className="h-5 w-5 text-gray-400" />
                                 </div>
                                 <Input
-                                    id="property_lot_description"
+                                    id="lot_number"
                                     type="text"
                                     placeholder="e.g., Lot 15, Lots 1 & 2"
                                     className="pl-12 h-14 bg-white/50 border-gray-200/50 rounded-2xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200"
-                                    {...register('property_lot_description')}
+                                    {...register('lot_number')}
                                 />
                             </div>
                         </div>
@@ -1765,41 +1765,26 @@ const ApplicantPurposeStep: React.FC<StepComponentProps & { getValues: any }> = 
                     </div>
                 </div>
 
-                <div className="space-y-2 mt-4">
-                    <Label htmlFor="valuation_purpose" className="text-gray-700 font-medium">
-                        Purpose of Valuation *
-                    </Label>
-                    <select
-                        id="valuation_purpose"
-                        className="w-full h-14 bg-white/50 border border-gray-200/50 rounded-2xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200 px-4"
-                        {...register('valuation_purpose')}
-                    >
-                        <option value="">Select purpose...</option>
-                        <option value="Bank Loan / Mortgage">Bank Loan / Mortgage</option>
-                        <option value="Sale / Purchase">Sale / Purchase</option>
-                        <option value="Legal Proceedings / Court Case">Legal Proceedings / Court Case</option>
-                        <option value="Insurance">Insurance</option>
-                        <option value="Partition">Partition</option>
-                        <option value="Mortgage Refinancing">Mortgage Refinancing</option>
-                        <option value="Taxation / Estate Duty">Taxation / Estate Duty</option>
-                        <option value="Investment Analysis">Investment Analysis</option>
-                        <option value="Court-Ordered Valuation">Court-Ordered Valuation</option>
-                    </select>
-                    {errors.valuation_purpose && (
-                        <p className="text-red-500 text-sm">{errors.valuation_purpose.message}</p>
-                    )}
-                    <p className="text-sm text-gray-500 mt-1">
-                        Or type a custom purpose: <Input
-                            type="text"
-                            placeholder="Type custom purpose..."
-                            className="mt-2 h-12 bg-white/50 border-gray-200/50 rounded-2xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200"
-                            onBlur={(e) => {
-                                if (e.target.value) {
-                                    setValue('valuation_purpose', e.target.value, { shouldValidate: true });
-                                }
-                            }}
-                        />
-                    </p>
+                <div className="mt-4">
+                    <AutocompleteInput
+                        label="Purpose of Valuation"
+                        value={watch('valuation_purpose') || ''}
+                        onChange={(value) => {
+                            // Prevent whitespace-only entries
+                            if (value.trim().length === 0 && value.length > 0) {
+                                return;
+                            }
+                            // Apply title case transformation
+                            const formatted = value.trim() ? toTitleCase(value) : value;
+                            setValue('valuation_purpose', formatted, { shouldValidate: true });
+                        }}
+                        suggestions={PREDEFINED_VALUATION_PURPOSES}
+                        placeholder="Purpose of Valuation"
+                        required={false}
+                        error={errors.valuation_purpose?.message as string}
+                        allowCustom={true}
+                        className="w-full"
+                    />
                 </div>
 
                 <div className="space-y-2 mt-4">
@@ -2113,6 +2098,57 @@ interface DataQualityWarning {
     severity: 'warning' | 'info';
 }
 
+/**
+ * Transform individual deed form fields into backend array format
+ * @param formData - Raw form data with individual deed fields
+ * @returns Transformed deed array or undefined
+ */
+const transformDeedData = (formData: any) => {
+    const identificationType = formData.property_identification_type;
+    let deedData = undefined;
+
+    if (identificationType === 'deed') {
+        // Regular deed only
+        const hasDeedData = formData.deed_number && formData.deed_date;
+        if (hasDeedData) {
+            deedData = [{
+                deed_type: formData.deed_type || null,
+                deed_number: formData.deed_number,
+                deed_date: formData.deed_date,
+                notary_name: formData.notary_name || null,
+                notary_location: formData.notary_location || null,
+            }];
+        }
+    } else if (identificationType === 'plan_and_deed') {
+        // HYBRID MODE: Include deed data alongside plan data
+        const hasDeedData = formData.deed_number && formData.deed_date;
+        if (hasDeedData) {
+            deedData = [{
+                deed_type: formData.deed_type || null,
+                deed_number: formData.deed_number,
+                deed_date: formData.deed_date,
+                notary_name: formData.notary_name || null,
+                notary_location: formData.notary_location || null,
+            }];
+        }
+    } else if (identificationType === 'certificate_of_sale') {
+        // Certificate of Sale (stored as deed with fixed type)
+        const hasCertData = formData.certificate_number && formData.certificate_date;
+        if (hasCertData) {
+            deedData = [{
+                deed_type: 'Certificate of Sale',
+                deed_number: formData.certificate_number,
+                deed_date: formData.certificate_date,
+                notary_name: formData.certificate_notary_name || null,
+                notary_location: formData.certificate_notary_district || null,
+            }];
+        }
+    }
+    // If identificationType === 'plan', deedData stays undefined
+
+    return deedData;
+};
+
 const MultiStepForm: React.FC<MultiStepFormProps> = ({
     onSubmit,
     isSubmitting = false,
@@ -2136,11 +2172,11 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
             return steps;  // All 13 steps for standalone reports
         }
 
-        // Multi-property: Exclude steps 9, 10, and 11
+        // Multi-property: Exclude steps 9, 10, and 12
         // - Step 9 (Applicant): Common data handled at report level
         // - Step 10 (Additional Details): Common data handled at report level
-        // - Step 11 (Invoice): Handled at report level (step 4 of multi-property flow)
-        let filteredSteps = steps.filter(step => step.id !== 9 && step.id !== 10 && step.id !== 11);
+        // - Step 12 (Invoice): Handled at report level (step 4 of multi-property flow)
+        let filteredSteps = steps.filter(step => step.id !== 9 && step.id !== 10 && step.id !== 12);
 
         if (hideCertification) {
             filteredSteps = filteredSteps.filter(step => step.id !== 13);
@@ -2162,6 +2198,8 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
     const [showNavigationModal, setShowNavigationModal] = useState(false);
     const [pendingNavigation, setPendingNavigation] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
+    const [isSavingAndContinue, setIsSavingAndContinue] = useState(false);
+    const [isSavingAndExit, setIsSavingAndExit] = useState(false);
     const [validationErrors, setValidationErrors] = useState<ValidationErrorSummary[]>([]);
     const [showErrorPanel, setShowErrorPanel] = useState(false);
     const [dataQualityWarnings, setDataQualityWarnings] = useState<DataQualityWarning[]>([]);
@@ -2376,13 +2414,9 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
             case 8: return z.object({}); // Land Values - no required validation
             case 9: return applicantPurposeSchema; // Applicant & Purpose validation
             case 10: return additionalDetailsSchema; // Additional Details validation
-            case 11: return z.object({}); // Invoice - optional, no strict validation
-            case 12: return z.object({}); // Valuation - no required validation
-            case 13: return z.object({
-                certificate_identity_confirmed: z.boolean().refine(val => val === true, {
-                    message: "You must confirm the certificate of identity"
-                })
-            }); // Certification - checkbox required
+            case 11: return z.object({}); // Valuation - no required validation
+            case 12: return z.object({}); // Invoice - optional, no strict validation
+            case 13: return z.object({}); // Certification - certificate_identity_confirmed validation removed (now optional)
             default: return propertyPlanSchema;
         }
     };
@@ -2446,10 +2480,10 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
                     severity: 'warning'
                 });
             }
-            if (!formData.property_lot_description) {
+            if (!formData.lot_number) {
                 warnings.push({
-                    field: 'property_lot_description',
-                    message: 'Lot description is missing. Consider adding this for clarity.',
+                    field: 'lot_number',
+                    message: 'Lot number is missing. Consider adding this for clarity.',
                     severity: 'info'
                 });
             }
@@ -2564,30 +2598,97 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
             setCurrentStep(currentStep - 1);
         }
     };
-    // Save & Exit handler
-    const handleSaveAndExit = async (e?: React.MouseEvent<HTMLButtonElement>) => {
-        e?.preventDefault(); // Prevent any form submission
-        e?.stopPropagation(); // Prevent event bubbling
+    // Save and Continue handler (new)
+    const handleSaveAndContinue = async (e?: React.MouseEvent<HTMLButtonElement>) => {
+        e?.preventDefault();
+        e?.stopPropagation();
 
         try {
-            setIsSaving(true);
-            const formData = getValues(); // NO validation
+            setIsSavingAndContinue(true);
+            const formData = getValues(); // NO validation - drafts can be incomplete
+
+            // Transform deed data to array format
+            const deedData = transformDeedData(formData);
+
+            // Prepare submission data with transformed deed data
+            const submissionData = {
+                ...formData,
+                deeds: deedData,
+                has_deed_info: deedData ? 'yes' : 'no',
+            };
 
             // Multi-property mode: call onSaveProperty
             if (isEmbeddedInMultiProperty && onSaveProperty) {
-                await onSaveProperty(formData);
-                toast.success('Property saved as draft');
+                await onSaveProperty(submissionData);
             } else {
                 // Standalone mode: call onSubmit with 'draft'
-                await onSubmit(formData, 'draft');
+                await onSubmit(submissionData, 'draft');
+            }
+
+            toast.success('Draft saved successfully');
+            // Stay on current page - user continues editing
+        } catch (error) {
+            toast.error('Failed to save draft');
+            console.error('Save error:', error);
+        } finally {
+            setIsSavingAndContinue(false);
+        }
+    };
+
+    // Save & Exit handler
+    const handleSaveAndExit = async (e?: React.MouseEvent<HTMLButtonElement>) => {
+        e?.preventDefault();
+        e?.stopPropagation();
+
+        try {
+            setIsSavingAndExit(true);
+            const formData = getValues(); // NO validation - drafts can be incomplete
+
+            // Transform deed data to array format
+            const deedData = transformDeedData(formData);
+
+            // Prepare submission data with transformed deed data
+            const submissionData = {
+                ...formData,
+                deeds: deedData,
+                has_deed_info: deedData ? 'yes' : 'no',
+            };
+
+            // Multi-property mode: call onSaveProperty
+            if (isEmbeddedInMultiProperty && onSaveProperty) {
+                await onSaveProperty(submissionData);
+            } else {
+                // Standalone mode: call onSubmit with 'draft'
+                await onSubmit(submissionData, 'draft');
+            }
+
+            toast.success('Draft saved successfully');
+            // Navigate to dashboard after successful save
+            if (!isEmbeddedInMultiProperty) {
+                navigate('/dashboard');
             }
         } catch (error) {
             toast.error('Failed to save draft');
             console.error('Save error:', error);
         } finally {
-            setIsSaving(false);
+            setIsSavingAndExit(false);
         }
     };
+
+    // Keyboard shortcut for "Save and Continue" (Ctrl+S / Cmd+S)
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault(); // Prevent browser's default save dialog
+                if (!isSavingAndContinue && !isSavingAndExit && !isSubmitting) {
+                    handleSaveAndContinue();
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isSavingAndContinue, isSavingAndExit, isSubmitting]);
 
     // Modal handlers
     const handleSaveAndProceed = async () => {
@@ -2682,48 +2783,8 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
             });
         }
 
-        // Transform deed data based on identification type
-        const identificationType = allFormData.property_identification_type;
-        let deedData = undefined;
-
-        if (identificationType === 'deed') {
-            // Regular deed only
-            const hasDeedData = allFormData.deed_number && allFormData.deed_date;
-            if (hasDeedData) {
-                deedData = [{
-                    deed_type: allFormData.deed_type || null,
-                    deed_number: allFormData.deed_number,
-                    deed_date: allFormData.deed_date,
-                    notary_name: allFormData.notary_name || null,
-                    notary_location: allFormData.notary_location || null,
-                }];
-            }
-        } else if (identificationType === 'plan_and_deed') {
-            // HYBRID MODE: Include deed data alongside plan data
-            const hasDeedData = allFormData.deed_number && allFormData.deed_date;
-            if (hasDeedData) {
-                deedData = [{
-                    deed_type: allFormData.deed_type || null,
-                    deed_number: allFormData.deed_number,
-                    deed_date: allFormData.deed_date,
-                    notary_name: allFormData.notary_name || null,
-                    notary_location: allFormData.notary_location || null,
-                }];
-            }
-        } else if (identificationType === 'certificate_of_sale') {
-            // Certificate of Sale (stored as deed with fixed type)
-            const hasCertData = allFormData.certificate_number && allFormData.certificate_date;
-            if (hasCertData) {
-                deedData = [{
-                    deed_type: 'Certificate of Sale',  // Fixed value
-                    deed_number: allFormData.certificate_number,
-                    deed_date: allFormData.certificate_date,
-                    notary_name: allFormData.certificate_notary_name || null,
-                    notary_location: allFormData.certificate_notary_district || null,
-                }];
-            }
-        }
-        // If identificationType === 'plan', deedData stays undefined (no deed needed)
+        // Transform deed data using utility function
+        const deedData = transformDeedData(allFormData);
 
         // Transform comparable properties from frontend format to backend format
         let transformedComparableProperties = undefined;
@@ -2754,7 +2815,7 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
         const submissionData = {
             ...validatedData,  // Fields validated by Zod schema
             ...allFormData,    // ALL fields including those set via setValue()
-            property_identification_type: identificationType,
+            property_identification_type: allFormData.property_identification_type,
             deeds: deedData,   // Transform to array for backend
             has_deed_info: deedData ? 'yes' : 'no',
             comparable_properties: transformedComparableProperties,  // Use transformed data
@@ -2866,8 +2927,7 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
             );
             case 9: return <ApplicantPurposeStep {...stepProps} />;
             case 10: return <AdditionalDetailsStep {...stepProps} />;
-            case 11: return <InvoiceDataStep formMethods={formMethods} isMultiProperty={false} />;
-            case 12: return (
+            case 11: return (
                 <ValuationSection
                     data={allValues}
                     onChange={(updates) => {
@@ -2876,8 +2936,10 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
                         });
                     }}
                     buildings={allValues.buildings || []}
+                    valuation_type={allValues.valuation_type}
                 />
             );
+            case 12: return <InvoiceDataStep formMethods={formMethods} isMultiProperty={false} />;
             case 13: return (
                 <CertificationSection
                     data={allValues}
@@ -3074,7 +3136,29 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
                                 </div>
 
                                 <div className="flex gap-3">
-                                    {/* Save & Exit button - Different behavior for multi-property vs standalone */}
+                                    {/* Save and Continue button - Primary (filled) */}
+                                    {!isEmbeddedInMultiProperty && (
+                                        <Button
+                                            type="button"
+                                            onClick={handleSaveAndContinue}
+                                            disabled={isSavingAndContinue || isSavingAndExit || isSubmitting}
+                                            className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-500 to-cyan-600 hover:from-blue-600 hover:to-cyan-700 text-white font-semibold rounded-2xl shadow-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            {isSavingAndContinue ? (
+                                                <>
+                                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
+                                                    Saving...
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Save className="h-5 w-5 mr-2" />
+                                                    Save and Continue
+                                                </>
+                                            )}
+                                        </Button>
+                                    )}
+
+                                    {/* Save & Exit button - Secondary (outline) */}
                                     {isEmbeddedInMultiProperty && onSaveProperty ? (
                                         <Button
                                             type="button"
@@ -3090,12 +3174,13 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
                                         <Button
                                             type="button"
                                             onClick={handleSaveAndExit}
-                                            disabled={isSaving}
-                                            className="flex items-center px-6 py-3 bg-gradient-to-r from-blue-500 to-cyan-600 hover:from-blue-600 hover:to-cyan-700 text-white font-semibold rounded-2xl shadow-lg transition-all duration-200"
+                                            variant="outline"
+                                            disabled={isSavingAndContinue || isSavingAndExit || isSubmitting}
+                                            className="flex items-center gap-2 px-6 py-3 border-2 border-blue-500 text-blue-600 hover:bg-blue-50 font-semibold rounded-2xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
                                         >
-                                            {isSaving ? (
+                                            {isSavingAndExit ? (
                                                 <>
-                                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
+                                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2" />
                                                     Saving...
                                                 </>
                                             ) : (

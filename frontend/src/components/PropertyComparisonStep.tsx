@@ -117,7 +117,7 @@ const PropertyComparisonStep: React.FC<PropertyComparisonStepProps> = ({
                   <td className="py-4 px-4">
                     <div>
                       <div className="font-semibold text-gray-900">
-                        {property.property_lot_description || `Property ${index + 1}`}
+                        {property.lot_number || property.property_lot_description || `Property ${index + 1}`}
                       </div>
                       {property.plan_number && (
                         <div className="text-sm text-gray-500">Plan: {property.plan_number}</div>

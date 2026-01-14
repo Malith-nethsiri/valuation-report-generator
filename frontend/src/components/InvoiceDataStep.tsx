@@ -55,7 +55,7 @@ const InvoiceDataStep: React.FC<InvoiceDataStepProps> = ({ formMethods, properti
 
       properties.forEach((prop: any, index: number) => {
         // Access nested data fields correctly
-        const lotDesc = prop.data?.property_lot_description || '';
+        const lotDesc = prop.data?.lot_number || prop.data?.property_lot_description || '';
         const planNo = prop.data?.plan_number || '';
 
         console.log(`[Invoice Auto-populate] Property ${index + 1}:`, {

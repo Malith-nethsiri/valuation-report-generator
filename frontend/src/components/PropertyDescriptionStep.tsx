@@ -230,6 +230,7 @@ const OCCUPIER_RELATIONSHIPS = [
   { value: 'tenant', label: 'Tenant' },
   { value: 'caretaker', label: 'Caretaker' },
   { value: 'family_member', label: 'Family Member' },
+  { value: 'vacant', label: 'Vacant' },
 ];
 
 type TabType = 'land' | 'building';
@@ -239,7 +240,7 @@ interface Building {
   building_name: string;
   building_type: string;
   stories: number;
-  age_description: string;
+  building_age: number;
   condition: string;
   roof_types: string[];
   roof_description: string;
@@ -303,9 +304,18 @@ export const PropertyDescriptionStep: React.FC<PropertyDescriptionStepProps> = (
   const formPropertyPhotos = watch('property_photos');
 
   // Normalize building data to ensure all required properties exist
-  const normalizeBuilding = (building: Building): Building => {
+  const normalizeBuilding = (building: any): Building => {
+    // Migrate old age_description (string) to building_age (number)
+    let buildingAge = building.building_age;
+    if (buildingAge === undefined && building.age_description) {
+      // Try to extract numeric value from old text field (e.g., "about 10 years old" -> 10)
+      const match = building.age_description.match(/\d+/);
+      buildingAge = match ? parseInt(match[0], 10) : 0;
+    }
+
     return {
       ...building,
+      building_age: buildingAge || 0,
       rooms: building.rooms || [],
       floors: building.floors || [],
       building_photos: building.building_photos || [],
@@ -318,7 +328,19 @@ export const PropertyDescriptionStep: React.FC<PropertyDescriptionStepProps> = (
 
   useEffect(() => {
     if (formBuildings && Array.isArray(formBuildings) && formBuildings.length > 0) {
-      setBuildings(formBuildings.map(normalizeBuilding));
+      const normalized = formBuildings.map(normalizeBuilding);
+      setBuildings(normalized);
+      // CRITICAL: Sync normalized data back to form state so it gets submitted correctly
+      setValue('buildings', normalized);
+
+      // Initialize floorsExpanded to true for all buildings with floors
+      const initialFloorsExpanded: {[buildingId: string]: boolean} = {};
+      normalized.forEach(building => {
+        if (building.floors && building.floors.length > 0) {
+          initialFloorsExpanded[building.id] = true;
+        }
+      });
+      setFloorsExpanded(initialFloorsExpanded);
     }
   }, []);
 
@@ -439,8 +461,10 @@ export const PropertyDescriptionStep: React.FC<PropertyDescriptionStepProps> = (
       building_name: '',
       building_type: 'residential',
       stories: 1,
-      age_description: '',
+      building_age: 0,
       condition: 'fair',
+      occupier_name: '',
+      occupier_relationship: '',
       roof_types: [],
       roof_description: '',
       wall_types: [],
@@ -459,6 +483,12 @@ export const PropertyDescriptionStep: React.FC<PropertyDescriptionStepProps> = (
     setBuildings(updated);
     setValue('buildings', updated);
     setExpandedBuilding(newBuilding.id);
+
+    // Initialize floorsExpanded to true for new building
+    setFloorsExpanded(prev => ({
+      ...prev,
+      [newBuilding.id]: true
+    }));
   };
 
   // Remove building
@@ -522,6 +552,15 @@ export const PropertyDescriptionStep: React.FC<PropertyDescriptionStepProps> = (
     return summary;
   };
 
+  // Copy occupier information from first building to target building
+  const copyOccupierFromFirstBuilding = (targetBuildingId: string) => {
+    if (buildings.length === 0) return;
+
+    const firstBuilding = buildings[0];
+    updateBuilding(targetBuildingId, 'occupier_name', firstBuilding.occupier_name || '');
+    updateBuilding(targetBuildingId, 'occupier_relationship', firstBuilding.occupier_relationship || '');
+  };
+
   // NEW: Update nested construction material fields
   const updateBuildingConstructionMaterial = (buildingId: string, section: string, field: string, value: any) => {
     const updated = buildings.map(b => {
@@ -579,7 +618,7 @@ export const PropertyDescriptionStep: React.FC<PropertyDescriptionStepProps> = (
         const floorName = floorNum === 1 ? 'Ground Floor' :
                          floorNum === 2 ? 'First Floor' :
                          floorNum === 3 ? 'Second Floor' : `Floor ${floorNum}`;
-        const updatedFloors = [...b.floors, { floor_name: floorName, floor_area: 0, rooms: [] }];
+        const updatedFloors = [...b.floors, { floor_name: floorName, floor_area: 0 }];
         // Calculate total floor area
         const total_floor_area = updatedFloors.reduce((sum, floor) => sum + (floor.floor_area || 0), 0);
         return {
@@ -1504,33 +1543,6 @@ export const PropertyDescriptionStep: React.FC<PropertyDescriptionStepProps> = (
               </div>
             )}
 
-            {/* Occupier Information - Hidden for bare land */}
-            {!isBareLand && (
-              <div className="border-t border-gray-200 pt-6 mt-6">
-                <h4 className="text-lg font-semibold text-gray-900 mb-4">Occupier Information</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="occupier_name">Occupier Name</Label>
-                    <Input
-                      {...register('occupier_name')}
-                      placeholder="e.g., Mrs. Prema Nandage Sunitha Kumari Jayasinghe"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="occupier_relationship">Relationship</Label>
-                    <select
-                      {...register('occupier_relationship')}
-                      className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                    >
-                      <option value="">Select relationship...</option>
-                      {OCCUPIER_RELATIONSHIPS.map(opt => (
-                        <option key={opt.value} value={opt.value}>{opt.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
         )}
 
@@ -1629,11 +1641,14 @@ export const PropertyDescriptionStep: React.FC<PropertyDescriptionStepProps> = (
                             </select>
                           </div>
                           <div>
-                            <Label>Age</Label>
+                            <Label>Age (Years)</Label>
                             <Input
-                              value={building.age_description}
-                              onChange={(e) => updateBuilding(building.id, 'age_description', e.target.value)}
-                              placeholder="e.g., about 10 years old"
+                              type="number"
+                              value={building.building_age || ''}
+                              onChange={(e) => updateBuilding(building.id, 'building_age', parseInt(e.target.value) || 0)}
+                              placeholder="e.g., 10"
+                              min="0"
+                              max="200"
                             />
                           </div>
                           <div>
@@ -1647,6 +1662,50 @@ export const PropertyDescriptionStep: React.FC<PropertyDescriptionStepProps> = (
                                 <option key={opt.value} value={opt.value}>{opt.label}</option>
                               ))}
                             </select>
+                          </div>
+                        </div>
+
+                        {/* Occupier Information - Per Building */}
+                        <div className="border-t border-gray-200 pt-4 mt-4">
+                          <h5 className="text-md font-semibold text-gray-900 mb-3">Occupier Information</h5>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <Label htmlFor={`occupier_name_${building.id}`}>Occupier Name *</Label>
+                              <Input
+                                id={`occupier_name_${building.id}`}
+                                value={building.occupier_name || ''}
+                                onChange={(e) => updateBuilding(building.id, 'occupier_name', e.target.value)}
+                                placeholder="e.g., Mrs. Prema Nandage Sunitha Kumari Jayasinghe"
+                                required
+                              />
+                            </div>
+                            <div>
+                              <Label htmlFor={`occupier_relationship_${building.id}`}>Relationship *</Label>
+                              <div className="flex gap-2">
+                                <select
+                                  id={`occupier_relationship_${building.id}`}
+                                  value={building.occupier_relationship || ''}
+                                  onChange={(e) => updateBuilding(building.id, 'occupier_relationship', e.target.value)}
+                                  className="flex-1 px-4 py-3 bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                                  required
+                                >
+                                  <option value="">Select relationship...</option>
+                                  {OCCUPIER_RELATIONSHIPS.map(opt => (
+                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                  ))}
+                                </select>
+                                {index > 0 && (
+                                  <Button
+                                    type="button"
+                                    onClick={() => copyOccupierFromFirstBuilding(building.id)}
+                                    className="bg-blue-600 hover:bg-blue-700 text-white whitespace-nowrap px-3"
+                                    title="Copy occupier from first building"
+                                  >
+                                    Copy from 1st
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
                           </div>
                         </div>
                         {/* Number of Floors and Total Floor Area moved to Floor Generation section */}

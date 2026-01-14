@@ -40,7 +40,8 @@ export interface PropertyInReport {
     data: {
         property_village?: string;
         property_district?: string;
-        property_lot_description?: string;
+        lot_number?: string;
+        property_lot_description?: string;  // deprecated
         plan_number?: string;
         [key: string]: any;
     };
@@ -106,15 +107,16 @@ export const PropertyMiniDashboard: React.FC<PropertyMiniDashboardProps> = ({
 
     // Get property display address
     const getPropertyAddress = (property: PropertyInReport) => {
-        const { property_village, property_district, property_lot_description, plan_number } = property.data;
+        const { property_village, property_district, lot_number, property_lot_description, plan_number } = property.data;
 
         if (property_village || property_district) {
             return `${property_village || 'Unknown'}${property_district ? ', ' + property_district : ''}`;
         }
 
-        if (property_lot_description || plan_number) {
-            return `${property_lot_description ? 'Lot ' + property_lot_description : ''}${
-                plan_number ? (property_lot_description ? ', ' : '') + 'Plan ' + plan_number : ''
+        const lotNum = lot_number || property_lot_description;
+        if (lotNum || plan_number) {
+            return `${lotNum ? 'Lot ' + lotNum : ''}${
+                plan_number ? (lotNum ? ', ' : '') + 'Plan ' + plan_number : ''
             }`;
         }
 

@@ -354,7 +354,7 @@ async def generate_building_narrative(
     construction_materials: Optional[Dict] = None,
     utilities_services: Optional[Dict] = None,
     total_floor_area: Optional[float] = None,
-    age_description: Optional[str] = None,
+    building_age: Optional[int] = None,
     condition: Optional[str] = None,
     roof_types: Optional[List[str]] = None,
     wall_types: Optional[List[str]] = None,
@@ -380,8 +380,9 @@ async def generate_building_narrative(
         if total_floor_area:
             context_parts.append(f"Total Area: {total_floor_area} sq ft")
 
-        if age_description:
-            context_parts.append(f"Age: {age_description}")
+        if building_age is not None and building_age > 0:
+            year_word = "year" if building_age == 1 else "years"
+            context_parts.append(f"Age: {building_age} {year_word}")
 
         if condition:
             context_parts.append(f"Condition: {condition}")

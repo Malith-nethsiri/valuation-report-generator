@@ -49,13 +49,13 @@ export const AutocompleteInput: React.FC<AutocompleteInputProps> = ({
   // Filter suggestions based on input
   useEffect(() => {
     if (!inputValue.trim()) {
-      setFilteredSuggestions(suggestions.slice(0, 8));
+      setFilteredSuggestions(suggestions);
       return;
     }
 
     const filtered = suggestions.filter(suggestion =>
       suggestion.toLowerCase().includes(inputValue.toLowerCase())
-    ).slice(0, 8);
+    );
 
     setFilteredSuggestions(filtered);
     setHighlightedIndex(0);

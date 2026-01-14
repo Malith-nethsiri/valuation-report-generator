@@ -38,6 +38,8 @@ import MultiStepForm from './MultiStepForm';
 import InvoiceDataStep from './InvoiceDataStep';
 import { validateSriLankanNIC, validatePassport } from '../utils/validators';
 import { reportApi, api } from '../services/api';
+import SaveProgressModal from './SaveProgressModal';
+import { useNavigate } from 'react-router-dom';
 
 interface MultiPropertyRedesignedStepFormProps {
     onSubmit: (data: any) => Promise<void>;
@@ -89,8 +91,8 @@ const steps = [
 const step1Schema = z.object({
     applicant_title: z.string().min(1, 'Please select a title'),
     applicant_full_name: z.string().min(2, 'Please enter the applicant full name'),
-    applicant_id_type: z.string().min(1, 'Please select ID type'),
-    applicant_id_number: z.string().min(1, 'Please enter the ID number'),
+    applicant_id_type: z.string().optional(),
+    applicant_id_number: z.string().optional(),
     applicant_address_line1: z.string().min(5, 'Please enter address line 1'),
     applicant_address_line2: z.string().optional(),
     applicant_district: z.string().min(2, 'Please enter the district'),
@@ -98,7 +100,15 @@ const step1Schema = z.object({
     applicant_country: z.string().min(2, 'Please enter the country').default('Sri Lanka'),
     applicant_contact_number: z.string().nullable().optional(), // Optional contact number
     valuation_type: z.string().min(1, 'Please enter the valuation type'),
-    valuation_purpose: z.string().min(1, 'Purpose of valuation is required'),
+    valuation_purpose: z
+        .string()
+        .min(1, 'Purpose of valuation is required')
+        .refine((val) => val.trim().length > 0, {
+            message: 'Purpose cannot be only whitespace'
+        })
+        .refine((val) => val.length <= 200, {
+            message: 'Purpose must be 200 characters or less'
+        }),
     property_ownership: z.string().optional(),
     property_type_valued: z.string().min(1, 'Please enter the property type'),
     has_additional_owner: z.string().optional(),
@@ -114,6 +124,59 @@ const step1Schema = z.object({
     {
         message: 'Please enter the additional owner names',
         path: ['additional_owner_names'],
+    }
+).refine(
+    (data) => {
+        // Validate ID format only if user provides data
+        if (!data.applicant_id_type || !data.applicant_id_number) {
+            return true; // Empty is valid (optional)
+        }
+
+        const idType = data.applicant_id_type;
+        const idNumber = data.applicant_id_number;
+
+        // Validate based on ID type
+        if (idType === 'NIC') {
+            const result = validateSriLankanNIC(idNumber);
+            return result.isValid;
+        } else if (idType === 'Passport') {
+            const result = validatePassport(idNumber);
+            return result.isValid;
+        } else if (idType === 'Other') {
+            // For "Other", just check minimum length
+            return idNumber.length >= 3;
+        }
+
+        return true;
+    },
+    (data) => {
+        // Dynamic error message based on ID type
+        const idType = data.applicant_id_type;
+        const idNumber = data.applicant_id_number;
+
+        if (idType === 'NIC') {
+            const result = validateSriLankanNIC(idNumber);
+            return {
+                message: result.error || 'Invalid NIC format. Use old format (9 digits + V/X) or new format (12 digits)',
+                path: ['applicant_id_number'],
+            };
+        } else if (idType === 'Passport') {
+            const result = validatePassport(idNumber);
+            return {
+                message: result.error || 'Passport must be 6-12 alphanumeric characters',
+                path: ['applicant_id_number'],
+            };
+        } else if (idType === 'Other') {
+            return {
+                message: 'ID number must be at least 3 characters long',
+                path: ['applicant_id_number'],
+            };
+        }
+
+        return {
+            message: 'Invalid ID number',
+            path: ['applicant_id_number'],
+        };
     }
 );
 
@@ -181,6 +244,13 @@ export const MultiPropertyRedesignedStepForm: React.FC<MultiPropertyRedesignedSt
     const [editingPropertyId, setEditingPropertyId] = useState<string | number | null>(null);
     const [showDraftWarning, setShowDraftWarning] = useState(false);
     const [draftWarningData, setDraftWarningData] = useState<{ draftCount: number; completedCount: number } | null>(null);
+
+    // Save modal state
+    const [showSaveModal, setShowSaveModal] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    const [saveError, setSaveError] = useState<string | null>(null);
+
+    const navigate = useNavigate();
 
     // Form for common data (Steps 1 & 2)
     const formMethods = useForm({
@@ -275,6 +345,22 @@ export const MultiPropertyRedesignedStepForm: React.FC<MultiPropertyRedesignedSt
 
         console.log('[MultiPropertyRedesignedStepForm] ✅ Finished loading initial data');
     }, [initialData, isEditMode, reset]);
+
+    // Keyboard shortcut for save (Ctrl+S / Cmd+S)
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            // Ctrl+S (Windows/Linux) or Cmd+S (Mac)
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault(); // Prevent browser's default save dialog
+                if (!isSaving && onSaveDraft) {
+                    handleSaveDraft();
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isSaving, onSaveDraft]);
 
     // Property CRUD handlers
     const handleEditProperty = (propertyId: string | number) => {
@@ -530,9 +616,14 @@ export const MultiPropertyRedesignedStepForm: React.FC<MultiPropertyRedesignedSt
         }
     };
 
-    // Draft saving
+    // Draft saving with modal
     const handleSaveDraft = async () => {
         if (!onSaveDraft) return;
+
+        // Open modal immediately and start saving
+        setShowSaveModal(true);
+        setIsSaving(true);
+        setSaveError(null);
 
         console.log('[handleSaveDraft] Starting draft save...');
         console.log('[handleSaveDraft] Current properties state:', properties);
@@ -567,7 +658,7 @@ export const MultiPropertyRedesignedStepForm: React.FC<MultiPropertyRedesignedSt
             await onSaveDraft(completeData);
             console.log('[handleSaveDraft] ✅ Draft saved successfully');
 
-            // ✅ NEW: Reload report to sync property IDs with database
+            // ✅ Reload report to sync property IDs with database
             if (reportId) {
                 try {
                     const updatedReport = await reportApi.getReport(reportId);
@@ -587,7 +678,6 @@ export const MultiPropertyRedesignedStepForm: React.FC<MultiPropertyRedesignedSt
                     }
 
                     // ✅ Update form fields with the saved data from database
-                    // This ensures fields like contact_number, request_type, etc. persist correctly
                     const { properties: _, ...reportFields } = updatedReport;
                     reset(reportFields, { keepDefaultValues: false });
                     console.log('[handleSaveDraft] Form fields updated with saved data');
@@ -597,11 +687,28 @@ export const MultiPropertyRedesignedStepForm: React.FC<MultiPropertyRedesignedSt
                 }
             }
 
+            // Success: Show toast and enable modal buttons
+            setIsSaving(false);
             toast.success('Draft saved successfully');
-        } catch (error) {
+        } catch (error: any) {
             console.error('[handleSaveDraft] ❌ Draft save error:', error);
+            // Error: Close modal and show error toast
+            setShowSaveModal(false);
+            setIsSaving(false);
+            setSaveError(error.message || 'Unknown error');
             toast.error('Failed to save draft');
         }
+    };
+
+    // Modal handlers
+    const handleSaveModalContinue = () => {
+        setShowSaveModal(false);
+        // Stay on current page - user continues editing
+    };
+
+    const handleSaveModalExit = () => {
+        setShowSaveModal(false);
+        navigate('/dashboard');
     };
 
     // If editing a property, show the property edit form
@@ -759,10 +866,20 @@ export const MultiPropertyRedesignedStepForm: React.FC<MultiPropertyRedesignedSt
                                 <Button
                                     onClick={handleSaveDraft}
                                     variant="outline"
-                                    className="flex items-center gap-2 border-blue-500 text-blue-600 hover:bg-blue-50"
+                                    disabled={isSaving}
+                                    className="flex items-center gap-2 border-blue-500 text-blue-600 hover:bg-blue-50 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
-                                    <Save className="h-4 w-4" />
-                                    Save Draft
+                                    {isSaving ? (
+                                        <>
+                                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent" />
+                                            Saving...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Save className="h-4 w-4" />
+                                            Save Draft
+                                        </>
+                                    )}
                                 </Button>
                             )}
 
@@ -840,6 +957,15 @@ export const MultiPropertyRedesignedStepForm: React.FC<MultiPropertyRedesignedSt
                     </div>
                 </div>
             )}
+
+            {/* Save Progress Modal */}
+            <SaveProgressModal
+                isOpen={showSaveModal}
+                isSaving={isSaving}
+                saveError={saveError}
+                onContinue={handleSaveModalContinue}
+                onExit={handleSaveModalExit}
+            />
         </div>
     );
 };

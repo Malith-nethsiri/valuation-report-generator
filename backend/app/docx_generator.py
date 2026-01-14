@@ -1120,7 +1120,7 @@ def generate_land_values_paragraph(comparables: List[dict]) -> str:
     ]
 
     if not valid_comparables:
-        return "Insufficient comparable property data available for market analysis."
+        return ""  # Return empty string - let market analysis stand alone
 
     # Handle single comparable specially
     if len(valid_comparables) == 1:
@@ -1221,6 +1221,281 @@ def generate_land_values_paragraph(comparables: List[dict]) -> str:
     return " ".join(paragraphs)
 
 
+def generate_simplified_certification_text(
+    valuer_name: str,
+    valuer_designation: str,
+    lot_number: Optional[str],
+    plan_number: Optional[str],
+    plan_date: Optional[str],
+    licensed_surveyor_name: Optional[str],
+    deeds: Optional[List[dict]],
+    property_identification_type: Optional[str]
+) -> str:
+    """
+    Generate simplified single-paragraph certification text.
+
+    New simplified format (replaces old multi-paragraph format):
+    "I, [Valuer Name], [Designation], do hereby certify that the property
+    inspected by me and valued above is identical to the property depicted as
+    [Lot X in] Plan No [number] dated [date] made by [Surveyor], Licensed Surveyor."
+
+    Key behaviors:
+    - If lot_number provided and plan exists: "...property depicted as Lot {lot_number} in Plan No..."
+    - If no lot_number: "...property depicted as Plan No..."
+    - Always use "property depicted as" (not "land depicted as")
+    - Only mention plan (not deed) in certification
+    - If only deed (no plan): "...property described in {deed_type} No..."
+    - If lot_number exists but no plan_number: skip lot, use deed/generic
+
+    Args:
+        valuer_name: Name of the valuer
+        valuer_designation: Professional designation (e.g., "Chartered Valuer")
+        lot_number: Lot number (e.g., "Lot 15", "Lots 1 & 2")
+        plan_number: Survey plan number
+        plan_date: Survey plan date
+        licensed_surveyor_name: Name of surveyor
+        deeds: List of deed dictionaries
+        property_identification_type: Type of identification
+
+    Returns:
+        Formatted single-paragraph certification text
+    """
+    # Start with valuer identification
+    cert_text = f"I, {valuer_name}, {valuer_designation}, do hereby certify that the property inspected by me and valued above is identical to "
+
+    # Determine property identification string
+    property_id = None
+
+    # Infer identification type if not provided (backward compatibility)
+    if not property_identification_type:
+        if plan_number and deeds and len(deeds) > 0:
+            property_identification_type = "plan_and_deed"
+        elif plan_number:
+            property_identification_type = "plan"
+        elif deeds and len(deeds) > 0:
+            property_identification_type = "deed"
+
+    # Build property identification based on type
+    if property_identification_type in ["plan", "plan_and_deed"]:
+        # Plan-based identification (ignore deed as per requirements)
+        if plan_number:
+            # Check if we should include lot number
+            # Only include lot if both lot_number and plan_number exist
+            if lot_number and lot_number.strip():
+                # Format with lot number
+                plan_ref = format_no_field("Plan", plan_number)
+                property_id = f"the property depicted as Lot {lot_number} in {plan_ref}"
+            else:
+                # Format without lot number
+                plan_ref = format_no_field("Plan", plan_number)
+                property_id = f"the property depicted as {plan_ref}"
+
+            # Add plan date
+            if plan_date:
+                property_id += f" dated {plan_date}"
+
+            # Add surveyor
+            if licensed_surveyor_name:
+                property_id += f" made by {licensed_surveyor_name}, Licensed Surveyor"
+
+    # If no plan, fall back to deed
+    if not property_id and property_identification_type in ["deed", "plan_and_deed", "certificate_of_sale"]:
+        # Deed-based identification (fallback)
+        has_deed = isinstance(deeds, list) and len(deeds) > 0
+        if has_deed:
+            deed = deeds[0]
+            deed_number = deed.get('deed_number', '') if isinstance(deed, dict) else getattr(deed, 'deed_number', '')
+            deed_type = deed.get('deed_type', 'Deed') if isinstance(deed, dict) else getattr(deed, 'deed_type', 'Deed')
+            deed_date = deed.get('deed_date', '') if isinstance(deed, dict) else getattr(deed, 'deed_date', '')
+
+            if deed_number:
+                property_id = f"the property described in {deed_type} No. {deed_number}"
+                if deed_date:
+                    property_id += f" dated {deed_date}"
+
+    # Final fallback if no identification data
+    if not property_id:
+        property_id = "the property described in this report"
+
+    # Complete the certification text
+    cert_text += property_id + "."
+
+    return cert_text
+
+
+# DEPRECATED: Keep for backward compatibility with old code
+def generate_certificate_of_identity_text(
+    property_identification_type: Optional[str],
+    plan_number: Optional[str],
+    plan_date: Optional[str],
+    deeds: Optional[List[dict]],
+    licensed_surveyor_name: Optional[str] = None
+) -> Optional[str]:
+    """
+    DEPRECATED: Use generate_simplified_certification_text instead.
+
+    This function is kept for backward compatibility only.
+    Generates old-style Certificate of Identity text.
+    """
+    if not property_identification_type:
+        # Backward compatibility: infer type from available data
+        if plan_number and deeds and len(deeds) > 0:
+            property_identification_type = "plan_and_deed"
+        elif plan_number:
+            property_identification_type = "plan"
+        elif deeds and len(deeds) > 0:
+            property_identification_type = "deed"
+        else:
+            return None
+
+    # Base text
+    base_text = "I certify that the property inspected by me is identical to the property described in "
+
+    # Extract deed information if available
+    has_deed = isinstance(deeds, list) and len(deeds) > 0
+    deed_text = ""
+    if has_deed:
+        deed = deeds[0]
+        deed_number = deed.get('deed_number', '') if isinstance(deed, dict) else getattr(deed, 'deed_number', '')
+        deed_type = deed.get('deed_type', 'Deed') if isinstance(deed, dict) else getattr(deed, 'deed_type', 'Deed')
+        deed_date = deed.get('deed_date', '') if isinstance(deed, dict) else getattr(deed, 'deed_date', '')
+
+        if deed_number:
+            deed_text = f"{deed_type} No. {deed_number}"
+            if deed_date:
+                deed_text += f" dated {deed_date}"
+
+    # Generate text based on identification type
+    if property_identification_type == "plan":
+        if not plan_number:
+            return None
+        plan_ref = format_no_field("Plan", plan_number)
+        text = base_text + plan_ref
+        if plan_date:
+            text += f" dated {plan_date}"
+        if licensed_surveyor_name:
+            text += f" made by {licensed_surveyor_name}, Licensed Surveyor"
+        text += "."
+        return text
+
+    elif property_identification_type == "deed":
+        if not deed_text:
+            return None
+        return base_text + deed_text + "."
+
+    elif property_identification_type == "plan_and_deed":
+        if not deed_text and not plan_number:
+            return None
+
+        # If only one is available, use whichever exists
+        if not deed_text and plan_number:
+            plan_ref = format_no_field("Plan", plan_number)
+            text = base_text + plan_ref
+            if plan_date:
+                text += f" dated {plan_date}"
+            if licensed_surveyor_name:
+                text += f" made by {licensed_surveyor_name}, Licensed Surveyor"
+            text += "."
+            return text
+
+        if deed_text and not plan_number:
+            return base_text + deed_text + "."
+
+        # Both available - combine them
+        plan_ref = format_no_field("Plan", plan_number)
+        text = base_text + deed_text + " and identified in " + plan_ref
+        if plan_date:
+            text += f" dated {plan_date}"
+        if licensed_surveyor_name:
+            text += f" made by {licensed_surveyor_name}, Licensed Surveyor"
+        text += "."
+        return text
+
+    elif property_identification_type == "certificate_of_sale":
+        # Certificate of sale is similar to deed
+        if not deed_text:
+            return None
+        return base_text + deed_text + "."
+
+    # Unknown type or no data
+    return None
+
+
+def add_signature_block(
+    doc,
+    user,
+    valuer_name: Optional[str],
+    valuer_designation: Optional[str],
+    certification_date: Optional[str]
+):
+    """
+    Add a standardized signature block to the document.
+
+    Format:
+    - Spacing before signature
+    - Underline ("_" * 40) for signature
+    - Optional signature image (if user has one)
+    - Valuer name (bold, 9pt)
+    - Valuer designation (9pt)
+    - Certification date (9pt)
+
+    Args:
+        doc: Document object
+        user: User model instance
+        valuer_name: Name of valuer
+        valuer_designation: Professional designation
+        certification_date: Date of certification
+    """
+    # Add spacing before signature
+    doc.add_paragraph("\n")
+
+    # Signature line (underline)
+    sig_line = doc.add_paragraph("_" * 40)
+    sig_line.paragraph_format.space_before = Pt(24)
+    sig_line.paragraph_format.space_after = Pt(6)
+
+    # Add signature image if available
+    if hasattr(user, 'signature_image') and user.signature_image:
+        try:
+            response = requests.get(user.signature_image, timeout=10)
+            if response.status_code == 200:
+                sig_para = doc.add_paragraph()
+                sig_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                sig_para.paragraph_format.space_before = Pt(0)
+                sig_para.paragraph_format.space_after = Pt(6)
+                image_stream = BytesIO(response.content)
+                sig_para.add_run().add_picture(image_stream, width=Inches(2))
+        except Exception as e:
+            logger.warning(f"Failed to add signature image: {e}")
+
+    # Valuer name
+    if valuer_name:
+        p = doc.add_paragraph()
+        p.paragraph_format.space_before = Pt(0)
+        p.paragraph_format.space_after = Pt(2)
+        run = p.add_run(valuer_name)
+        run.font.bold = True
+        run.font.size = Pt(9)
+
+    # Valuer designation
+    if valuer_designation:
+        p = doc.add_paragraph(valuer_designation)
+        p.paragraph_format.space_before = Pt(0)
+        p.paragraph_format.space_after = Pt(2)
+        for run in p.runs:
+            run.font.size = Pt(9)
+
+    # Certification date
+    if certification_date:
+        p = doc.add_paragraph(certification_date)
+        p.paragraph_format.space_before = Pt(0)
+        p.paragraph_format.space_after = Pt(2)
+        for run in p.runs:
+            run.font.size = Pt(9)
+
+    doc.add_paragraph()
+
+
 def get_pronoun(title: Optional[str], ownership_text: Optional[str] = None) -> Dict[str, str]:
     """
     Determine pronouns based on title.
@@ -1258,9 +1533,10 @@ def generate_title_block(report: models.Report) -> str:
             id_type = "plan"
 
     # Generate title based on identification type
-    if id_type == "plan":
+    if id_type == "plan" or id_type == "plan_and_deed":
         # Plan-based title (original format)
-        lot_desc = report.property_lot_description or '[Lot Description]'
+        # For plan_and_deed: show plan info in header, deed info appears in certification section
+        lot_desc = report.lot_number or report.property_lot_description or '[Lot Number]'
 
         # Remove common prefixes that shouldn't be in lot description
         lot_desc_stripped = lot_desc.strip()
@@ -1287,8 +1563,47 @@ def generate_title_block(report: models.Report) -> str:
         surveyor = report.licensed_surveyor_name or '[Surveyor Name]'
         plan_info = f"made by {surveyor} Licensed Surveyor."
         lines.append(plan_info)
+
+    elif id_type == "deed":
+        # Deed-based title: show deed information
+        deed_type = "Deed"
+        deed_number = "[Deed Number]"
+        deed_date = "[Date]"
+
+        # Extract deed info from report.deeds JSON array (first deed)
+        if report.deeds and isinstance(report.deeds, list) and len(report.deeds) > 0:
+            first_deed = report.deeds[0]
+            deed_type = first_deed.get('deed_type', 'Deed')
+            deed_number = first_deed.get('deed_number', '[Deed Number]')
+            deed_date = first_deed.get('deed_date', '[Date]')
+        else:
+            logger.warning(f"[DOCX] Report {report.id} has deed identification type but no deed data")
+
+        # Format deed number with "No."
+        deed_number_formatted = format_no_field("", deed_number, include_label=False)
+        prop_desc = f"The Property Depicted as described in {deed_type} No. {deed_number_formatted} dated {deed_date}"
+        lines.append(prop_desc)
+
+    elif id_type == "certificate_of_sale":
+        # Certificate of sale title: show certificate information (stored as deed internally)
+        deed_number = "[Certificate Number]"
+        deed_date = "[Date]"
+
+        # Extract certificate info from report.deeds JSON array (certificate stored as deed internally)
+        if report.deeds and isinstance(report.deeds, list) and len(report.deeds) > 0:
+            first_deed = report.deeds[0]
+            deed_number = first_deed.get('deed_number', '[Certificate Number]')
+            deed_date = first_deed.get('deed_date', '[Date]')
+        else:
+            logger.warning(f"[DOCX] Report {report.id} has certificate_of_sale identification type but no deed data")
+
+        # Format certificate number with "No."
+        cert_number_formatted = format_no_field("", deed_number, include_label=False)
+        prop_desc = f"The Property Depicted as described in Certificate of Sale No. {cert_number_formatted} dated {deed_date}"
+        lines.append(prop_desc)
+
     else:
-        # Address-based title for deed/certificate (no plan info line)
+        # Fallback: Address-based title for old reports without identification type
         address = generate_smart_address(report) or '[Property Address]'
         prop_desc = f"The Property Depicted as {address}"
         lines.append(prop_desc)
@@ -2606,8 +2921,9 @@ def generate_multi_property_report_docx(report: models.Report, user: models.User
 
             # Description (Lot/Plan)
             desc = ""
-            if prop.property_lot_description:
-                desc = f"Lot {prop.property_lot_description}"
+            if prop.lot_number or prop.property_lot_description:
+                lot = prop.lot_number or prop.property_lot_description
+                desc = f"Lot {lot}"
             if prop.plan_number:
                 if desc:
                     desc += f", Plan {prop.plan_number}"
@@ -2745,9 +3061,9 @@ def generate_multi_property_report_docx(report: models.Report, user: models.User
 
             # Professional property description (NO "PROPERTY 1" header - removed per user request)
             # Format: "The Property Depicted as Lot [X] in Plan No: [Y]"
-            if prop.property_lot_description and prop.plan_number:
+            if (prop.lot_number or prop.property_lot_description) and prop.plan_number:
                 # Extract just the lot number/identifier (remove "Plan No" prefix if present)
-                lot_desc = prop.property_lot_description.strip()
+                lot_desc = (prop.lot_number or prop.property_lot_description).strip()
 
                 # Remove common prefixes that shouldn't be in lot description
                 prefixes_to_remove = ['plan no', 'plan no:', 'lot plan no', 'lot plan no:']
@@ -2965,7 +3281,7 @@ def _generate_property_sections(doc, prop, report, user):
             name_value.font.color.rgb = RGBColor(0, 0, 0)
 
         # Survey Plan Information
-        if prop.property_lot_description and prop.plan_number:
+        if (prop.lot_number or prop.property_lot_description) and prop.plan_number:
             plan_para = doc.add_paragraph()
             plan_para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
             plan_para.paragraph_format.space_before = Pt(0)
@@ -2977,7 +3293,7 @@ def _generate_property_sections(doc, prop, report, user):
             plan_label.font.color.rgb = RGBColor(0, 0, 0)
 
             # Extract just the lot number/identifier (remove "Plan No" prefix if present)
-            lot_desc = prop.property_lot_description.strip()
+            lot_desc = (prop.lot_number or prop.property_lot_description).strip()
 
             # Remove common prefixes that shouldn't be in lot description
             prefixes_to_remove = ['plan no', 'plan no:', 'lot plan no', 'lot plan no:']
@@ -3266,17 +3582,18 @@ def _generate_property_sections(doc, prop, report, user):
                         total_run.font.color.rgb = RGBColor(0, 0, 0)
 
             # === AGE AND CONDITION - USE SAME FORMAT AS STANDALONE ===
-            age_desc = building.get('age_description', '')
+            building_age = building.get('building_age')
             condition = building.get('condition', '')
-            if age_desc or condition:
+            if building_age or condition:
                 condition_labels = {
                     'excellent': 'excellent', 'good': 'good', 'fair': 'fair',
                     'poor': 'poor', 'dilapidated': 'dilapidated'
                 }
 
                 parts = []
-                if age_desc:
-                    parts.append(f"{age_desc} old")
+                if building_age is not None and building_age > 0:
+                    year_word = "year" if building_age == 1 else "years"
+                    parts.append(f"{building_age} {year_word} old")
                 if condition:
                     parts.append(f"condition is {condition_labels.get(condition, condition)}")
 
@@ -3286,8 +3603,32 @@ def _generate_property_sections(doc, prop, report, user):
             # === UTILITIES AND CONVENIENCES - UNIFIED SECTION ===
             render_utilities_and_conveniences(doc, building)
 
-            # === OCCUPATION (SENTENCE FORMAT WITH SUBHEADING) ===
-            if prop.occupier_name:
+            # === OCCUPATION (BUILDING-LEVEL) ===
+            # Primary: Use building-level occupier data
+            if building.get('occupier_name'):
+                relationship = building.get('occupier_relationship')
+
+                # Special case for vacant buildings
+                if relationship == 'vacant':
+                    occupier_text = "The building is currently vacant."
+                else:
+                    occupier_text = f"The building is occupied by {building.get('occupier_name')}"
+
+                    if relationship:
+                        rel_labels = {
+                            'owner': 'the owner',
+                            'tenant': 'a tenant',
+                            'family_member': 'a family member',
+                            'caretaker': 'caretaker'
+                        }
+                        occupier_text += f" who is {rel_labels.get(relationship, relationship)}."
+                    else:
+                        occupier_text += "."
+
+                add_inline_field(doc, "Occupation", occupier_text, space_after=Pt(6))
+
+            # Fallback: Support old reports with property-level occupier
+            elif prop.occupier_name:
                 occupier_text = f"The property is occupied by {prop.occupier_name}"
                 if prop.occupier_relationship:
                     rel_labels = {
@@ -3296,15 +3637,11 @@ def _generate_property_sections(doc, prop, report, user):
                         'family_member': 'a family member',
                         'caretaker': 'caretaker'
                     }
-                    occupier_text += f" who is {rel_labels.get(prop.occupier_relationship, prop.occupier_relationship)}"
-                occupier_text += "."
+                    occupier_text += f" who is {rel_labels.get(prop.occupier_relationship, prop.occupier_relationship)}."
+                else:
+                    occupier_text += "."
 
-                add_inline_field(
-                    doc,
-                    "Occupation",
-                    occupier_text,
-                    space_after=Pt(6)
-                )
+                add_inline_field(doc, "Occupation", occupier_text, space_after=Pt(6))
 
             # === BUILDING PHOTOS - USE SAME GRID TABLE FORMAT AS STANDALONE ===
             building_photos = building.get('building_photos', [])
@@ -3619,7 +3956,8 @@ def _generate_property_sections(doc, prop, report, user):
 
     # ===== 7.0 LAND VALUES IN THE AREA (CONDITIONAL) =====
     comparables = safe_get_json_field(prop, 'comparable_properties', [])
-    if comparables:
+    # Show section if either comparables OR market analysis exists
+    if comparables or prop.land_market_analysis:
         add_section_heading(doc, f"{section_num}.0", "LAND VALUES IN THE AREA")
         section_num += 1
 
@@ -3757,8 +4095,12 @@ def _generate_property_sections(doc, prop, report, user):
         add_value_rounded_line(doc, market_value_rounded)
 
         # === NEW: SUMMARY OF THE VALUATION (previously missing) ===
-        forced_sale_percentage = prop.valuation_forced_sale_percentage or 90
-        forced_sale_value = market_value_rounded * (forced_sale_percentage / 100)
+        # Check if valuation type is "Forced Sale Value" to show forced sale fields
+        show_forced_sale = report.valuation_type == "Forced Sale Value"
+
+        if show_forced_sale:
+            forced_sale_percentage = prop.valuation_forced_sale_percentage or 90
+            forced_sale_value = market_value_rounded * (forced_sale_percentage / 100)
 
         p = doc.add_paragraph()
         run = p.add_run("SUMMARY OF THE VALUATION")
@@ -3778,15 +4120,16 @@ def _generate_property_sections(doc, prop, report, user):
         run.font.size = Pt(10)
         p.paragraph_format.space_after = Pt(3)
 
-        # Forced Sale Value
-        p = doc.add_paragraph()
-        tab_stops = p.paragraph_format.tab_stops
-        tab_stops.add_tab_stop(Inches(3.5), WD_TAB_ALIGNMENT.LEFT)
-        tab_stops.add_tab_stop(Inches(3.7), WD_TAB_ALIGNMENT.LEFT)
-        text = f"Forced Sale Value of the property\t:\t{format_currency(forced_sale_value)}"
-        run = p.add_run(text)
-        run.font.size = Pt(10)
-        p.paragraph_format.space_after = Pt(3)
+        # Forced Sale Value - only show when valuation type is "Forced Sale Value"
+        if show_forced_sale:
+            p = doc.add_paragraph()
+            tab_stops = p.paragraph_format.tab_stops
+            tab_stops.add_tab_stop(Inches(3.5), WD_TAB_ALIGNMENT.LEFT)
+            tab_stops.add_tab_stop(Inches(3.7), WD_TAB_ALIGNMENT.LEFT)
+            text = f"Forced Sale Value of the property\t:\t{format_currency(forced_sale_value)}"
+            run = p.add_run(text)
+            run.font.size = Pt(10)
+            p.paragraph_format.space_after = Pt(3)
 
         # Insurance Value (NEW INLINE FORMAT)
         if buildings_insurance_values:
@@ -3802,54 +4145,55 @@ def _generate_property_sections(doc, prop, report, user):
 
             doc.add_paragraph()  # Final spacing
 
-    # ===== 9.0 CERTIFICATION SECTION (PER-PROPERTY) =====
+    # ===== 9.0 CERTIFICATION SECTION (SIMPLIFIED FORMAT - REPORT-LEVEL) =====
     add_section_heading(doc, f"{section_num}.0", "CERTIFICATION")
+    section_num += 1
 
-    # Use report-level certification (properties currently don't have their own certification data)
-    cert_text = report.certification_text or "I hereby certify that I have personally inspected this property and the valuation stated herein represents my professional opinion of the market value as of the date of inspection."
+    # Use report-level certification - simplified format
+    if report.certification_text:
+        # Use custom certification text if provided (override mode)
+        cert_text = report.certification_text.strip()
+    elif report.certification_valuer_name and report.certification_valuer_designation:
+        # Auto-generate simplified certification using report-level data
+        # Multi-property uses single unified certification
+        # Get lot_number, fallback to deprecated property_lot_description
+        lot_num = report.lot_number or report.property_lot_description
 
+        # Get plan_number, fallback to deprecated certificate_survey_plan_ref
+        plan_ref = report.plan_number or report.certificate_survey_plan_ref
+        plan_date = report.plan_date or report.certificate_survey_plan_date
+
+        cert_text = generate_simplified_certification_text(
+            valuer_name=report.certification_valuer_name,
+            valuer_designation=report.certification_valuer_designation,
+            lot_number=lot_num,
+            plan_number=plan_ref,
+            plan_date=plan_date,
+            licensed_surveyor_name=report.licensed_surveyor_name,
+            deeds=safe_get_json_field(report, 'deeds', []),
+            property_identification_type=report.property_identification_type
+        )
+    else:
+        # Fallback if no valuer info
+        cert_text = "I hereby certify that I have personally inspected this property and the valuation stated herein represents my professional opinion of the market value as of the date of inspection."
+
+    # Render certification paragraph
     cert_para = doc.add_paragraph()
     cert_para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
     cert_para.paragraph_format.line_spacing = 0.9
+    cert_para.paragraph_format.space_after = Pt(12)
     cert_run = cert_para.add_run(cert_text)
     cert_run.font.size = Pt(9)
     cert_run.font.color.rgb = RGBColor(0, 0, 0)
 
-    doc.add_paragraph()  # Spacing
-
-    # Valuer signature
-    if hasattr(user, 'signature_image') and user.signature_image:
-        try:
-            response = requests.get(user.signature_image, timeout=10)
-            if response.status_code == 200:
-                sig_para = doc.add_paragraph()
-                sig_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
-                image_stream = BytesIO(response.content)
-                sig_para.add_run().add_picture(image_stream, width=Inches(2))
-        except Exception as e:
-            logger.warning(f"Failed to add signature image: {e}")
-
-    # Valuer details
-    if report.certification_valuer_name:
-        name_para = doc.add_paragraph()
-        name_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        name_run = name_para.add_run(report.certification_valuer_name)
-        name_run.font.size = Pt(9)
-        name_run.font.color.rgb = RGBColor(0, 0, 0)
-
-    if report.certification_valuer_designation:
-        desig_para = doc.add_paragraph()
-        desig_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        desig_run = desig_para.add_run(report.certification_valuer_designation)
-        desig_run.font.size = Pt(9)
-        desig_run.font.color.rgb = RGBColor(0, 0, 0)
-
-    if report.certification_date:
-        date_para = doc.add_paragraph()
-        date_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        date_run = date_para.add_run(report.certification_date)
-        date_run.font.size = Pt(9)
-        date_run.font.color.rgb = RGBColor(0, 0, 0)
+    # Signature block
+    add_signature_block(
+        doc=doc,
+        user=user,
+        valuer_name=report.certification_valuer_name,
+        valuer_designation=report.certification_valuer_designation,
+        certification_date=report.certification_date
+    )
 
 
 def migrate_invoice_data(invoice_dict):
@@ -4430,7 +4774,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                 name_value.font.color.rgb = RGBColor(0, 0, 0)
 
             # Survey Plan Information
-            if report.property_lot_description and report.plan_number:
+            if (report.lot_number or report.property_lot_description) and report.plan_number:
                 plan_para = doc.add_paragraph()
                 plan_para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
                 plan_para.paragraph_format.space_before = Pt(0)
@@ -4442,7 +4786,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                 plan_label.font.color.rgb = RGBColor(0, 0, 0)
 
                 # Extract just the lot number/identifier (remove "Plan No" prefix if present)
-                lot_desc = report.property_lot_description.strip()
+                lot_desc = (report.lot_number or report.property_lot_description).strip()
 
                 # Remove common prefixes that shouldn't be in lot description
                 prefixes_to_remove = ['plan no', 'plan no:', 'lot plan no', 'lot plan no:']
@@ -5126,9 +5470,9 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                                 total_run.font.color.rgb = RGBColor(0, 0, 0)
 
                     # === AGE AND CONDITION (INLINE FORMAT) ===
-                    age_desc = building.get('age_description', '')
+                    building_age = building.get('building_age')
                     condition = building.get('condition', '')
-                    if age_desc or condition:
+                    if building_age or condition:
                         condition_labels = {
                             'excellent': 'excellent',
                             'good': 'good',
@@ -5138,8 +5482,9 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                         }
 
                         parts = []
-                        if age_desc:
-                            parts.append(f"{age_desc} old")
+                        if building_age is not None and building_age > 0:
+                            year_word = "year" if building_age == 1 else "years"
+                            parts.append(f"{building_age} {year_word} old")
                         if condition:
                             parts.append(f"condition is {condition_labels.get(condition, condition)}")
 
@@ -5150,8 +5495,32 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                     # === UTILITIES AND CONVENIENCES ===
                     render_utilities_and_conveniences(doc, building)
 
-                    # === OCCUPATION (SENTENCE FORMAT WITH SUBHEADING) ===
-                    if report.occupier_name:
+                    # === OCCUPATION (BUILDING-LEVEL) ===
+                    # Primary: Use building-level occupier data
+                    if building.get('occupier_name'):
+                        relationship = building.get('occupier_relationship')
+
+                        # Special case for vacant buildings
+                        if relationship == 'vacant':
+                            occupier_text = "The building is currently vacant."
+                        else:
+                            occupier_text = f"The building is occupied by {building.get('occupier_name')}"
+
+                            if relationship:
+                                rel_labels = {
+                                    'owner': 'the owner',
+                                    'tenant': 'a tenant',
+                                    'family_member': 'a family member',
+                                    'caretaker': 'caretaker'
+                                }
+                                occupier_text += f" who is {rel_labels.get(relationship, relationship)}."
+                            else:
+                                occupier_text += "."
+
+                        add_inline_field(doc, "Occupation", occupier_text, space_after=Pt(6))
+
+                    # Fallback: Support old reports with property-level occupier
+                    elif report.occupier_name:
                         occupier_text = f"The property is occupied by {report.occupier_name}"
                         if report.occupier_relationship:
                             rel_labels = {
@@ -5160,15 +5529,11 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                                 'family_member': 'a family member',
                                 'caretaker': 'caretaker'
                             }
-                            occupier_text += f" who is {rel_labels.get(report.occupier_relationship, report.occupier_relationship)}"
-                        occupier_text += "."
+                            occupier_text += f" who is {rel_labels.get(report.occupier_relationship, report.occupier_relationship)}."
+                        else:
+                            occupier_text += "."
 
-                        add_inline_field(
-                            doc,
-                            "Occupation",
-                            occupier_text,
-                            space_after=Pt(6)
-                        )
+                        add_inline_field(doc, "Occupation", occupier_text, space_after=Pt(6))
 
                     # === BUILDING PHOTOS (3-column grid layout - NO SUBHEADING) ===
                     building_photos = building.get('building_photos', [])
@@ -5373,7 +5738,8 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
             doc.add_paragraph()  # Spacing
 
         # ===== 7.0 LAND VALUES IN THE AREA =====
-        if report.comparable_properties:
+        # Show section if either comparables OR market analysis exists
+        if report.comparable_properties or report.land_market_analysis:
             add_section_heading(doc, "7.0", "LAND VALUES IN THE AREA")
 
             # Parse JSON if needed
@@ -5523,9 +5889,13 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
             # Always show "Value rounded off" line
             add_value_rounded_line(doc, market_value_rounded)
 
-            # Calculate forced sale value for summary section
-            forced_sale_percentage = report.valuation_forced_sale_percentage or 90
-            forced_sale_value = market_value_rounded * (forced_sale_percentage / 100)
+            # Check if valuation type is "Forced Sale Value" to show forced sale fields
+            show_forced_sale = report.valuation_type == "Forced Sale Value"
+
+            if show_forced_sale:
+                # Calculate forced sale value for summary section
+                forced_sale_percentage = report.valuation_forced_sale_percentage or 90
+                forced_sale_value = market_value_rounded * (forced_sale_percentage / 100)
 
             # === SUMMARY OF THE VALUATION ===
             p = doc.add_paragraph()
@@ -5546,15 +5916,16 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
             run.font.size = Pt(10)
             p.paragraph_format.space_after = Pt(3)
 
-            # Forced Sale Value
-            p = doc.add_paragraph()
-            tab_stops = p.paragraph_format.tab_stops
-            tab_stops.add_tab_stop(Inches(3.5), WD_TAB_ALIGNMENT.LEFT)
-            tab_stops.add_tab_stop(Inches(3.7), WD_TAB_ALIGNMENT.LEFT)
-            text = f"Forced Sale Value of the property\t:\t{format_currency(forced_sale_value)}"
-            run = p.add_run(text)
-            run.font.size = Pt(10)
-            p.paragraph_format.space_after = Pt(3)
+            # Forced Sale Value - only show when valuation type is "Forced Sale Value"
+            if show_forced_sale:
+                p = doc.add_paragraph()
+                tab_stops = p.paragraph_format.tab_stops
+                tab_stops.add_tab_stop(Inches(3.5), WD_TAB_ALIGNMENT.LEFT)
+                tab_stops.add_tab_stop(Inches(3.7), WD_TAB_ALIGNMENT.LEFT)
+                text = f"Forced Sale Value of the property\t:\t{format_currency(forced_sale_value)}"
+                run = p.add_run(text)
+                run.font.size = Pt(10)
+                p.paragraph_format.space_after = Pt(3)
 
             # Insurance Value (NEW INLINE FORMAT) - Only show if there are buildings
             if buildings_insurance_values:
@@ -5570,117 +5941,52 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
 
                 doc.add_paragraph()  # Final spacing
 
-        # ===== 9.0 CERTIFICATION =====
+        # ===== 9.0 CERTIFICATION (SIMPLIFIED FORMAT) =====
         if report.certification_text or report.certification_valuer_name:
             add_section_heading(doc, "9.0", "CERTIFICATION")
 
-            # Certification text (multi-paragraph)
+            # Certification text - single paragraph
             if report.certification_text:
-                # Use custom certification text if provided
-                certification_paragraphs = report.certification_text.split('\n\n')
+                # Use custom certification text if provided (override mode)
+                cert_text = report.certification_text.strip()
+            elif report.certification_valuer_name and report.certification_valuer_designation:
+                # Auto-generate simplified certification
+                # Get lot_number, fallback to deprecated property_lot_description
+                lot_num = report.lot_number or report.property_lot_description
+
+                # Get plan_number, fallback to deprecated certificate_survey_plan_ref
+                plan_ref = report.plan_number or report.certificate_survey_plan_ref
+                plan_date = report.plan_date or report.certificate_survey_plan_date
+
+                cert_text = generate_simplified_certification_text(
+                    valuer_name=report.certification_valuer_name,
+                    valuer_designation=report.certification_valuer_designation,
+                    lot_number=lot_num,
+                    plan_number=plan_ref,
+                    plan_date=plan_date,
+                    licensed_surveyor_name=report.licensed_surveyor_name,
+                    deeds=safe_get_json_field(report, 'deeds', []),
+                    property_identification_type=report.property_identification_type
+                )
             else:
-                # Generate default certification based on report type
-                if report.report_type == 'bare_land':
-                    certification_paragraphs = [
-                        "I certify that I have personally inspected the land described in this report "
-                        "and have carried out necessary investigations to ascertain the legal title, "
-                        "physical characteristics, and development potential of the property.",
+                # Fallback if no valuer info
+                cert_text = "I hereby certify that I have personally inspected this property and the valuation stated herein represents my professional opinion of the market value as of the date of inspection."
 
-                        "The valuation has been prepared based on current market conditions, "
-                        "comparable land sales in the locality, and the land's development feasibility. "
-                        "This valuation represents my professional opinion of the land's fair market value "
-                        "as of the inspection date stated herein."
-                    ]
-                else:
-                    # Default residential certification
-                    certification_paragraphs = [
-                        "I certify that I have personally inspected the property described in this report "
-                        "and have carried out necessary investigations to ascertain the legal title and "
-                        "physical condition of the buildings and land.",
-
-                        "The valuation has been prepared in accordance with professional standards and "
-                        "represents my professional opinion of the property's fair market value as of the "
-                        "inspection date stated herein."
-                    ]
-
-            # Render certification paragraphs
-            for paragraph_text in certification_paragraphs:
-                if paragraph_text.strip():
-                    p = doc.add_paragraph()
-                    p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-                    p.paragraph_format.space_after = Pt(6)
-                    run = p.add_run(paragraph_text.strip())
-                    run.font.size = Pt(9)
-
-            # Certificate of Identity
-            if report.certificate_survey_plan_ref:
-                p = doc.add_paragraph()
-                p.paragraph_format.space_before = Pt(12)
-                p.paragraph_format.space_after = Pt(6)
-
-                run = p.add_run("\nCertificate of Identity:\n")
-                run.font.bold = True
-                run.font.size = Pt(9)
-
-                run = p.add_run(f"I certify that the property inspected by me is identical to the property described in ")
-                run.font.size = Pt(9)
-
-                # Add deed reference if available
-                deeds = safe_get_json_field(report, 'deeds', [])
-                has_deed = isinstance(deeds, list) and len(deeds) > 0
-                if has_deed:
-                    deed = deeds[0]
-                    deed_number = deed.get('deed_number', '') if isinstance(deed, dict) else getattr(deed, 'deed_number', '')
-                    deed_type = deed.get('deed_type', 'deed') if isinstance(deed, dict) else getattr(deed, 'deed_type', 'deed')
-                    deed_date = deed.get('deed_date', '') if isinstance(deed, dict) else getattr(deed, 'deed_date', '')
-
-                    if deed_number:
-                        run = p.add_run(f"{deed_type} No. {deed_number}")
-                        run.font.bold = True
-                        run.font.size = Pt(9)
-
-                        if deed_date:
-                            run = p.add_run(f" dated {deed_date}")
-                            run.font.size = Pt(9)
-
-                        run = p.add_run(" and identified in ")
-                        run.font.size = Pt(9)
-
-                # Add plan reference
-                run = p.add_run(f"{report.certificate_survey_plan_ref}")
-                run.font.bold = True
-                run.font.size = Pt(9)
-
-                if report.certificate_survey_plan_date:
-                    run = p.add_run(f" dated {report.certificate_survey_plan_date}")
-                    run.font.size = Pt(9)
-
-                run = p.add_run(".")
-                run.font.size = Pt(9)
+            # Render certification paragraph
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+            p.paragraph_format.space_after = Pt(12)
+            run = p.add_run(cert_text)
+            run.font.size = Pt(9)
 
             # Signature block
-            doc.add_paragraph("\n\n")
-
-            p = doc.add_paragraph("_" * 40)  # Signature line
-            p.paragraph_format.space_before = Pt(24)
-
-            if report.certification_valuer_name:
-                p = doc.add_paragraph()
-                run = p.add_run(report.certification_valuer_name)
-                run.font.bold = True
-                run.font.size = Pt(9)
-
-            if report.certification_valuer_designation:
-                p = doc.add_paragraph(report.certification_valuer_designation)
-                for run in p.runs:
-                    run.font.size = Pt(9)
-
-            if report.certification_date:
-                p = doc.add_paragraph(report.certification_date)
-                for run in p.runs:
-                    run.font.size = Pt(9)
-
-            doc.add_paragraph()
+            add_signature_block(
+                doc=doc,
+                user=user,
+                valuer_name=report.certification_valuer_name,
+                valuer_designation=report.certification_valuer_designation,
+                certification_date=report.certification_date
+            )
 
         # ===== INVOICE SECTION =====
         if report.invoice_data:

@@ -240,21 +240,23 @@ export default SecureStorage;
 
 const AUTH_TOKEN_KEY = 'authToken';
 const USER_DATA_KEY = 'user';
-const TOKEN_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
+// TOKEN_EXPIRY_MS removed - token expiration now handled by backend JWT (8 hours)
 
 export const authTokenStorage = {
   /**
    * Store authentication token (encrypted in sessionStorage)
+   * Token expiration is now handled by backend JWT validation
    */
   setToken(token: string): void {
-    secureSessionStorage.setItemWithExpiry(AUTH_TOKEN_KEY, token, TOKEN_EXPIRY_MS);
+    secureSessionStorage.setItem(AUTH_TOKEN_KEY, token);
   },
 
   /**
    * Retrieve authentication token
+   * Token validity is determined by backend JWT expiration only
    */
   getToken(): string | null {
-    return secureSessionStorage.getItemWithExpiry(AUTH_TOKEN_KEY);
+    return secureSessionStorage.getItem(AUTH_TOKEN_KEY);
   },
 
   /**

@@ -13,8 +13,11 @@ import { UseFormRegister, FieldErrors, UseFormWatch, UseFormSetValue } from 'rea
 import { MapPin, User } from 'lucide-react';
 import { Input } from './Input';
 import { Label } from './Label';
+import { AutocompleteInput } from './AutocompleteInput';
 import toast from 'react-hot-toast';
 import { validateSriLankanNIC, validatePassport, useFieldValidation } from '../utils/validators';
+import { PREDEFINED_VALUATION_PURPOSES } from '../constants/valuationPurposes';
+import { toTitleCase } from '../utils/textFormatters';
 
 interface ApplicantAndPurposeStepProps {
     register: UseFormRegister<any>;
@@ -311,41 +314,26 @@ export const ApplicantAndPurposeStep: React.FC<ApplicantAndPurposeStepProps> = (
                     </div>
                 </div>
 
-                <div className="space-y-2 mt-4">
-                    <Label htmlFor="valuation_purpose" className="text-gray-700 font-medium">
-                        Purpose of Valuation *
-                    </Label>
-                    <select
-                        id="valuation_purpose"
-                        className="w-full h-14 bg-white/50 border border-gray-200/50 rounded-2xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200 px-4"
-                        {...register('valuation_purpose')}
-                    >
-                        <option value="">Select purpose...</option>
-                        <option value="Bank Loan / Mortgage">Bank Loan / Mortgage</option>
-                        <option value="Sale / Purchase">Sale / Purchase</option>
-                        <option value="Legal Proceedings / Court Case">Legal Proceedings / Court Case</option>
-                        <option value="Insurance">Insurance</option>
-                        <option value="Partition">Partition</option>
-                        <option value="Mortgage Refinancing">Mortgage Refinancing</option>
-                        <option value="Taxation / Estate Duty">Taxation / Estate Duty</option>
-                        <option value="Investment Analysis">Investment Analysis</option>
-                        <option value="Court-Ordered Valuation">Court-Ordered Valuation</option>
-                    </select>
-                    {errors.valuation_purpose && (
-                        <p className="text-red-500 text-sm">{errors.valuation_purpose.message}</p>
-                    )}
-                    <p className="text-sm text-gray-500 mt-1">
-                        Or type a custom purpose: <Input
-                            type="text"
-                            placeholder="Type custom purpose..."
-                            className="mt-2 h-12 bg-white/50 border-gray-200/50 rounded-2xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200"
-                            onBlur={(e) => {
-                                if (e.target.value) {
-                                    setValue('valuation_purpose', e.target.value, { shouldValidate: true });
-                                }
-                            }}
-                        />
-                    </p>
+                <div className="mt-4">
+                    <AutocompleteInput
+                        label="Purpose of Valuation"
+                        value={watch('valuation_purpose') || ''}
+                        onChange={(value) => {
+                            // Prevent whitespace-only entries
+                            if (value.trim().length === 0 && value.length > 0) {
+                                return;
+                            }
+                            // Apply title case transformation
+                            const formatted = value.trim() ? toTitleCase(value) : value;
+                            setValue('valuation_purpose', formatted, { shouldValidate: true });
+                        }}
+                        suggestions={PREDEFINED_VALUATION_PURPOSES}
+                        placeholder="Purpose of Valuation"
+                        required={false}
+                        error={errors.valuation_purpose?.message as string}
+                        allowCustom={true}
+                        className="w-full"
+                    />
                 </div>
 
                 <div className="space-y-2 mt-4">

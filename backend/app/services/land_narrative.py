@@ -122,9 +122,9 @@ async def generate_land_narrative(
     Generate a professional land description narrative using Claude AI.
 
     The narrative length adapts to the amount of data provided:
-    - Minimal data (1-3 fields): 50-80 words
-    - Moderate data (4-6 fields): 80-120 words
-    - Rich data (7+ fields): 120-180 words
+    - Minimal data (1-3 fields): 30-50 words
+    - Moderate data (4-6 fields): 60-90 words
+    - Rich data (7+ fields): 100-140 words
 
     Args:
         All land-related data fields (all optional)
@@ -208,16 +208,16 @@ async def generate_land_narrative(
         # Determine data richness level
         if data_count <= 3:
             richness_level = "minimal"
-            word_range = "50-80 words"
-            sentence_guide = "2-3 sentences"
+            word_range = "30-50 words"
+            sentence_guide = "1-2 sentences"
         elif data_count <= 6:
             richness_level = "moderate"
-            word_range = "80-120 words"
-            sentence_guide = "3-5 sentences"
+            word_range = "60-90 words"
+            sentence_guide = "3-4 sentences"
         else:
             richness_level = "rich"
-            word_range = "120-180 words"
-            sentence_guide = "5-7 sentences"
+            word_range = "100-140 words"
+            sentence_guide = "4-6 sentences"
 
         # Create the full context
         full_context = "\n".join(context_parts) if context_parts else "No data provided"
@@ -263,7 +263,7 @@ CRITICAL INSTRUCTIONS:
    - Examples: "positioned", "facilitating", "approximately", "comprises", "exhibits"
 
 5. HANDLING PARTIAL DATA:
-   - If only 1-2 fields provided: Write concise 2-3 sentence description
+   - If only 1-2 fields provided: Write concise 1-2 sentence description
    - Focus on what IS provided, do not speculate or add generic filler
    - Avoid phrases like "suitable for development" unless data supports it
 

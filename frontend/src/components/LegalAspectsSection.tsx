@@ -103,6 +103,7 @@ function Subsection({ title, description, isOpen, onToggle, children }: Subsecti
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden">
       <button
+        type="button"
         onClick={onToggle}
         className="w-full flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 transition-colors"
       >

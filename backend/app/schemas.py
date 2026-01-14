@@ -283,8 +283,10 @@ class Building(BaseModel):
     building_name: Optional[str] = Field(None, max_length=200, description="Building name")
     building_type: str = Field(..., max_length=100, description="Building type (residential, commercial, etc.)")
     stories: Optional[int] = Field(None, ge=1, description="Number of stories")
-    age_description: Optional[str] = Field(None, max_length=200, description="Age description")
+    building_age: Optional[int] = Field(None, ge=0, le=200, description="Building age in years")
     condition: Optional[str] = Field(None, max_length=50, description="Building condition")
+    occupier_name: Optional[str] = Field(None, max_length=300, description="Occupier name")
+    occupier_relationship: Optional[str] = Field(None, max_length=50, description="Relationship: owner, tenant, caretaker, family_member, vacant")
     roof_types: List[str] = Field(default_factory=list, description="Roof types")
     roof_description: Optional[str] = Field(None, description="Roof description")
     wall_types: List[str] = Field(default_factory=list, description="Wall types")
@@ -312,7 +314,8 @@ class ReportBase(BaseModel):
     property_count: Optional[int] = Field(None, description="Number of properties in this report")
 
     # Property & Plan Information
-    property_lot_description: Optional[str] = Field(None, max_length=200, description="Lot description (e.g., Lot 15)")
+    property_lot_description: Optional[str] = Field(None, max_length=200, description="DEPRECATED: Use lot_number instead")
+    lot_number: Optional[str] = Field(None, max_length=200, description="Lot number (e.g., Lot 15, Lots 1 & 2)")
     plan_number: Optional[str] = Field(None, max_length=100, description="Plan number")
     plan_date: Optional[str] = Field(None, max_length=50, description="Plan date (DD-MM-YYYY)")
     licensed_surveyor_name: Optional[str] = Field(None, max_length=255, description="Licensed surveyor name")
@@ -498,8 +501,8 @@ class ReportBase(BaseModel):
 
     # ===== BUILDING DETAILS =====
     buildings: Optional[List[Building]] = Field(None, description="Array of building objects with full schema validation")
-    occupier_name: Optional[str] = Field(None, max_length=300)
-    occupier_relationship: Optional[str] = Field(None, max_length=50)
+    occupier_name: Optional[str] = Field(None, max_length=300, description="DEPRECATED: Moved to building level. Kept for backward compatibility.")
+    occupier_relationship: Optional[str] = Field(None, max_length=50, description="DEPRECATED: Moved to building level. Kept for backward compatibility.")
 
     # ===== PROPERTY PHOTOS =====
     property_photos: Optional[List[BuildingPhoto]] = Field(None, max_items=20, description="Property photos (max 20)")
@@ -591,9 +594,12 @@ class ReportBase(BaseModel):
 
     # ===== CERTIFICATION =====
     certification_text: Optional[str] = Field(None, description="Certification statement text")
-    certificate_survey_plan_ref: Optional[str] = Field(None, max_length=200, description="Survey plan reference for certificate of identity")
-    certificate_survey_plan_date: Optional[str] = Field(None, max_length=50, description="Survey plan date for certificate of identity")
-    certificate_identity_confirmed: Optional[bool] = Field(None, description="Certificate of identity confirmation checkbox")
+
+    # DEPRECATED: Use plan_number and plan_date instead (kept for backward compatibility after migration)
+    certificate_survey_plan_ref: Optional[str] = Field(None, max_length=200, description="DEPRECATED: Use plan_number instead. Survey plan reference for certificate of identity")
+    certificate_survey_plan_date: Optional[str] = Field(None, max_length=50, description="DEPRECATED: Use plan_date instead. Survey plan date for certificate of identity")
+    certificate_identity_confirmed: Optional[bool] = Field(None, description="DEPRECATED: Certificate of identity is now optional")
+
     certification_valuer_name: Optional[str] = Field(None, max_length=255, description="Valuer name for certification (auto-filled from user profile)")
     certification_valuer_designation: Optional[str] = Field(None, max_length=200, description="Professional designation for certification")
     certification_date: Optional[str] = Field(None, max_length=50, description="Certification date")
@@ -646,6 +652,18 @@ class ReportBase(BaseModel):
 
         # Sanitize dangerous characters regardless of type
         return sanitize_dangerous_characters(v)
+
+    @field_validator('valuation_purpose')
+    @classmethod
+    def validate_valuation_purpose(cls, v):
+        """Validate valuation purpose - prevent whitespace-only entries"""
+        if v is not None:
+            v = v.strip()
+            if len(v) == 0:
+                raise ValueError('Purpose of valuation cannot be empty or only whitespace')
+            if len(v) > 200:
+                raise ValueError('Purpose of valuation must be 200 characters or less')
+        return v
 
     @field_validator('property_latitude')
     @classmethod
@@ -825,7 +843,8 @@ class ReportResponse(BaseModel):
     status: Optional[str] = None
     is_multi_property: Optional[bool] = None
     property_count: Optional[int] = None
-    property_lot_description: Optional[str] = None
+    property_lot_description: Optional[str] = None  # DEPRECATED
+    lot_number: Optional[str] = None
     plan_number: Optional[str] = None
     plan_date: Optional[str] = None
     licensed_surveyor_name: Optional[str] = None
@@ -985,9 +1004,12 @@ class ReportResponse(BaseModel):
     valuation_insurance_value: Optional[float] = None
     valuation_manual_overrides: Optional[dict] = None
     certification_text: Optional[str] = None
+
+    # DEPRECATED: Use plan_number and plan_date instead (kept for backward compatibility)
     certificate_survey_plan_ref: Optional[str] = None
     certificate_survey_plan_date: Optional[str] = None
     certificate_identity_confirmed: Optional[bool] = None
+
     certification_valuer_name: Optional[str] = None
     certification_valuer_designation: Optional[str] = None
     certification_date: Optional[str] = None
@@ -1048,7 +1070,8 @@ class PropertyBase(BaseModel):
     property_type: Optional[str] = Field("residential", max_length=50, description="Property type: 'residential' or 'bare_land'")
 
     # Property Identification
-    property_lot_description: Optional[str] = Field(None, max_length=200)
+    property_lot_description: Optional[str] = Field(None, max_length=200, description="DEPRECATED: Use lot_number instead")
+    lot_number: Optional[str] = Field(None, max_length=200, description="Lot number (e.g., Lot 15, Lots 1 & 2)")
     plan_number: Optional[str] = Field(None, max_length=100)
     plan_date: Optional[str] = Field(None, max_length=50)
     licensed_surveyor_name: Optional[str] = Field(None, max_length=255)
@@ -1135,8 +1158,8 @@ class PropertyBase(BaseModel):
 
     # Buildings
     buildings: Optional[List[dict]] = None
-    occupier_name: Optional[str] = Field(None, max_length=300)
-    occupier_relationship: Optional[str] = Field(None, max_length=50)
+    occupier_name: Optional[str] = Field(None, max_length=300, description="DEPRECATED: Moved to building level")
+    occupier_relationship: Optional[str] = Field(None, max_length=50, description="DEPRECATED: Moved to building level")
 
     # Property Photos
     property_photos: Optional[List[dict]] = None

@@ -41,58 +41,14 @@ interface Props {
   data: ValuationData;
   onChange: (data: Partial<ValuationData>) => void;
   buildings?: Building[];
+  valuation_type?: string;  // To conditionally show forced sale value fields
 }
 
 function generateId(): string {
   return `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 }
 
-// Helper function to get default economic life based on building type
-function getDefaultEconomicLife(buildingType?: string): number {
-  if (!buildingType) return 50; // Default for unspecified buildings
-
-  const type = buildingType.toLowerCase();
-
-  // Residential buildings
-  if (type.includes('house') || type.includes('bungalow') || type.includes('villa') ||
-      type.includes('apartment') || type.includes('flat') || type.includes('residential')) {
-    return 60;
-  }
-
-  // Commercial buildings
-  if (type.includes('shop') || type.includes('office') || type.includes('commercial') ||
-      type.includes('store') || type.includes('showroom')) {
-    return 50;
-  }
-
-  // Industrial buildings
-  if (type.includes('factory') || type.includes('warehouse') || type.includes('industrial') ||
-      type.includes('shed') || type.includes('workshop')) {
-    return 40;
-  }
-
-  // Temporary or light structures
-  if (type.includes('temporary') || type.includes('shed') || type.includes('hut') ||
-      type.includes('cabin') || type.includes('kiosk')) {
-    return 20;
-  }
-
-  // Default for any other building type
-  return 50;
-}
-
 // Depreciation Calculation Functions
-function calculateAge(constructionYear: number | null | undefined): number {
-  if (!constructionYear || constructionYear <= 0) return 0;
-  const currentYear = new Date().getFullYear();
-  return Math.max(0, currentYear - constructionYear);
-}
-
-function calculateDepreciationRate(age: number, economicLife: number): number {
-  if (economicLife <= 0) return 0;
-  return Math.min((age / economicLife) * 100, 100);
-}
-
 function calculateDepreciationAmount(replacementCost: number, depreciationRate: number): number {
   return replacementCost * (depreciationRate / 100);
 }
@@ -101,7 +57,9 @@ function calculateDepreciatedValue(replacementCost: number, depreciationAmount: 
   return Math.max(0, replacementCost - depreciationAmount);
 }
 
-export default function ValuationSection({ data, onChange, buildings = [] }: Props) {
+export default function ValuationSection({ data, onChange, buildings = [], valuation_type }: Props) {
+  // Check if forced sale value should be shown
+  const showForcedSaleValue = valuation_type === 'Forced Sale Value';
   // Land valuation state
   const [ratePerPerch, setRatePerPerch] = useState<number>(
     data.valuation_rate_per_perch || 0
@@ -172,11 +130,7 @@ export default function ValuationSection({ data, onChange, buildings = [] }: Pro
           building_name: building.building_type || building.building_name,
           components: [component],
           subtotal: component.value,
-          // Set default economic life based on building type (if saved data has it, use that)
-          economic_life_years: savedValuation?.economic_life_years || getDefaultEconomicLife(building.building_type),
-          // Restore other depreciation fields from saved data if available
-          construction_year: savedValuation?.construction_year,
-          age_years: savedValuation?.age_years,
+          // Restore depreciation fields from saved data if available
           depreciation_rate_percent: savedValuation?.depreciation_rate_percent,
           depreciation_amount: savedValuation?.depreciation_amount,
           depreciated_value: savedValuation?.depreciated_value
@@ -216,9 +170,7 @@ export default function ValuationSection({ data, onChange, buildings = [] }: Pro
             rate: 0,
             value: 0
           }],
-          subtotal: 0,
-          // Set default economic life for new buildings
-          economic_life_years: getDefaultEconomicLife(building.building_type)
+          subtotal: 0
         };
         hasChanges = true;
       } else {
@@ -698,71 +650,8 @@ export default function ValuationSection({ data, onChange, buildings = [] }: Pro
                     Depreciation Calculation
                   </h5>
 
-                  <div className="grid grid-cols-2 gap-4 mb-4">
-                    <div>
-                      <Label className="text-sm">Construction Year</Label>
-                      <Input
-                        type="number"
-                        value={valuation.construction_year || ''}
-                        onChange={(e) => {
-                          const year = parseInt(e.target.value) || 0;
-                          const age = calculateAge(year);
-                          const economicLife = valuation.economic_life_years || getDefaultEconomicLife(building.building_type || '');
-                          const depRate = calculateDepreciationRate(age, economicLife);
-                          const depAmount = calculateDepreciationAmount(valuation.subtotal, depRate);
-                          const depValue = calculateDepreciatedValue(valuation.subtotal, depAmount);
-
-                          handleBuildingValuationUpdate(building.id, {
-                            construction_year: year,
-                            age_years: age,
-                            depreciation_rate_percent: depRate,
-                            depreciation_amount: depAmount,
-                            depreciated_value: depValue
-                          });
-                        }}
-                        placeholder="e.g., 2010"
-                        min="1900"
-                        max={new Date().getFullYear()}
-                        className="mt-1"
-                      />
-                    </div>
-
-                    <div>
-                      <Label className="text-sm">Age (Years)</Label>
-                      <div className="mt-1 px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg font-medium text-gray-700">
-                        {valuation.age_years || calculateAge(valuation.construction_year) || 0} years
-                      </div>
-                    </div>
-
-                    <div>
-                      <Label className="text-sm">Economic Life (Years)</Label>
-                      <Input
-                        type="number"
-                        value={valuation.economic_life_years || getDefaultEconomicLife(building.building_type || '')}
-                        onChange={(e) => {
-                          const economicLife = parseInt(e.target.value) || 50;
-                          const age = valuation.age_years || calculateAge(valuation.construction_year);
-                          const depRate = calculateDepreciationRate(age, economicLife);
-                          const depAmount = calculateDepreciationAmount(valuation.subtotal, depRate);
-                          const depValue = calculateDepreciatedValue(valuation.subtotal, depAmount);
-
-                          handleBuildingValuationUpdate(building.id, {
-                            economic_life_years: economicLife,
-                            depreciation_rate_percent: depRate,
-                            depreciation_amount: depAmount,
-                            depreciated_value: depValue
-                          });
-                        }}
-                        min="1"
-                        max="100"
-                        className="mt-1"
-                      />
-                      <p className="text-xs text-gray-500 mt-1">
-                        Default: {getDefaultEconomicLife(building.building_type || '')} years
-                      </p>
-                    </div>
-
-                    <div>
+                  <div className="mb-4">
+                    <div className="max-w-xs">
                       <Label className="text-sm">Depreciation Rate (%)</Label>
                       <Input
                         type="number"
@@ -784,7 +673,7 @@ export default function ValuationSection({ data, onChange, buildings = [] }: Pro
                         className="mt-1"
                       />
                       <p className="text-xs text-gray-500 mt-1">
-                        Auto-calculated or enter custom rate
+                        Enter depreciation rate manually
                       </p>
                     </div>
                   </div>
@@ -916,30 +805,32 @@ export default function ValuationSection({ data, onChange, buildings = [] }: Pro
             className="border-b border-indigo-200 pb-4"
           />
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-b border-indigo-200 pb-4">
-            <div>
-              <Label>Forced Sale Percentage (%)</Label>
-              <Input
-                type="number"
-                value={forcedSalePercentage || ''}
-                onChange={(e) => setForcedSalePercentage(parseFloat(e.target.value) || 90)}
-                min="0"
-                max="100"
-                step="1"
-                className="mt-1"
+          {showForcedSaleValue && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-b border-indigo-200 pb-4">
+              <div>
+                <Label>Forced Sale Percentage (%)</Label>
+                <Input
+                  type="number"
+                  value={forcedSalePercentage || ''}
+                  onChange={(e) => setForcedSalePercentage(parseFloat(e.target.value) || 90)}
+                  min="0"
+                  max="100"
+                  step="1"
+                  className="mt-1"
+                />
+              </div>
+
+              <CalculatedField
+                label="Forced Sale Value"
+                value={data.valuation_forced_sale_value || calculateForcedSaleValue()}
+                calculatedValue={calculateForcedSaleValue()}
+                isManual={!!manualOverrides.forced_sale_value}
+                onToggle={() => handleToggleManualOverride('forced_sale_value')}
+                onChange={(val) => onChange({ valuation_forced_sale_value: val })}
+                prefix="LKR"
               />
             </div>
-
-            <CalculatedField
-              label="Forced Sale Value"
-              value={data.valuation_forced_sale_value || calculateForcedSaleValue()}
-              calculatedValue={calculateForcedSaleValue()}
-              isManual={!!manualOverrides.forced_sale_value}
-              onToggle={() => handleToggleManualOverride('forced_sale_value')}
-              onChange={(val) => onChange({ valuation_forced_sale_value: val })}
-              prefix="LKR"
-            />
-          </div>
+          )}
 
           <CalculatedField
             label="Insurance Value (Buildings + Add-ons, excludes land)"

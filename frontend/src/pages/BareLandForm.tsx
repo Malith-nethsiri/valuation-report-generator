@@ -75,12 +75,37 @@ const BareLandForm: React.FC = () => {
 
     setIsSubmitting(true);
     try {
+      // Clean and migrate data
+      const cleanedData = { ...data };
+
+      // Migrate utilities_services if present (though rare for bare land)
+      if (cleanedData.buildings && Array.isArray(cleanedData.buildings)) {
+        cleanedData.buildings = cleanedData.buildings.map((building: any) => {
+          let utilities = building.utilities_services || {};
+          if (utilities) {
+            // Convert string to array for water_supply
+            if (utilities.water_supply && typeof utilities.water_supply === 'string') {
+              utilities.water_supply = [utilities.water_supply];
+            }
+            // Convert string to array for electricity_supply
+            if (utilities.electricity_supply && typeof utilities.electricity_supply === 'string') {
+              utilities.electricity_supply = [utilities.electricity_supply];
+            }
+            // Convert string to array for telephone_connection
+            if (utilities.telephone_connection && typeof utilities.telephone_connection === 'string') {
+              utilities.telephone_connection = [utilities.telephone_connection];
+            }
+          }
+          return { ...building, utilities_services: utilities };
+        });
+      }
+
       const reportData = {
-        ...data,
+        ...cleanedData,
         report_type: 'bare_land',
         status: submissionType === 'complete' ? 'completed' : 'draft',
         // Ensure property_photos is always an array, not null
-        property_photos: data.property_photos || [],
+        property_photos: cleanedData.property_photos || [],
         // Clear building-related fields for bare land reports
         buildings: null,
         occupier_name: null,
@@ -100,8 +125,9 @@ const BareLandForm: React.FC = () => {
           setReportCreated(savedReport);
           toast.success('Report updated successfully!');
         } else {
-          toast.success('Draft saved successfully');
-          navigate('/dashboard');
+          // Draft saved - toast is shown by MultiStepForm handlers
+          // Navigation is handled by MultiStepForm based on which button was clicked
+          // (Save and Continue = no navigation, Save & Exit = navigate to dashboard)
         }
       } else {
         // Create new report
@@ -110,8 +136,7 @@ const BareLandForm: React.FC = () => {
         if (submissionType === 'complete') {
           setReportCreated(savedReport);
         } else {
-          toast.success('Draft saved successfully');
-          navigate('/dashboard');
+          // Draft saved - toast and navigation handled by MultiStepForm
         }
       }
 
@@ -229,7 +254,7 @@ const BareLandForm: React.FC = () => {
                 </div>
                 <div>
                   <span className="font-semibold text-gray-700">Property:</span>
-                  <span className="ml-2 text-gray-600">{reportCreated.property_lot_description || 'N/A'}</span>
+                  <span className="ml-2 text-gray-600">{reportCreated.lot_number || reportCreated.property_lot_description || 'N/A'}</span>
                 </div>
                 <div>
                   <span className="font-semibold text-gray-700">Created:</span>

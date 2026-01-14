@@ -108,9 +108,9 @@ const MultiPropertyForm: React.FC = () => {
         }
 
         console.log('[MultiPropertyForm] ✅ Draft saved, report ID:', savedReport.id);
-        toast.success('Draft saved successfully');
-        navigate('/dashboard');
-        return;
+        // Don't navigate here - let the modal handle navigation
+        // Don't show toast here - the child component shows the toast
+        return savedReport;
       } catch (error: any) {
         console.error('[MultiPropertyForm] ❌ Error saving draft:', error);
         console.error('Error response:', error.response?.data);
@@ -118,11 +118,9 @@ const MultiPropertyForm: React.FC = () => {
         if (error.response?.status === 401) {
           toast.error('Your session has expired. Please log in again.');
           navigate('/login');
-        } else {
-          const errorMessage = error.response?.data?.detail || error.message || 'Failed to save draft';
-          toast.error(`Error: ${errorMessage}`);
         }
-        return;
+        // Re-throw error so child component can handle it
+        throw error;
       } finally {
         setIsSubmitting(false);
       }

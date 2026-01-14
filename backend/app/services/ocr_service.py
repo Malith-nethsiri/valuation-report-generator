@@ -290,7 +290,7 @@ def parse_property_data_from_text(text: str, document_hint: Optional[str] = None
         if lot:
             lot = lot.split('\n')[0].strip()
             if len(lot) < 30:
-                extracted_data['property_lot_description'] = lot
+                extracted_data['lot_number'] = lot
                 break
 
     # Extract Land Extent (A-R-P format) - Enhanced with more patterns
@@ -733,7 +733,7 @@ def merge_ocr_with_existing_data(
     # Fields to potentially update from OCR
     ocr_fields = [
         'plan_number', 'plan_date', 'licensed_surveyor_name', 'survey_plan_scale',
-        'property_lot_description', 'land_traditional_name', 'property_number',
+        'lot_number', 'land_traditional_name', 'property_number',
         'property_village', 'grama_niladari_division'
     ]
 
