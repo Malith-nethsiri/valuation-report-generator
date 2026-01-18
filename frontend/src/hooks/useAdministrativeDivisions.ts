@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import type { AdministrativeDivisionsData, AdministrativeDivision } from '../types';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+import { API_URL } from '../config';
 
 /**
  * Hook to fetch all administrative divisions (districts and DS divisions)

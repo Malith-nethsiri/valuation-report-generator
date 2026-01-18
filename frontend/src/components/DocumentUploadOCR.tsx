@@ -4,6 +4,7 @@ import { Button } from './Button';
 import { Label } from './Label';
 import { cleanOCRText, formatBoundaryDescription, smartTitleCase } from '../utils/textFormatter';
 import { authTokenStorage } from '../utils/secureStorage';
+import { API_URL } from '../config';
 
 interface OCRResult {
   success: boolean;
@@ -180,8 +181,7 @@ export function DocumentUploadOCR({
       }
 
       // Call OCR API
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-      const response = await fetch(`${apiUrl}/api/ocr/extract`, {
+      const response = await fetch(`${API_URL}/api/ocr/extract`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,

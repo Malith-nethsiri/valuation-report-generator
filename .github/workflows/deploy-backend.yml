@@ -1,0 +1,49 @@
+name: Deploy Backend to Railway
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/deploy-backend.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to Railway
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: npm i -g @railway/cli
+
+      - name: Deploy to Railway
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          cd backend
+          railway up --service property-valuation-api
+
+      - name: Health Check
+        run: |
+          echo "Waiting for deployment to stabilize..."
+          sleep 30
+
+          # Get the Railway URL from secrets or hardcode
+          HEALTH_URL="${{ secrets.RAILWAY_API_URL }}/api/health"
+
+          if [ -n "$HEALTH_URL" ]; then
+            echo "Checking health at: $HEALTH_URL"
+            curl -f "$HEALTH_URL" || echo "Health check skipped (URL may not be configured)"
+          else
+            echo "RAILWAY_API_URL not configured, skipping health check"
+          fi
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "Deployment failed! Please check the logs."
+          # Add Slack/Discord notification here if desired

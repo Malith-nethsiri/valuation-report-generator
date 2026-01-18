@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.exceptions import RequestValidationError
@@ -11,6 +11,34 @@ import asyncio
 from datetime import timedelta, datetime
 from typing import Optional, List
 
+# Load environment variables FIRST (before Sentry init)
+load_dotenv()
+
+# Initialize Sentry before other imports (production only)
+import sentry_sdk
+from sentry_sdk.integrations.fastapi import FastApiIntegration
+from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+from sentry_sdk.integrations.logging import LoggingIntegration
+
+SENTRY_DSN = os.getenv("SENTRY_DSN")
+ENV = os.getenv("ENV", "development").lower()
+
+if SENTRY_DSN and ENV == "production":
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        integrations=[
+            FastApiIntegration(transaction_style="endpoint"),
+            SqlalchemyIntegration(),
+            LoggingIntegration(level=logging.INFO, event_level=logging.ERROR),
+        ],
+        traces_sample_rate=0.1,  # 10% of transactions for performance monitoring
+        profiles_sample_rate=0.1,
+        environment=ENV,
+        send_default_pii=False,  # Don't send PII by default
+        attach_stacktrace=True,
+    )
+    logging.info("Sentry initialized for production")
+
 from . import models, schemas, crud
 from .database import engine, get_db
 from .docx_generator import generate_user_data_docx, get_filename_for_user
@@ -22,6 +50,7 @@ from .auth import (
     ACCESS_TOKEN_EXPIRE_MINUTES
 )
 from .services.ocr_service import process_uploaded_document, process_multiple_documents
+from .services.redis_client import get_redis_client, close_redis_connection, redis_health_check
 from .utils.extent_calculator import calculate_extent_data
 from .utils.error_responses import (
     validation_exception_handler,
@@ -34,9 +63,6 @@ from .middleware.rate_limiting import (
     configure_rate_limits,
     cleanup_task
 )
-
-# Load environment variables
-load_dotenv()
 
 # Configure logging
 logging.basicConfig(
@@ -153,15 +179,39 @@ async def validate_upload_file(file: UploadFile) -> None:
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
 
+# Environment mode
+ENV = os.getenv("ENV", "development").lower()
+IS_PRODUCTION = ENV == "production"
+
 # Initialize FastAPI app
 app = FastAPI(
     title="Data Collection & DOCX Generator API",
     description="API for collecting user data and generating DOCX documents",
-    version="1.0.0"
+    version="1.0.0",
+    # Disable docs in production for security (uncomment if needed)
+    # docs_url=None if IS_PRODUCTION else "/docs",
+    # redoc_url=None if IS_PRODUCTION else "/redoc",
 )
 
-# Configure CORS
-origins = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:5174").split(",")
+# Configure CORS with production validation
+cors_origins_env = os.getenv("CORS_ORIGINS")
+
+if IS_PRODUCTION and not cors_origins_env:
+    logger.critical("CORS_ORIGINS environment variable is required in production!")
+    raise RuntimeError("CORS_ORIGINS must be set in production. Set ENV=development for local development.")
+
+if cors_origins_env:
+    origins = [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
+else:
+    # Development defaults
+    origins = ["http://localhost:5173", "http://localhost:5174"]
+    logger.warning("Using development CORS origins. Set CORS_ORIGINS for production.")
+
+# Validate no localhost in production
+if IS_PRODUCTION and any("localhost" in origin for origin in origins):
+    logger.warning("WARNING: localhost origins detected in production CORS config!")
+
+logger.info(f"CORS configured for origins: {origins}")
 
 app.add_middleware(
     CORSMiddleware,
@@ -175,6 +225,49 @@ app.add_middleware(
 # Add rate limiting middleware
 app.add_middleware(RateLimitMiddleware)
 
+
+# ===== SECURITY HEADERS MIDDLEWARE =====
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request as StarletteRequest
+from starlette.responses import Response
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Add security headers to all responses."""
+
+    async def dispatch(self, request: StarletteRequest, call_next):
+        response: Response = await call_next(request)
+
+        # Content Security Policy
+        # Allow Google Maps APIs, fonts, and Anthropic API
+        csp = (
+            "default-src 'self'; "
+            "script-src 'self' https://maps.googleapis.com https://maps.gstatic.com; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "img-src 'self' data: https://*.googleapis.com https://*.gstatic.com blob:; "
+            "font-src 'self' https://fonts.gstatic.com; "
+            "connect-src 'self' https://maps.googleapis.com https://api.anthropic.com https://*.sentry.io; "
+            "frame-src 'none'; "
+            "object-src 'none'; "
+            "base-uri 'self';"
+        )
+
+        # Set security headers
+        response.headers["Content-Security-Policy"] = csp
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(self), camera=(), microphone=()"
+
+        # HSTS header (only in production over HTTPS)
+        if IS_PRODUCTION:
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
+
+
 # Add request logging middleware
 app.middleware("http")(add_request_id_middleware)
 
@@ -187,12 +280,67 @@ app.add_exception_handler(Exception, generic_exception_handler)
 # ===== STARTUP EVENT =====
 @app.on_event("startup")
 async def startup_event():
-    """Configure rate limits and start background cleanup task on application startup"""
+    """Configure rate limits, initialize Redis, and start background tasks on application startup"""
+    logger.info("Application starting up...")
+
     # Configure rate limits for all endpoints
     configure_rate_limits()
 
+    # Initialize Redis connection
+    try:
+        redis_client = await get_redis_client()
+        if redis_client:
+            logger.info("Redis connection initialized successfully")
+        else:
+            logger.warning("Redis not available - caching and job queue features disabled")
+    except Exception as e:
+        logger.error(f"Failed to initialize Redis: {e}")
+
     # Start background task for periodic bucket cleanup
     asyncio.create_task(cleanup_task())
+
+    logger.info("Application startup complete")
+
+
+# ===== SHUTDOWN EVENT =====
+@app.on_event("shutdown")
+async def shutdown_event():
+    """
+    Graceful shutdown handler.
+
+    This is called when the application receives SIGTERM/SIGINT signals,
+    allowing for clean resource cleanup before the process exits.
+    """
+    logger.info("Application shutting down gracefully...")
+
+    # Close Redis connection
+    try:
+        await close_redis_connection()
+        logger.info("Redis connection closed")
+    except Exception as e:
+        logger.error(f"Error closing Redis connection: {e}")
+
+    try:
+        # Close database connections
+        from .database import engine
+        engine.dispose()
+        logger.info("Database connections closed")
+    except Exception as e:
+        logger.error(f"Error closing database connections: {e}")
+
+    # Allow pending async tasks to complete (with timeout)
+    try:
+        pending = asyncio.all_tasks()
+        # Filter out the current task
+        pending = [t for t in pending if t != asyncio.current_task()]
+        if pending:
+            logger.info(f"Waiting for {len(pending)} pending tasks to complete...")
+            # Wait up to 5 seconds for tasks to complete
+            await asyncio.wait(pending, timeout=5.0)
+    except Exception as e:
+        logger.error(f"Error waiting for pending tasks: {e}")
+
+    logger.info("Application shutdown complete")
 
 
 @app.get("/", response_model=schemas.HealthResponse)
@@ -215,7 +363,7 @@ async def health_check():
 async def detailed_health_check():
     """
     Detailed health check that validates all critical dependencies
-    Returns status of database, API keys, and critical services
+    Returns status of database, Redis, API keys, and critical services
     """
     health_status = {
         "status": "healthy",
@@ -226,13 +374,24 @@ async def detailed_health_check():
     # Check database connection
     try:
         from .database import SessionLocal
+        from sqlalchemy import text
         db = SessionLocal()
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
         db.close()
         health_status["checks"]["database"] = {"status": "healthy", "message": "Connected"}
     except Exception as e:
         health_status["checks"]["database"] = {"status": "unhealthy", "message": str(e)}
         health_status["status"] = "unhealthy"
+
+    # Check Redis connection
+    try:
+        redis_status = await redis_health_check()
+        health_status["checks"]["redis"] = redis_status
+        if redis_status["status"] == "unhealthy":
+            health_status["status"] = "degraded"  # Redis is optional, so degraded not unhealthy
+    except Exception as e:
+        health_status["checks"]["redis"] = {"status": "unhealthy", "message": str(e)}
+        health_status["status"] = "degraded"
 
     # Check Anthropic API key
     anthropic_key = os.getenv("ANTHROPIC_API_KEY")
@@ -258,6 +417,14 @@ async def detailed_health_check():
     except Exception as e:
         health_status["checks"]["ocr_service"] = {"status": "unhealthy", "message": f"Import failed: {str(e)}"}
         health_status["status"] = "unhealthy"
+
+    # Check Sentry configuration (production only)
+    sentry_dsn = os.getenv("SENTRY_DSN")
+    if ENV == "production":
+        if sentry_dsn:
+            health_status["checks"]["sentry"] = {"status": "configured", "message": "Error tracking enabled"}
+        else:
+            health_status["checks"]["sentry"] = {"status": "missing", "message": "Not configured (recommended for production)"}
 
     return health_status
 
@@ -305,9 +472,13 @@ async def register_user(
             detail=f"Error creating user: {str(e)}"
         )
 
+from .services.login_limiter import LoginLimiter
+from fastapi import Request
+
 @app.post("/api/auth/login", response_model=schemas.TokenResponse)
 async def login_user(
     user_credentials: schemas.UserLogin,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """
@@ -316,14 +487,49 @@ async def login_user(
     - **email**: User's email address
     - **password**: User's password
     """
+    # Get client IP
+    client_ip = request.client.host if request.client else "unknown"
+
+    # Check rate limit
+    is_allowed, remaining_attempts = await LoginLimiter.check_rate_limit(
+        client_ip, user_credentials.email
+    )
+
+    if not is_allowed:
+        lockout_remaining = await LoginLimiter.get_lockout_remaining(
+            client_ip, user_credentials.email
+        )
+        lockout_minutes = (lockout_remaining or 900) // 60
+
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Too many failed login attempts. Please try again in {lockout_minutes} minutes.",
+            headers={"Retry-After": str(lockout_remaining or 900)}
+        )
+
     # Authenticate user
     user = authenticate_user(db, user_credentials.email, user_credentials.password)
     if not user:
+        # Record failed attempt
+        is_locked, remaining = await LoginLimiter.record_failed_attempt(
+            client_ip, user_credentials.email
+        )
+
+        if is_locked:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many failed login attempts. Your account has been temporarily locked for 15 minutes.",
+                headers={"Retry-After": "900"}
+            )
+
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
+            detail=f"Incorrect email or password. {remaining} attempts remaining.",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Clear failed attempts on successful login
+    await LoginLimiter.clear_attempts(client_ip, user_credentials.email)
 
     # Create access token
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -344,6 +550,184 @@ async def get_current_user_info(
 ):
     """Get current authenticated user information"""
     return current_user
+
+
+# ===== PASSWORD RESET ENDPOINTS =====
+from .services.email_service import EmailService
+from .auth import get_password_hash
+import secrets
+
+@app.post("/api/auth/forgot-password", response_model=schemas.PasswordResetResponse)
+async def forgot_password(
+    request: schemas.ForgotPasswordRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Request a password reset email.
+
+    Sends a reset link to the provided email if it exists in the system.
+    Always returns success to prevent email enumeration.
+    """
+    # Find user by email
+    user = crud.get_user_by_email(db, email=request.email)
+
+    if user:
+        # Generate reset token
+        reset_token = secrets.token_urlsafe(32)
+
+        # Set token expiration (1 hour from now)
+        from datetime import timezone
+        expiration = datetime.now(timezone.utc) + timedelta(hours=1)
+
+        # Save token to user
+        user.password_reset_token = reset_token
+        user.password_reset_expires = expiration
+        db.commit()
+
+        # Send reset email
+        email_sent = EmailService.send_password_reset_email(user.email, reset_token)
+
+        if not email_sent:
+            logger.warning(f"Failed to send password reset email to {user.email}")
+    else:
+        logger.info(f"Password reset requested for non-existent email: {request.email}")
+
+    # Always return success to prevent email enumeration
+    return schemas.PasswordResetResponse(
+        success=True,
+        message="If an account with that email exists, a password reset link has been sent."
+    )
+
+
+@app.post("/api/auth/reset-password", response_model=schemas.PasswordResetResponse)
+async def reset_password(
+    request: schemas.ResetPasswordRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Reset password using the token from the email.
+    """
+    # Find user with this reset token
+    user = db.query(models.User).filter(
+        models.User.password_reset_token == request.token
+    ).first()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token"
+        )
+
+    # Check if token is expired
+    from datetime import timezone
+    if user.password_reset_expires is None or user.password_reset_expires < datetime.now(timezone.utc):
+        # Clear the expired token
+        user.password_reset_token = None
+        user.password_reset_expires = None
+        db.commit()
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Reset token has expired. Please request a new one."
+        )
+
+    # Hash new password and update user
+    user.password_hash = get_password_hash(request.new_password)
+    user.password_reset_token = None
+    user.password_reset_expires = None
+    db.commit()
+
+    logger.info(f"Password reset successful for user: {user.email}")
+
+    return schemas.PasswordResetResponse(
+        success=True,
+        message="Your password has been reset successfully. You can now log in with your new password."
+    )
+
+
+# ===== ADMIN ENDPOINTS (Protected) =====
+from .auth import require_admin
+
+@app.get("/api/admin/users", response_model=List[schemas.UserResponse])
+async def admin_list_users(
+    skip: int = 0,
+    limit: int = 100,
+    admin_user: models.User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    List all users (Admin only).
+
+    - **skip**: Number of users to skip (pagination)
+    - **limit**: Maximum number of users to return
+    """
+    users = db.query(models.User).offset(skip).limit(limit).all()
+    return users
+
+
+@app.get("/api/admin/users/{user_id}", response_model=schemas.UserResponse)
+async def admin_get_user(
+    user_id: int,
+    admin_user: models.User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """Get a specific user by ID (Admin only)."""
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User with ID {user_id} not found"
+        )
+    return user
+
+
+class RoleUpdate(schemas.BaseModel):
+    role: str
+
+
+@app.patch("/api/admin/users/{user_id}/role", response_model=schemas.UserResponse)
+async def admin_update_user_role(
+    user_id: int,
+    role_update: RoleUpdate,
+    admin_user: models.User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Update a user's role (Admin only).
+
+    - **user_id**: ID of the user to update
+    - **role**: New role ('user' or 'admin')
+    """
+    # Validate role
+    if role_update.role not in ['user', 'admin']:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Role must be 'user' or 'admin'"
+        )
+
+    # Find user
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"User with ID {user_id} not found"
+        )
+
+    # Prevent self-demotion
+    if user.id == admin_user.id and role_update.role != 'admin':
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot demote yourself from admin"
+        )
+
+    # Update role
+    user.role = role_update.role
+    db.commit()
+    db.refresh(user)
+
+    logger.info(f"Admin {admin_user.email} changed user {user.email} role to {role_update.role}")
+    return user
+
 
 # User Profile Endpoints
 @app.put("/api/profile", response_model=schemas.UserResponse)
@@ -700,6 +1084,152 @@ async def generate_report_docx(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error generating DOCX file: {type(e).__name__}: {str(e)}"
         )
+
+
+# ===== ASYNC JOB ENDPOINTS FOR DOCUMENT GENERATION =====
+from .services.job_service import JobService
+from .services.file_storage import FileStorage
+
+@app.post("/api/reports/{report_id}/generate-async", response_model=schemas.JobResponse)
+async def generate_report_docx_async(
+    report_id: int,
+    background_tasks: BackgroundTasks,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Start async DOCX generation job for a report.
+
+    Returns immediately with a job_id that can be polled for status.
+    """
+    logger.info(f"[ASYNC_DOCX] Starting async generation for report_id={report_id}, user={current_user.email}")
+
+    # Verify report exists and belongs to user
+    db_report = crud.get_report(db, report_id, current_user.id)
+    if db_report is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Report with ID {report_id} not found"
+        )
+
+    # Create a job
+    job = JobService.create_job(
+        db=db,
+        user_id=current_user.id,
+        report_id=report_id,
+        job_type="docx_generation"
+    )
+
+    # Queue the background task
+    background_tasks.add_task(JobService.process_docx_job, job.id)
+
+    logger.info(f"[ASYNC_DOCX] Job {job.id} created and queued")
+    return job
+
+
+@app.get("/api/jobs/{job_id}", response_model=schemas.JobStatusResponse)
+async def get_job_status(
+    job_id: str,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get the status of a background job.
+
+    Used for polling progress of document generation.
+    """
+    job = JobService.get_job(db, job_id, current_user.id)
+
+    if job is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job not found"
+        )
+
+    # Build response
+    download_ready = job.status == "completed" and job.result_url is not None
+
+    return schemas.JobStatusResponse(
+        id=job.id,
+        status=job.status,
+        progress_percent=job.progress_percent or 0,
+        progress_message=job.progress_message,
+        error_message=job.error_message,
+        download_ready=download_ready,
+        download_url=f"/api/jobs/{job.id}/download" if download_ready else None,
+        filename=job.result_filename
+    )
+
+
+@app.get("/api/jobs/{job_id}/download")
+async def download_job_result(
+    job_id: str,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Download the result of a completed job.
+    """
+    job = JobService.get_job(db, job_id, current_user.id)
+
+    if job is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job not found"
+        )
+
+    if job.status != "completed":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Job is not completed (status: {job.status})"
+        )
+
+    if not job.result_url:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job result not available"
+        )
+
+    # Get file from storage
+    result = FileStorage.get_file(job.result_url)
+
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="File has expired or been deleted"
+        )
+
+    content, filename, content_type = result
+
+    # Return as downloadable file
+    from io import BytesIO
+    return StreamingResponse(
+        BytesIO(content),
+        media_type=content_type,
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}"
+        }
+    )
+
+
+@app.get("/api/jobs", response_model=List[schemas.JobResponse])
+async def list_user_jobs(
+    limit: int = 10,
+    status_filter: Optional[str] = None,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    List recent jobs for the current user.
+    """
+    jobs = JobService.get_user_jobs(
+        db=db,
+        user_id=current_user.id,
+        limit=min(limit, 50),  # Cap at 50
+        status_filter=status_filter
+    )
+    return jobs
+
 
 # ===== PROPERTY ENDPOINTS (Protected) =====
 @app.post("/api/properties", response_model=schemas.PropertyResponse, status_code=status.HTTP_201_CREATED)

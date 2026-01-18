@@ -14,8 +14,9 @@ import type {
   TemplateListResponse
 } from '../types';
 import { authTokenStorage } from '../utils/secureStorage';
+import { API_URL } from '../config';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_BASE_URL = API_URL;
 
 // ===== ENHANCED API CLIENT WITH TIMEOUT AND RETRY =====
 const api = axios.create({
@@ -417,6 +418,86 @@ export const reportApi = {
 
   duplicateReport: async (id: number): Promise<Report> => {
     const response = await api.post<Report>(`/api/reports/${id}/duplicate`);
+    return response.data;
+  },
+
+  // Async document generation
+  generateReportAsync: async (id: number): Promise<{ id: string }> => {
+    const response = await api.post<{ id: string }>(`/api/reports/${id}/generate-async`);
+    return response.data;
+  },
+};
+
+// Job API for async operations
+export interface JobStatus {
+  id: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  progress_percent: number;
+  progress_message: string | null;
+  error_message: string | null;
+  download_ready: boolean;
+  download_url: string | null;
+  filename: string | null;
+}
+
+export interface Job {
+  id: string;
+  user_id: number;
+  report_id: number | null;
+  job_type: string;
+  status: string;
+  result_url: string | null;
+  result_filename: string | null;
+  error_message: string | null;
+  progress_percent: number | null;
+  progress_message: string | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+export const jobApi = {
+  getStatus: async (jobId: string): Promise<JobStatus> => {
+    const response = await api.get<JobStatus>(`/api/jobs/${jobId}`);
+    return response.data;
+  },
+
+  download: async (jobId: string): Promise<void> => {
+    const response = await api.get(`/api/jobs/${jobId}/download`, {
+      responseType: 'blob',
+    });
+
+    // Extract filename from Content-Disposition header
+    const contentDisposition = response.headers['content-disposition'];
+    let filename = 'document.docx';
+    if (contentDisposition) {
+      const filenameMatch = contentDisposition.match(/filename="?(.+)"?/);
+      if (filenameMatch) {
+        filename = filenameMatch[1];
+      }
+    }
+
+    // Create blob and download
+    const blob = new Blob([response.data], {
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  },
+
+  listJobs: async (limit: number = 10, statusFilter?: string): Promise<Job[]> => {
+    const params = new URLSearchParams();
+    params.append('limit', limit.toString());
+    if (statusFilter) {
+      params.append('status_filter', statusFilter);
+    }
+    const response = await api.get<Job[]>(`/api/jobs?${params.toString()}`);
     return response.data;
   },
 };

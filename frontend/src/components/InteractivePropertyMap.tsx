@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { MapPin, Navigation2, Route as RouteIcon, Loader2, MousePointer, Navigation, Info } from 'lucide-react';
+import { MapPin, Navigation2, Route as RouteIcon, Loader2, MousePointer, Navigation, Info, AlertTriangle, RefreshCw } from 'lucide-react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import * as Sentry from '@sentry/react';
 import type { RoadSegment, RoadCondition } from '../types';
 import { RoadConditionsSummary } from './RoadConditionsSummary';
 import { authTokenStorage } from '../utils/secureStorage';
 import { loadGoogleMapsScript } from '../utils/loadGoogleMaps';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
+import { API_URL, GOOGLE_MAPS_API_KEY } from '../config';
+import { ManualAddressInput, type ManualAddressData } from './ManualAddressInput';
 
 interface Props {
   onPropertySelected: (data: {
@@ -97,6 +97,10 @@ export function InteractivePropertyMap({
   const [roadConditions, setRoadConditions] = useState<RoadCondition[]>([]);
   const [generatedAccessText, setGeneratedAccessText] = useState<string>(''); // New professional access text
 
+  // Google Maps error state for fallback
+  const [mapsError, setMapsError] = useState<string | null>(null);
+  const [useFallbackMode, setUseFallbackMode] = useState(false);
+
   // Restore state when props change (navigation back to this step)
   useEffect(() => {
     setPropertyAddress(initialPropertyAddress);
@@ -139,27 +143,56 @@ export function InteractivePropertyMap({
   useEffect(() => {
     if (!GOOGLE_MAPS_API_KEY) {
       console.error('[InteractivePropertyMap] Google Maps API key not configured');
-      toast.error('Google Maps API key not configured. Please check your .env file.', {
-        duration: 5000,
-        icon: '⚠️'
-      });
+      const errorMsg = 'Google Maps API key not configured';
+      setMapsError(errorMsg);
       setIsLoading(false);
+
+      // Report to Sentry
+      Sentry.captureMessage(errorMsg, {
+        level: 'warning',
+        tags: { component: 'InteractivePropertyMap' },
+      });
+
       return;
     }
 
+    // Timeout for loading
+    const loadTimeout = setTimeout(() => {
+      if (!googleMapsLoaded) {
+        const errorMsg = 'Google Maps loading timeout (15s)';
+        console.error('[InteractivePropertyMap]', errorMsg);
+        setMapsError(errorMsg);
+        setIsLoading(false);
+
+        Sentry.captureMessage(errorMsg, {
+          level: 'error',
+          tags: { component: 'InteractivePropertyMap' },
+        });
+      }
+    }, 15000);
+
     loadGoogleMapsScript(GOOGLE_MAPS_API_KEY)
       .then(() => {
+        clearTimeout(loadTimeout);
         console.log('[InteractivePropertyMap] Google Maps script loaded successfully');
         setGoogleMapsLoaded(true);
+        setMapsError(null);
       })
       .catch((error) => {
+        clearTimeout(loadTimeout);
         console.error('[InteractivePropertyMap] Failed to load Google Maps script:', error);
-        toast.error('Failed to load Google Maps. Please refresh the page.', {
-          duration: 5000,
-          icon: '❌'
-        });
+        const errorMsg = error instanceof Error ? error.message : 'Failed to load Google Maps';
+        setMapsError(errorMsg);
         setIsLoading(false);
+
+        // Report to Sentry
+        Sentry.captureException(error, {
+          tags: { component: 'InteractivePropertyMap' },
+          extra: { apiKeyConfigured: true },
+        });
       });
+
+    return () => clearTimeout(loadTimeout);
   }, []); // Run once on mount
 
   // Initialize map
@@ -841,6 +874,119 @@ export function InteractivePropertyMap({
 
     return null; // Could not detect
   };
+
+  // Handle fallback address input
+  const handleFallbackAddressChange = (data: ManualAddressData) => {
+    if (data.coordinates) {
+      onPropertySelected({
+        latitude: data.coordinates.lat,
+        longitude: data.coordinates.lng,
+        district: data.district,
+        village: data.villageTown,
+      });
+    }
+    setPropertyAddress(data.formattedAddress);
+  };
+
+  // Retry loading Google Maps
+  const handleRetryMaps = () => {
+    setMapsError(null);
+    setIsLoading(true);
+    setGoogleMapsLoaded(false);
+
+    // Force reload the script
+    const existingScript = document.querySelector('script[src*="maps.googleapis.com"]');
+    if (existingScript) {
+      existingScript.remove();
+    }
+
+    loadGoogleMapsScript(GOOGLE_MAPS_API_KEY!)
+      .then(() => {
+        console.log('[InteractivePropertyMap] Google Maps script reloaded successfully');
+        setGoogleMapsLoaded(true);
+        setMapsError(null);
+        setUseFallbackMode(false);
+      })
+      .catch((error) => {
+        console.error('[InteractivePropertyMap] Failed to reload Google Maps:', error);
+        const errorMsg = error instanceof Error ? error.message : 'Failed to reload Google Maps';
+        setMapsError(errorMsg);
+        setIsLoading(false);
+      });
+  };
+
+  // Fallback UI when Google Maps is unavailable
+  if (mapsError && !googleMapsLoaded) {
+    return (
+      <div className="space-y-6">
+        {/* Error Banner */}
+        <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-6">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-6 h-6 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h3 className="text-lg font-semibold text-amber-900 mb-2">
+                Google Maps Unavailable
+              </h3>
+              <p className="text-sm text-amber-800 mb-4">
+                {mapsError}. You can still enter the property location manually below.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={handleRetryMaps}
+                  className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors text-sm font-medium"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Retry Loading Maps
+                </button>
+                <button
+                  onClick={() => setUseFallbackMode(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-white border border-amber-400 text-amber-800 rounded-lg hover:bg-amber-50 transition-colors text-sm font-medium"
+                >
+                  Continue Without Maps
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Fallback Manual Input */}
+        {useFallbackMode && (
+          <div className="bg-white border-2 border-gray-200 rounded-xl p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <MapPin className="w-5 h-5 text-red-600" />
+              Property Location (Manual Entry)
+            </h3>
+            <ManualAddressInput
+              onChange={handleFallbackAddressChange}
+              showCoordinates={true}
+              required={true}
+            />
+
+            {propertyAddress && (
+              <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                <p className="text-sm text-green-800">
+                  <span className="font-medium">Selected Address:</span> {propertyAddress}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Note about limited functionality */}
+        {useFallbackMode && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <h4 className="font-semibold text-blue-900 mb-2">Limited Functionality Note:</h4>
+            <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
+              <li>Route generation and access directions are not available without Google Maps</li>
+              <li>You can still manually enter property coordinates</li>
+              <li>Nearby facilities lookup will use the coordinates you provide</li>
+              <li>Consider refreshing the page later to try loading Maps again</li>
+            </ul>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

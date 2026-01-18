@@ -20,8 +20,9 @@ import { Label } from './Label';
 import { MultiSelectWithCustomInput } from './MultiSelectWithCustomInput';
 import { generateEnhancedLandDescription } from '../utils/landDescriptionGenerator';
 import { authTokenStorage } from '../utils/secureStorage';
+import { API_URL } from '../config';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_BASE_URL = API_URL;
 
 interface PropertyDescriptionStepProps {
   register: any;

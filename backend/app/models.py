@@ -2,6 +2,61 @@ from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, JSON
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from .database import Base
+import uuid
+import enum
+
+
+class JobType(str, enum.Enum):
+    """Types of background jobs."""
+    DOCX_GENERATION = "docx_generation"
+    PDF_GENERATION = "pdf_generation"
+
+
+class JobStatus(str, enum.Enum):
+    """Status states for background jobs."""
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class Job(Base):
+    """
+    Job model for tracking async document generation tasks.
+
+    Used for long-running operations like DOCX/PDF generation
+    that should not block the API response.
+    """
+    __tablename__ = "jobs"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    report_id = Column(Integer, ForeignKey("reports.id", ondelete="SET NULL"), nullable=True)
+
+    job_type = Column(String(50), nullable=False)  # 'docx_generation', 'pdf_generation'
+    status = Column(String(20), nullable=False, default="pending")  # 'pending', 'processing', 'completed', 'failed'
+
+    # Result data
+    result_url = Column(String(500), nullable=True)  # Path to generated file
+    result_filename = Column(String(255), nullable=True)  # Original filename
+    error_message = Column(Text, nullable=True)  # Error details if failed
+
+    # Progress tracking (optional)
+    progress_percent = Column(Integer, nullable=True, default=0)  # 0-100
+    progress_message = Column(String(255), nullable=True)  # Current step description
+
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Relationships
+    user = relationship("User")
+    report = relationship("Report")
+
+    def __repr__(self):
+        return f"<Job(id={self.id}, type={self.job_type}, status={self.status})>"
 
 class User(Base):
     __tablename__ = "users"
@@ -12,6 +67,13 @@ class User(Base):
     honorific = Column(String(10), nullable=True)
     full_name = Column(String(255), nullable=False)
     phone = Column(String(50), nullable=True)
+
+    # User Role for RBAC
+    role = Column(String(20), nullable=False, default='user')  # 'user', 'admin'
+
+    # Password Reset Fields
+    password_reset_token = Column(String(100), nullable=True)
+    password_reset_expires = Column(DateTime(timezone=True), nullable=True)
 
     # Professional Credentials
     academic_qualifications = Column(Text, nullable=True)

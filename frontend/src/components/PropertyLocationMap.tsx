@@ -1,9 +1,10 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { GoogleMap, useJsApiLoader, Marker, Polyline } from '@react-google-maps/api';
-import { MapPin, Navigation, Edit2, Check, X } from 'lucide-react';
+import { MapPin, Navigation, Edit2, Check, X, AlertTriangle, RefreshCw } from 'lucide-react';
 import axios from 'axios';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+import * as Sentry from '@sentry/react';
+import { API_URL } from '../config';
+import { ManualAddressInput, type ManualAddressData } from './ManualAddressInput';
 
 // Sri Lanka center coordinates
 const SRI_LANKA_CENTER = {
@@ -77,11 +78,24 @@ const PropertyLocationMap: React.FC<PropertyLocationMapProps> = ({
   initialData,
   googleMapsApiKey
 }) => {
-  const { isLoaded } = useJsApiLoader({
+  const { isLoaded, loadError } = useJsApiLoader({
     id: 'google-map-script',
     googleMapsApiKey: googleMapsApiKey,
     libraries: libraries
   });
+
+  // Fallback mode state
+  const [useFallbackMode, setUseFallbackMode] = useState(false);
+
+  // Report load errors to Sentry
+  useEffect(() => {
+    if (loadError) {
+      Sentry.captureException(loadError, {
+        tags: { component: 'PropertyLocationMap' },
+        extra: { apiKeyConfigured: !!googleMapsApiKey },
+      });
+    }
+  }, [loadError, googleMapsApiKey]);
 
   // Map state
   const [map, setMap] = useState<google.maps.Map | null>(null);
@@ -340,10 +354,107 @@ const PropertyLocationMap: React.FC<PropertyLocationMapProps> = ({
     setMap(null);
   }, []);
 
-  if (!isLoaded) {
+  // Handle fallback address change
+  const handleFallbackAddressChange = (data: ManualAddressData) => {
+    if (data.coordinates) {
+      const locationData: LocationData = {
+        lat: data.coordinates.lat,
+        lng: data.coordinates.lng,
+        formatted_address: data.formattedAddress,
+        village: data.villageTown,
+        district: data.district,
+      };
+      setPropertyLocation(locationData);
+      setPropertyLocationInput(data.formattedAddress);
+      updateParentData(locationData, startingPoint, routeData);
+    }
+  };
+
+  // Handle retry loading maps
+  const handleRetryMaps = () => {
+    // Reload the page to retry loading Google Maps
+    window.location.reload();
+  };
+
+  // Loading state
+  if (!isLoaded && !loadError) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600"></div>
+      </div>
+    );
+  }
+
+  // Error state with fallback UI
+  if (loadError) {
+    return (
+      <div className="space-y-6">
+        {/* Error Banner */}
+        <div className="bg-amber-50 border-2 border-amber-300 rounded-xl p-6">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-6 h-6 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h3 className="text-lg font-semibold text-amber-900 mb-2">
+                Google Maps Unavailable
+              </h3>
+              <p className="text-sm text-amber-800 mb-4">
+                {loadError.message || 'Failed to load Google Maps'}. You can still enter the property location manually.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={handleRetryMaps}
+                  className="flex items-center gap-2 px-4 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-colors text-sm font-medium"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                  Retry Loading Maps
+                </button>
+                <button
+                  onClick={() => setUseFallbackMode(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-white border border-amber-400 text-amber-800 rounded-lg hover:bg-amber-50 transition-colors text-sm font-medium"
+                >
+                  Continue Without Maps
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Fallback Manual Input */}
+        {useFallbackMode && (
+          <div className="bg-white border-2 border-gray-200 rounded-xl p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <MapPin className="w-5 h-5 text-emerald-600" />
+              Property Location (Manual Entry)
+            </h3>
+            <ManualAddressInput
+              onChange={handleFallbackAddressChange}
+              showCoordinates={true}
+              required={true}
+            />
+
+            {propertyLocation && (
+              <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                <p className="text-sm text-green-800">
+                  <span className="font-medium">Property Location:</span>{' '}
+                  {propertyLocationInput || `${propertyLocation.lat.toFixed(6)}, ${propertyLocation.lng.toFixed(6)}`}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Note about limited functionality */}
+        {useFallbackMode && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <h4 className="font-semibold text-blue-900 mb-2">Limited Functionality Note:</h4>
+            <ul className="text-sm text-blue-800 space-y-1 list-disc list-inside">
+              <li>Route generation is not available without Google Maps</li>
+              <li>You can manually enter property coordinates and address details</li>
+              <li>Access directions will need to be entered manually</li>
+              <li>Refresh the page to try loading Maps again</li>
+            </ul>
+          </div>
+        )}
       </div>
     );
   }

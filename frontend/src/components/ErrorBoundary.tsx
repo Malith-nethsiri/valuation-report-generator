@@ -1,4 +1,5 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
+import * as Sentry from '@sentry/react';
 import { AlertCircle, RefreshCw, Home } from 'lucide-react';
 
 interface Props {
@@ -11,11 +12,13 @@ interface State {
   hasError: boolean;
   error: Error | null;
   errorInfo: ErrorInfo | null;
+  eventId: string | null;
 }
 
 /**
  * ErrorBoundary component catches React errors and provides graceful fallback UI
  * Prevents blank screens and provides recovery options
+ * Reports errors to Sentry in production
  */
 export class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
@@ -23,7 +26,8 @@ export class ErrorBoundary extends Component<Props, State> {
     this.state = {
       hasError: false,
       error: null,
-      errorInfo: null
+      errorInfo: null,
+      eventId: null
     };
   }
 
@@ -42,26 +46,46 @@ export class ErrorBoundary extends Component<Props, State> {
     // Call optional error callback
     this.props.onError?.(error, errorInfo);
 
+    // Report to Sentry in production
+    const IS_PRODUCTION = import.meta.env.MODE === 'production';
+    const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN;
+
+    if (SENTRY_DSN && IS_PRODUCTION) {
+      Sentry.withScope((scope) => {
+        scope.setExtras({
+          componentStack: errorInfo.componentStack,
+        });
+        const eventId = Sentry.captureException(error);
+        this.setState({ eventId });
+      });
+    }
+
     // Store error info in state
     this.setState({
       error,
       errorInfo
     });
-
-    // TODO: Log to error tracking service (e.g., Sentry)
-    // errorTrackingService.logError(error, errorInfo);
   }
 
   handleReset = () => {
     this.setState({
       hasError: false,
       error: null,
-      errorInfo: null
+      errorInfo: null,
+      eventId: null
     });
   };
 
   handleGoHome = () => {
     window.location.href = '/';
+  };
+
+  handleReportFeedback = () => {
+    // Open Sentry user feedback dialog if available
+    const { eventId } = this.state;
+    if (eventId) {
+      Sentry.showReportDialog({ eventId });
+    }
   };
 
   render() {
@@ -70,6 +94,10 @@ export class ErrorBoundary extends Component<Props, State> {
       if (this.props.fallback) {
         return this.props.fallback;
       }
+
+      const IS_PRODUCTION = import.meta.env.MODE === 'production';
+      const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN;
+      const showReportButton = IS_PRODUCTION && SENTRY_DSN && this.state.eventId;
 
       // Default error UI
       return (
@@ -89,7 +117,7 @@ export class ErrorBoundary extends Component<Props, State> {
             </p>
 
             {/* Development-only error details */}
-            {process.env.NODE_ENV === 'development' && this.state.error && (
+            {!IS_PRODUCTION && this.state.error && (
               <details className="mb-4 p-3 bg-gray-100 rounded text-sm border border-gray-300">
                 <summary className="cursor-pointer font-semibold text-gray-700 mb-2 hover:text-gray-900">
                   Error Details (Development Only)
@@ -114,21 +142,33 @@ export class ErrorBoundary extends Component<Props, State> {
             )}
 
             {/* Action buttons */}
-            <div className="flex gap-3">
-              <button
-                onClick={this.handleReset}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-              >
-                <RefreshCw className="h-4 w-4" />
-                Try Again
-              </button>
-              <button
-                onClick={this.handleGoHome}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
-              >
-                <Home className="h-4 w-4" />
-                Go Home
-              </button>
+            <div className="flex flex-col gap-3">
+              <div className="flex gap-3">
+                <button
+                  onClick={this.handleReset}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  Try Again
+                </button>
+                <button
+                  onClick={this.handleGoHome}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
+                >
+                  <Home className="h-4 w-4" />
+                  Go Home
+                </button>
+              </div>
+
+              {/* Sentry feedback button (production only) */}
+              {showReportButton && (
+                <button
+                  onClick={this.handleReportFeedback}
+                  className="w-full px-4 py-2 text-sm text-gray-600 hover:text-gray-800 underline"
+                >
+                  Report this issue
+                </button>
+              )}
             </div>
           </div>
         </div>

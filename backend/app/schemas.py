@@ -94,6 +94,7 @@ class UserLogin(BaseModel):
 
 class UserResponse(UserBase):
     id: int
+    role: str = Field(default="user", description="User role: 'user' or 'admin'")
     created_at: datetime
     updated_at: Optional[datetime] = None
     bank_accounts: Optional[List["BankAccount"]] = None
@@ -1474,3 +1475,77 @@ class MultiPropertyReportResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ===== JOB SCHEMAS FOR ASYNC DOCUMENT GENERATION =====
+
+class JobCreate(BaseModel):
+    """Schema for creating a new background job."""
+    report_id: int = Field(..., description="ID of the report to generate document for")
+    job_type: str = Field(
+        default="docx_generation",
+        pattern="^(docx_generation|pdf_generation)$",
+        description="Type of job to create"
+    )
+
+
+class JobResponse(BaseModel):
+    """Schema for job status responses."""
+    id: str = Field(..., description="Unique job identifier (UUID)")
+    user_id: int
+    report_id: Optional[int]
+    job_type: str
+    status: str = Field(..., description="Job status: pending, processing, completed, failed")
+    result_url: Optional[str] = Field(None, description="URL/path to download result when completed")
+    result_filename: Optional[str] = Field(None, description="Original filename of generated document")
+    error_message: Optional[str] = Field(None, description="Error details if job failed")
+    progress_percent: Optional[int] = Field(None, ge=0, le=100, description="Progress percentage 0-100")
+    progress_message: Optional[str] = Field(None, description="Current step description")
+    created_at: datetime
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class JobStatusResponse(BaseModel):
+    """Simplified job status response for polling."""
+    id: str
+    status: str
+    progress_percent: Optional[int] = 0
+    progress_message: Optional[str] = None
+    error_message: Optional[str] = None
+    download_ready: bool = False
+    download_url: Optional[str] = None
+    filename: Optional[str] = None
+
+
+# ===== PASSWORD RESET SCHEMAS =====
+
+class ForgotPasswordRequest(BaseModel):
+    """Request schema for initiating password reset."""
+    email: EmailStr = Field(..., description="Email address to send reset link to")
+
+
+class ResetPasswordRequest(BaseModel):
+    """Request schema for resetting password with token."""
+    token: str = Field(..., min_length=20, description="Password reset token from email")
+    new_password: str = Field(..., min_length=8, description="New password")
+
+    @field_validator('new_password')
+    @classmethod
+    def validate_password_strength(cls, v):
+        """Validate password strength requirements"""
+        from .auth import validate_password_strength
+
+        is_valid, error_msg = validate_password_strength(v)
+        if not is_valid:
+            raise ValueError(error_msg)
+        return v
+
+
+class PasswordResetResponse(BaseModel):
+    """Response for password reset operations."""
+    success: bool
+    message: str

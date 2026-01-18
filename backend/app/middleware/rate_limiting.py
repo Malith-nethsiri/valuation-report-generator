@@ -1,5 +1,5 @@
 """
-Rate limiting middleware using token bucket algorithm.
+Rate limiting middleware using token bucket algorithm with Redis storage.
 
 Provides protection against API abuse on expensive endpoints:
 - OCR processing
@@ -11,11 +11,15 @@ Benefits:
 - Prevents resource exhaustion
 - Fair usage across users
 - Configurable per-endpoint limits
-- Automatic cleanup of old buckets
+- Redis-based storage (persists across restarts, works across instances)
+- Automatic expiration via Redis TTL
+- Falls back to in-memory storage if Redis unavailable
 """
 
 import time
+import json
 import logging
+import hashlib
 from typing import Dict, Optional, Tuple
 from collections import defaultdict
 from datetime import datetime, timedelta
@@ -26,10 +30,14 @@ import asyncio
 
 logger = logging.getLogger(__name__)
 
+# Redis key prefix and TTL
+REDIS_KEY_PREFIX = "ratelimit"
+REDIS_BUCKET_TTL = 3600  # 1 hour - buckets expire if not used
+
 
 class TokenBucket:
     """
-    Token bucket algorithm for rate limiting.
+    Token bucket algorithm for rate limiting (in-memory fallback).
 
     Tokens are added at a constant rate. Each request consumes one token.
     If no tokens available, request is rejected.
@@ -89,21 +97,43 @@ class TokenBucket:
         tokens_needed = 1 - self.tokens
         return int(tokens_needed / self.refill_rate) + 1
 
+    def to_dict(self) -> dict:
+        """Serialize bucket state to dict for Redis storage."""
+        return {
+            "capacity": self.capacity,
+            "refill_rate": self.refill_rate,
+            "tokens": self.tokens,
+            "last_refill": self.last_refill
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "TokenBucket":
+        """Deserialize bucket state from dict."""
+        bucket = cls(data["capacity"], data["refill_rate"])
+        bucket.tokens = data["tokens"]
+        bucket.last_refill = data["last_refill"]
+        return bucket
+
 
 class RateLimiter:
     """
     Manages rate limits for different endpoints and clients.
+
+    Uses Redis for storage when available, falls back to in-memory storage.
     """
 
     def __init__(self):
-        # Client buckets: {client_id: {endpoint: TokenBucket}}
+        # In-memory fallback buckets: {client_id: {endpoint: TokenBucket}}
         self.buckets: Dict[str, Dict[str, TokenBucket]] = defaultdict(dict)
 
         # Endpoint configurations: {endpoint: (capacity, refill_rate)}
         self.endpoint_configs: Dict[str, Tuple[int, float]] = {}
 
-        # Last cleanup time
+        # Last cleanup time (for in-memory fallback)
         self.last_cleanup = datetime.now()
+
+        # Track if Redis is available
+        self._redis_available = None
 
     def configure_endpoint(self, endpoint: str, requests_per_minute: int):
         """
@@ -120,9 +150,113 @@ class RateLimiter:
         self.endpoint_configs[endpoint] = (capacity, refill_rate)
         logger.info(f"Rate limit configured: {endpoint} = {requests_per_minute} req/min")
 
+    def _make_redis_key(self, client_id: str, endpoint: str) -> str:
+        """
+        Generate Redis key for rate limit bucket.
+
+        Args:
+            client_id: Client identifier
+            endpoint: Endpoint path
+
+        Returns:
+            Redis key string
+        """
+        # Hash endpoint to avoid special characters in key
+        endpoint_hash = hashlib.md5(endpoint.encode()).hexdigest()[:12]
+        return f"{REDIS_KEY_PREFIX}:{client_id}:{endpoint_hash}"
+
+    async def _get_redis_bucket(self, key: str, capacity: int, refill_rate: float) -> Optional[TokenBucket]:
+        """
+        Get bucket state from Redis.
+
+        Args:
+            key: Redis key
+            capacity: Bucket capacity (for new buckets)
+            refill_rate: Token refill rate (for new buckets)
+
+        Returns:
+            TokenBucket or None if Redis unavailable
+        """
+        try:
+            from ..services.redis_client import RedisCache
+
+            data = await RedisCache.get_json(key)
+
+            if data:
+                # Restore existing bucket
+                bucket = TokenBucket.from_dict(data)
+                # Update config in case it changed
+                bucket.capacity = capacity
+                bucket.refill_rate = refill_rate
+                return bucket
+            else:
+                # Create new bucket
+                return TokenBucket(capacity, refill_rate)
+
+        except Exception as e:
+            logger.debug(f"Redis bucket get failed: {e}")
+            return None
+
+    async def _set_redis_bucket(self, key: str, bucket: TokenBucket) -> bool:
+        """
+        Save bucket state to Redis.
+
+        Args:
+            key: Redis key
+            bucket: TokenBucket to save
+
+        Returns:
+            True if saved successfully
+        """
+        try:
+            from ..services.redis_client import RedisCache
+
+            return await RedisCache.set_json(key, bucket.to_dict(), REDIS_BUCKET_TTL)
+
+        except Exception as e:
+            logger.debug(f"Redis bucket set failed: {e}")
+            return False
+
+    async def check_rate_limit_async(self, client_id: str, endpoint: str) -> Tuple[bool, Optional[int]]:
+        """
+        Check if request should be allowed (async version with Redis).
+
+        Args:
+            client_id: Client identifier (IP or user ID)
+            endpoint: Endpoint being accessed
+
+        Returns:
+            Tuple of (is_allowed, retry_after_seconds)
+        """
+        # Find matching endpoint configuration
+        config = self._get_endpoint_config(endpoint)
+        if not config:
+            # No rate limit configured for this endpoint
+            return True, None
+
+        capacity, refill_rate = config
+
+        # Try Redis first
+        redis_key = self._make_redis_key(client_id, endpoint)
+        bucket = await self._get_redis_bucket(redis_key, capacity, refill_rate)
+
+        if bucket:
+            # Redis available - use Redis-backed bucket
+            if bucket.consume():
+                await self._set_redis_bucket(redis_key, bucket)
+                return True, None
+            else:
+                retry_after = bucket.get_retry_after()
+                await self._set_redis_bucket(redis_key, bucket)
+                logger.warning(f"Rate limit exceeded: {client_id} on {endpoint} (retry after {retry_after}s)")
+                return False, retry_after
+        else:
+            # Fall back to in-memory
+            return self.check_rate_limit(client_id, endpoint)
+
     def check_rate_limit(self, client_id: str, endpoint: str) -> Tuple[bool, Optional[int]]:
         """
-        Check if request should be allowed.
+        Check if request should be allowed (sync in-memory version).
 
         Args:
             client_id: Client identifier (IP or user ID)
@@ -176,7 +310,8 @@ class RateLimiter:
 
     def cleanup_old_buckets(self, max_age_minutes: int = 60):
         """
-        Remove old buckets to prevent memory leak.
+        Remove old in-memory buckets to prevent memory leak.
+        (Redis buckets auto-expire via TTL)
 
         Args:
             max_age_minutes: Age threshold for cleanup
@@ -220,6 +355,9 @@ rate_limiter = RateLimiter()
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """
     Middleware to apply rate limiting to requests.
+
+    Uses Redis for distributed rate limiting when available,
+    falls back to in-memory storage otherwise.
     """
 
     async def dispatch(self, request: Request, call_next):
@@ -232,8 +370,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         # Get endpoint path
         endpoint = request.url.path
 
-        # Check rate limit
-        is_allowed, retry_after = rate_limiter.check_rate_limit(str(client_id), endpoint)
+        # Check rate limit using async Redis-backed method
+        is_allowed, retry_after = await rate_limiter.check_rate_limit_async(str(client_id), endpoint)
 
         if not is_allowed:
             # Rate limit exceeded

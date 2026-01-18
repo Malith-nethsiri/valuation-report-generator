@@ -4,8 +4,7 @@ import axios from 'axios';
 import type { Report, RoadCondition } from '../types';
 import { GooglePlacesAutocomplete } from './GooglePlacesAutocomplete';
 import { RoadConditionsSummary } from './RoadConditionsSummary';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+import { API_URL } from '../config';
 
 interface Props {
   formData: Partial<Report>;

@@ -10,6 +10,7 @@ import { useNavigationBlocker } from '../hooks/useNavigationBlocker';
 import NavigationConfirmModal from './NavigationConfirmModal';
 import { ErrorSummaryPanel } from './ErrorSummaryPanel';
 import { transformZodErrors, ValidationErrorSummary } from '../utils/validationErrorTransformer';
+import { API_URL } from '../config';
 
 import {
     ArrowRight,
@@ -2694,10 +2695,9 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
                 const reportData = { ...formData, status: 'draft', report_type: 'residential_property' };
 
                 const token = localStorage.getItem('authToken');
-                const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
                 navigator.sendBeacon(
-                    `${apiUrl}/api/reports`,
+                    `${API_URL}/api/reports`,
                     new Blob([JSON.stringify(reportData)], { type: 'application/json' })
                 );
             }

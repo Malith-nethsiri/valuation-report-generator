@@ -7,8 +7,9 @@ import { Textarea } from './Textarea';
 import { MultiSelectWithCustomInput } from './MultiSelectWithCustomInput';
 import { formatFacilityName, formatPlaceName, formatAddress } from '../utils/textFormatter';
 import { authTokenStorage } from '../utils/secureStorage';
+import { API_URL } from '../config';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_BASE_URL = API_URL;
 
 // Configuration Constants
 const SEARCH_RADIUS_DEFAULT = 5000; // meters (5 km)
