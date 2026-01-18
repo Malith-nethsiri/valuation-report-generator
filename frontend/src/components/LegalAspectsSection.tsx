@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Gavel, ChevronDown, ChevronRight } from 'lucide-react';
 import { AutocompleteInput } from './AutocompleteInput';
+import { DatePicker } from './DatePicker';
 import { Textarea } from './Textarea';
 import { Label } from './Label';
 
@@ -285,14 +286,15 @@ export default function LegalAspectsSection({ data, onChange }: Props) {
           />
 
           {/* Gazette Date */}
-          <AutocompleteInput
-            label="Gazette Date (if applicable)"
-            value={data.street_lines_gazette_date || ''}
-            onChange={(value) => onChange({ street_lines_gazette_date: value })}
-            suggestions={[]}
-            placeholder="DD-MM-YYYY"
-            allowCustom={true}
-          />
+          <div>
+            <Label>Gazette Date (if applicable)</Label>
+            <DatePicker
+              id="street_lines_gazette_date"
+              value={data.street_lines_gazette_date || ''}
+              onChange={(date) => onChange({ street_lines_gazette_date: date })}
+              placeholder="DD-MM-YYYY"
+            />
+          </div>
         </div>
 
         {/* Impact Description */}
@@ -364,7 +366,7 @@ export default function LegalAspectsSection({ data, onChange }: Props) {
             value={data.building_approval_authority || ''}
             onChange={(value) => onChange({ building_approval_authority: value })}
             suggestions={[]}
-            placeholder="e.g., Rambukkana Pradeshiya Sabha"
+            placeholder="Enter authority"
             allowCustom={true}
           />
 

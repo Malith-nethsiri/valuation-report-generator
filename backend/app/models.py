@@ -91,7 +91,6 @@ class Report(Base):
 
     # Valuation Purpose
     valuation_type = Column(String(100), nullable=True)  # Market Value, Present Market Value, etc.
-    property_ownership = Column(String(200), nullable=True)  # "owned by him", "owned by her", etc.
     property_type_valued = Column(String(200), nullable=True)  # immovable property, movable & immovable properties
 
     # Valuation Purpose (new)

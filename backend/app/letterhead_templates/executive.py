@@ -91,7 +91,7 @@ class ExecutiveTemplate(BaseLetterheadTemplate):
             name_run.add_text(f"{user.honorific} ")
         name_run.add_text(user.full_name)
         name_run.bold = True
-        name_run.font.size = Pt(12)
+        name_run.font.size = Pt(14)
         name_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Academic Qualifications (Centered, Bold)
@@ -103,7 +103,7 @@ class ExecutiveTemplate(BaseLetterheadTemplate):
             qual_para.paragraph_format.line_spacing = 0.8
             qual_run = qual_para.add_run(user.academic_qualifications)
             qual_run.bold = True
-            qual_run.font.size = Pt(9)
+            qual_run.font.size = Pt(11)
             qual_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Professional Designation (Centered, Bold)
@@ -115,7 +115,7 @@ class ExecutiveTemplate(BaseLetterheadTemplate):
             desig_para.paragraph_format.line_spacing = 0.8
             desig_run = desig_para.add_run(user.professional_designation)
             desig_run.bold = True
-            desig_run.font.size = Pt(9)
+            desig_run.font.size = Pt(11)
             desig_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Condensed contact block (Centered, single line)
@@ -153,7 +153,7 @@ class ExecutiveTemplate(BaseLetterheadTemplate):
             contact_para.paragraph_format.space_before = Pt(2)
             contact_para.paragraph_format.space_after = Pt(3)
             contact_run = contact_para.add_run(" | ".join(contact_parts))
-            contact_run.font.size = Pt(7)
+            contact_run.font.size = Pt(11)
             contact_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Double-line bottom border
@@ -177,12 +177,12 @@ class ExecutiveTemplate(BaseLetterheadTemplate):
         ref_cell_para.paragraph_format.space_after = Pt(0)
         ref_label = ref_cell_para.add_run("Ref: ")
         ref_label.bold = True
-        ref_label.font.size = Pt(9)
+        ref_label.font.size = Pt(11)
         ref_label.font.color.rgb = RGBColor(0, 0, 0)
 
         if report.report_reference:
             ref_value = ref_cell_para.add_run(report.report_reference)
-            ref_value.font.size = Pt(9)
+            ref_value.font.size = Pt(11)
             ref_value.font.color.rgb = RGBColor(0, 0, 0)
 
         date_cell = ref_table.rows[0].cells[1]
@@ -192,14 +192,14 @@ class ExecutiveTemplate(BaseLetterheadTemplate):
         date_cell_para.paragraph_format.space_after = Pt(0)
         date_label = date_cell_para.add_run("Date: ")
         date_label.bold = True
-        date_label.font.size = Pt(9)
+        date_label.font.size = Pt(11)
         date_label.font.color.rgb = RGBColor(0, 0, 0)
 
         if report.report_date:
             date_value = date_cell_para.add_run(report.report_date)
         else:
             date_value = date_cell_para.add_run(datetime.now().strftime('%Y-%m-%d'))
-        date_value.font.size = Pt(9)
+        date_value.font.size = Pt(11)
         date_value.font.color.rgb = RGBColor(0, 0, 0)
 
         # Add spacing after letterhead

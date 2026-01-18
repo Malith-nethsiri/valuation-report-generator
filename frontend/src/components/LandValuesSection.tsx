@@ -331,7 +331,7 @@ export default function LandValuesSection({ data, onChange }: Props) {
                           e.target.value
                         )
                       }
-                      placeholder="e.g., Rambukkana town center"
+                      placeholder="Enter location description"
                       className="mt-1"
                     />
                   </div>

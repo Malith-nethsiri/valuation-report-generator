@@ -337,19 +337,6 @@ export const ApplicantAndPurposeStep: React.FC<ApplicantAndPurposeStepProps> = (
                 </div>
 
                 <div className="space-y-2 mt-4">
-                    <Label htmlFor="property_ownership" className="text-gray-700 font-medium">
-                        Property Ownership <span className="text-gray-400">(Optional, auto-generated if left blank)</span>
-                    </Label>
-                    <Input
-                        id="property_ownership"
-                        type="text"
-                        placeholder="e.g., owned by him, owned by her"
-                        className="h-14 bg-white/50 border-gray-200/50 rounded-2xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200"
-                        {...register('property_ownership')}
-                    />
-                </div>
-
-                <div className="space-y-2 mt-4">
                     <Label className="text-gray-700 font-medium">
                         Additional Property Owner?
                     </Label>

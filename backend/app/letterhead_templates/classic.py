@@ -81,7 +81,7 @@ class ClassicTemplate(BaseLetterheadTemplate):
             name_run.add_text(f"{user.honorific} ")
         name_run.add_text(user.full_name)
         name_run.bold = True
-        name_run.font.size = Pt(9)
+        name_run.font.size = Pt(14)
         name_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Academic Qualifications (Centered)
@@ -92,7 +92,7 @@ class ClassicTemplate(BaseLetterheadTemplate):
             qual_para.paragraph_format.space_after = Pt(0)
             qual_para.paragraph_format.line_spacing = 0.9
             qual_run = qual_para.add_run(user.academic_qualifications)
-            qual_run.font.size = Pt(8)
+            qual_run.font.size = Pt(11)
             qual_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Professional Designation (Centered, Bold)
@@ -104,7 +104,7 @@ class ClassicTemplate(BaseLetterheadTemplate):
             desig_para.paragraph_format.line_spacing = 0.9
             desig_run = desig_para.add_run(user.professional_designation)
             desig_run.bold = True
-            desig_run.font.size = Pt(9)
+            desig_run.font.size = Pt(11)
             desig_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Membership Information (Centered)
@@ -120,7 +120,7 @@ class ClassicTemplate(BaseLetterheadTemplate):
             if user.membership_number:
                 member_text.append(user.membership_number)
             member_run = member_para.add_run(" | ".join(member_text))
-            member_run.font.size = Pt(7)
+            member_run.font.size = Pt(11)
             member_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Panel Valuer Status (Centered)
@@ -132,7 +132,7 @@ class ClassicTemplate(BaseLetterheadTemplate):
             panel_para.paragraph_format.line_spacing = 0.9
             banks_text = ", ".join(user.panel_valuer_banks)
             panel_run = panel_para.add_run(f"Panel Valuer: {banks_text}")
-            panel_run.font.size = Pt(7)
+            panel_run.font.size = Pt(11)
             panel_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Border separator
@@ -155,7 +155,7 @@ class ClassicTemplate(BaseLetterheadTemplate):
         residence_para.paragraph_format.line_spacing = 0.9
         residence_heading = residence_para.add_run("RESIDENCE")
         residence_heading.bold = True
-        residence_heading.font.size = Pt(7)
+        residence_heading.font.size = Pt(11)
         residence_heading.font.color.rgb = RGBColor(0, 0, 0)
 
         # Build residential address - combine into one line
@@ -171,7 +171,7 @@ class ClassicTemplate(BaseLetterheadTemplate):
 
         if res_address_parts:
             res_run = residence_para.add_run("\n" + ", ".join(res_address_parts))
-            res_run.font.size = Pt(7)
+            res_run.font.size = Pt(11)
             res_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Residential phones - combine with separator
@@ -182,7 +182,7 @@ class ClassicTemplate(BaseLetterheadTemplate):
             phones.append(user.phone_secondary)
         if phones:
             phone_run = residence_para.add_run("\n" + " / ".join(phones))
-            phone_run.font.size = Pt(7)
+            phone_run.font.size = Pt(11)
             phone_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # OFFICE Column
@@ -193,7 +193,7 @@ class ClassicTemplate(BaseLetterheadTemplate):
         office_para.paragraph_format.line_spacing = 0.9
         office_heading = office_para.add_run("OFFICE")
         office_heading.bold = True
-        office_heading.font.size = Pt(7)
+        office_heading.font.size = Pt(11)
         office_heading.font.color.rgb = RGBColor(0, 0, 0)
 
         # Build office address - combine into one line
@@ -207,13 +207,13 @@ class ClassicTemplate(BaseLetterheadTemplate):
 
         if office_address_parts:
             office_run = office_para.add_run("\n" + ", ".join(office_address_parts))
-            office_run.font.size = Pt(7)
+            office_run.font.size = Pt(11)
             office_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Office phone
         if user.office_phone:
             office_phone_run = office_para.add_run(f"\n{user.office_phone}")
-            office_phone_run.font.size = Pt(7)
+            office_phone_run.font.size = Pt(11)
             office_phone_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Email (Centered below contact info)
@@ -224,7 +224,7 @@ class ClassicTemplate(BaseLetterheadTemplate):
             email_para.paragraph_format.space_after = Pt(1)
             email_para.paragraph_format.line_spacing = 0.9
             email_run = email_para.add_run(user.email)
-            email_run.font.size = Pt(7)
+            email_run.font.size = Pt(11)
             email_run.font.color.rgb = RGBColor(0, 0, 0)
             email_run.underline = True
 
@@ -246,12 +246,12 @@ class ClassicTemplate(BaseLetterheadTemplate):
         ref_cell_para.paragraph_format.line_spacing = 0.9
         ref_label = ref_cell_para.add_run("Ref: ")
         ref_label.bold = True
-        ref_label.font.size = Pt(8)
+        ref_label.font.size = Pt(11)
         ref_label.font.color.rgb = RGBColor(0, 0, 0)
 
         if report.report_reference:
             ref_value = ref_cell_para.add_run(report.report_reference)
-            ref_value.font.size = Pt(8)
+            ref_value.font.size = Pt(11)
             ref_value.font.color.rgb = RGBColor(0, 0, 0)
 
         date_cell = ref_table.rows[0].cells[1]
@@ -262,16 +262,16 @@ class ClassicTemplate(BaseLetterheadTemplate):
         date_cell_para.paragraph_format.line_spacing = 0.9
         date_label = date_cell_para.add_run("Date: ")
         date_label.bold = True
-        date_label.font.size = Pt(8)
+        date_label.font.size = Pt(11)
         date_label.font.color.rgb = RGBColor(0, 0, 0)
 
         if report.report_date:
             date_value = date_cell_para.add_run(report.report_date)
-            date_value.font.size = Pt(8)
+            date_value.font.size = Pt(11)
             date_value.font.color.rgb = RGBColor(0, 0, 0)
         else:
             date_value = date_cell_para.add_run(datetime.now().strftime('%Y-%m-%d'))
-            date_value.font.size = Pt(8)
+            date_value.font.size = Pt(11)
             date_value.font.color.rgb = RGBColor(0, 0, 0)
 
         # Add a small spacing after letterhead before content

@@ -242,6 +242,10 @@ interface Building {
   stories: number;
   building_age: number;
   condition: string;
+  occupier_name?: string;
+  occupier_relationship?: string;
+  is_rented?: boolean;
+  rent_details?: string;
   roof_types: string[];
   roof_description: string;
   wall_types: string[];
@@ -255,6 +259,8 @@ interface Building {
   conveniences: string[];
   building_description_text: string;
   building_photos: BuildingPhoto[];
+  construction_materials?: any;
+  utilities_services?: any;
 }
 
 interface Floor {
@@ -1391,6 +1397,35 @@ export const PropertyDescriptionStep: React.FC<PropertyDescriptionStepProps> = (
               </p>
             </div>
 
+            {/* Occupier Information - For all property types */}
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-200">
+              <h4 className="font-semibold text-blue-900 mb-3">Occupier Information</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="occupier_name">Occupier Name</Label>
+                  <Input
+                    {...register('occupier_name')}
+                    placeholder="Enter occupier name"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="occupier_relationship">Relationship</Label>
+                  <select
+                    {...register('occupier_relationship')}
+                    className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="">Select relationship...</option>
+                    {OCCUPIER_RELATIONSHIPS.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <p className="text-xs text-blue-600 mt-2">
+                This information will appear in the Land Description section of the report
+              </p>
+            </div>
+
             {/* Development Feasibility / Ongoing Construction (for bare land) */}
             {isBareLand && (
               <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl p-4 border border-amber-200">
@@ -1665,47 +1700,47 @@ export const PropertyDescriptionStep: React.FC<PropertyDescriptionStepProps> = (
                           </div>
                         </div>
 
-                        {/* Occupier Information - Per Building */}
+                        {/* Rental Status - Per Building */}
                         <div className="border-t border-gray-200 pt-4 mt-4">
-                          <h5 className="text-md font-semibold text-gray-900 mb-3">Occupier Information</h5>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                              <Label htmlFor={`occupier_name_${building.id}`}>Occupier Name *</Label>
-                              <Input
-                                id={`occupier_name_${building.id}`}
-                                value={building.occupier_name || ''}
-                                onChange={(e) => updateBuilding(building.id, 'occupier_name', e.target.value)}
-                                placeholder="e.g., Mrs. Prema Nandage Sunitha Kumari Jayasinghe"
-                                required
-                              />
+                          <h5 className="text-md font-semibold text-gray-900 mb-3">Rental Status</h5>
+                          <div className="space-y-3">
+                            <div className="flex items-center space-x-6">
+                              <span className="text-gray-700">Is this building rented?</span>
+                              <label className="flex items-center">
+                                <input
+                                  type="radio"
+                                  name={`is_rented_${building.id}`}
+                                  checked={building.is_rented === true}
+                                  onChange={() => updateBuilding(building.id, 'is_rented', true)}
+                                  className="mr-2"
+                                />
+                                Yes
+                              </label>
+                              <label className="flex items-center">
+                                <input
+                                  type="radio"
+                                  name={`is_rented_${building.id}`}
+                                  checked={building.is_rented === false}
+                                  onChange={() => updateBuilding(building.id, 'is_rented', false)}
+                                  className="mr-2"
+                                />
+                                No
+                              </label>
                             </div>
-                            <div>
-                              <Label htmlFor={`occupier_relationship_${building.id}`}>Relationship *</Label>
-                              <div className="flex gap-2">
-                                <select
-                                  id={`occupier_relationship_${building.id}`}
-                                  value={building.occupier_relationship || ''}
-                                  onChange={(e) => updateBuilding(building.id, 'occupier_relationship', e.target.value)}
-                                  className="flex-1 px-4 py-3 bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                                  required
-                                >
-                                  <option value="">Select relationship...</option>
-                                  {OCCUPIER_RELATIONSHIPS.map(opt => (
-                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                                  ))}
-                                </select>
-                                {index > 0 && (
-                                  <Button
-                                    type="button"
-                                    onClick={() => copyOccupierFromFirstBuilding(building.id)}
-                                    className="bg-blue-600 hover:bg-blue-700 text-white whitespace-nowrap px-3"
-                                    title="Copy occupier from first building"
-                                  >
-                                    Copy from 1st
-                                  </Button>
-                                )}
+                            {building.is_rented && (
+                              <div>
+                                <Label htmlFor={`rent_details_${building.id}`}>Rent Details (Optional)</Label>
+                                <textarea
+                                  id={`rent_details_${building.id}`}
+                                  value={building.rent_details || ''}
+                                  onChange={(e) => updateBuilding(building.id, 'rent_details', e.target.value)}
+                                  className="w-full px-4 py-3 bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                                  rows={2}
+                                  maxLength={500}
+                                  placeholder="Enter rent amount, lease terms, or other details..."
+                                />
                               </div>
-                            </div>
+                            )}
                           </div>
                         </div>
                         {/* Number of Floors and Total Floor Area moved to Floor Generation section */}
@@ -2158,54 +2193,6 @@ export const PropertyDescriptionStep: React.FC<PropertyDescriptionStepProps> = (
                                   />
                                   Solar Panels Installed
                                 </label>
-                              </div>
-                            </div>
-
-                            <div>
-                              <Label>Parking Facilities</Label>
-                              <div className="grid grid-cols-3 gap-4 mt-2">
-                                <div>
-                                  <Label className="text-sm text-gray-600">Covered Parking</Label>
-                                  <Input
-                                    type="number"
-                                    min="0"
-                                    value={building.utilities_services?.parking?.covered_spaces || ''}
-                                    onChange={(e) => updateBuilding(building.id, 'utilities_services', {
-                                      ...building.utilities_services,
-                                      parking: {
-                                        ...building.utilities_services?.parking,
-                                        covered_spaces: parseInt(e.target.value) || 0
-                                      }
-                                    })}
-                                    placeholder="Vehicles"
-                                  />
-                                </div>
-                                <div>
-                                  <Label className="text-sm text-gray-600">Uncovered Parking</Label>
-                                  <Input
-                                    type="number"
-                                    min="0"
-                                    value={building.utilities_services?.parking?.uncovered_spaces || ''}
-                                    onChange={(e) => updateBuilding(building.id, 'utilities_services', {
-                                      ...building.utilities_services,
-                                      parking: {
-                                        ...building.utilities_services?.parking,
-                                        uncovered_spaces: parseInt(e.target.value) || 0
-                                      }
-                                    })}
-                                    placeholder="Vehicles"
-                                  />
-                                </div>
-                                <div>
-                                  <Label className="text-sm font-semibold">Total Capacity</Label>
-                                  <div className="px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl text-center">
-                                    <span className="text-2xl font-bold text-blue-700">
-                                      {(building.utilities_services?.parking?.covered_spaces || 0) + (building.utilities_services?.parking?.uncovered_spaces || 0)}
-                                    </span>
-                                    <span className="text-sm text-blue-600 ml-2">vehicles</span>
-                                  </div>
-                                  <p className="text-xs text-gray-500 mt-1 italic">Auto-calculated</p>
-                                </div>
                               </div>
                             </div>
 

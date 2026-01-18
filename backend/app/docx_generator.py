@@ -170,6 +170,31 @@ BOUNDARY_LIST_SPACE_AFTER = Pt(2)        # Spacing after boundary list items
 ACCOMMODATION_ROOM_SPACE_AFTER = Pt(2)   # Spacing after room details
 OPENING_SECTION_SPACE_AFTER = Pt(3)      # Spacing after opening sections
 
+# ===== FONT SIZE CONFIGURATION =====
+# Standardized font sizes (10-14pt range) for professional reports
+
+# Document title and headings
+FONT_SIZE_DOCUMENT_TITLE = Pt(14)        # "VALUATION REPORT" title
+FONT_SIZE_SECTION_HEADING = Pt(13)       # Major sections (1.0, 2.0, 3.0...)
+FONT_SIZE_SUBSECTION_HEADING = Pt(12)    # Subsections (4.1, 4.2...)
+
+# Body content
+FONT_SIZE_BODY = Pt(12)                  # Standard body text
+FONT_SIZE_INLINE_LABEL = Pt(12)          # Bold labels in inline fields
+FONT_SIZE_VALUATION = Pt(12)             # Valuation calculation lines
+
+# Tables
+FONT_SIZE_TABLE_HEADER = Pt(12)          # Table header cells
+FONT_SIZE_TABLE_CELL = Pt(11)            # Table content cells
+FONT_SIZE_INVOICE_TOTAL = Pt(12)         # Invoice subtotals and totals
+
+# Other elements
+FONT_SIZE_CAPTION = Pt(10)               # Image/photo captions
+FONT_SIZE_BANK_HEADER = Pt(12)           # Bank account section header
+FONT_SIZE_BANK_DETAILS = Pt(11)          # Bank account details
+FONT_SIZE_SIGNATURE = Pt(12)             # Signature line and label
+FONT_SIZE_CERTIFICATION = Pt(12)         # Certification text
+
 def add_border_to_paragraph(paragraph, border_position="bottom", size=12, color="000000"):
     """Add a border to a paragraph"""
     p = paragraph._element
@@ -344,7 +369,11 @@ def add_section_heading(doc, section_number: str, section_title: str):
     heading_text = f"{section_number}. {section_title}"
     heading_run = heading.add_run(heading_text)
     heading_run.bold = True
-    heading_run.font.size = Pt(10)
+    # Use different font sizes: 13pt for major sections, 12pt for subsections
+    if is_subsection:
+        heading_run.font.size = FONT_SIZE_SUBSECTION_HEADING
+    else:
+        heading_run.font.size = FONT_SIZE_SECTION_HEADING
     heading_run.font.color.rgb = RGBColor(0, 0, 0)
 
     return heading
@@ -572,7 +601,7 @@ def format_building_valuation_2line(doc, building_name: str, total_floor_area: f
     p1 = doc.add_paragraph()
     text1 = f"{building_name} – {total_floor_area:,.0f} sq.ft"
     run1 = p1.add_run(text1)
-    run1.font.size = Pt(10)
+    run1.font.size = FONT_SIZE_VALUATION
     p1.paragraph_format.space_after = Pt(2)
 
     # Line 2: Rate + depreciation inline with multiplier
@@ -588,7 +617,7 @@ def format_building_valuation_2line(doc, building_name: str, total_floor_area: f
 
     text2 = f"@ {format_currency(avg_rate)} per square foot less {depreciation_rate:.0f}% for dep[x{multiplier:.2f}]\t= {format_currency_aligned(depreciated_value)}"
     run2 = p2.add_run(text2)
-    run2.font.size = Pt(10)
+    run2.font.size = FONT_SIZE_VALUATION
     p2.paragraph_format.space_after = Pt(3)
 
 
@@ -615,18 +644,18 @@ def add_market_value_line(doc, calculated_value: float, has_blank_before: bool =
     run_label = p.add_run("Market Value of the property")
     run_label.font.bold = True
     run_label.font.underline = True
-    run_label.font.size = Pt(9)
+    run_label.font.size = FONT_SIZE_BODY
 
     # Add tab and equals sign
     run_eq = p.add_run("\t= ")
     run_eq.font.bold = True
-    run_eq.font.size = Pt(9)
+    run_eq.font.size = FONT_SIZE_BODY
 
     # Add value (bold, double underlined)
     run_value = p.add_run(format_currency(calculated_value))
     run_value.font.bold = True
     run_value.font.underline = WD_UNDERLINE.DOUBLE
-    run_value.font.size = Pt(9)
+    run_value.font.size = FONT_SIZE_BODY
 
     p.paragraph_format.space_after = Pt(3)
 
@@ -647,7 +676,7 @@ def add_value_rounded_line(doc, rounded_value: float) -> None:
     run = p.add_run(text)
     run.font.bold = True
     run.font.underline = True
-    run.font.size = Pt(9)
+    run.font.size = FONT_SIZE_BODY
 
     p.paragraph_format.space_after = Pt(12)
 
@@ -669,7 +698,7 @@ def format_addon_compact(doc, description: str, value: float) -> None:
 
     text = f"{description}\t= {format_currency_aligned(value)}"
     run = p.add_run(text)
-    run.font.size = Pt(10)
+    run.font.size = FONT_SIZE_VALUATION
     p.paragraph_format.space_after = Pt(3)
 
 
@@ -698,12 +727,12 @@ def add_inline_field(doc, label: str, content: str,
     # Add bold label
     label_run = para.add_run(f"{label}: ")
     label_run.bold = True
-    label_run.font.size = Pt(9)
+    label_run.font.size = FONT_SIZE_BODY
     label_run.font.color.rgb = RGBColor(0, 0, 0)
 
     # Add regular content
     content_run = para.add_run(content)
-    content_run.font.size = Pt(9)
+    content_run.font.size = FONT_SIZE_BODY
     content_run.font.color.rgb = RGBColor(0, 0, 0)
 
 
@@ -733,12 +762,12 @@ def add_subsection_paragraph(doc, label: str, heading: str, content: str,
     # Add bold label and heading
     label_run = para.add_run(f"{label}. {heading}:\n")
     label_run.bold = True
-    label_run.font.size = Pt(9)
+    label_run.font.size = FONT_SIZE_BODY
     label_run.font.color.rgb = RGBColor(0, 0, 0)
 
     # Add paragraph content
     content_run = para.add_run(content)
-    content_run.font.size = Pt(9)
+    content_run.font.size = FONT_SIZE_BODY
     content_run.font.color.rgb = RGBColor(0, 0, 0)
 
 
@@ -1475,7 +1504,7 @@ def add_signature_block(
         p.paragraph_format.space_after = Pt(2)
         run = p.add_run(valuer_name)
         run.font.bold = True
-        run.font.size = Pt(9)
+        run.font.size = FONT_SIZE_BODY
 
     # Valuer designation
     if valuer_designation:
@@ -1483,7 +1512,7 @@ def add_signature_block(
         p.paragraph_format.space_before = Pt(0)
         p.paragraph_format.space_after = Pt(2)
         for run in p.runs:
-            run.font.size = Pt(9)
+            run.font.size = FONT_SIZE_BODY
 
     # Certification date
     if certification_date:
@@ -1491,12 +1520,12 @@ def add_signature_block(
         p.paragraph_format.space_before = Pt(0)
         p.paragraph_format.space_after = Pt(2)
         for run in p.runs:
-            run.font.size = Pt(9)
+            run.font.size = FONT_SIZE_BODY
 
     doc.add_paragraph()
 
 
-def get_pronoun(title: Optional[str], ownership_text: Optional[str] = None) -> Dict[str, str]:
+def get_pronoun(title: Optional[str]) -> Dict[str, str]:
     """
     Determine pronouns based on title.
     Returns: {'subject': 'he'/'she', 'object': 'him'/'her', 'possessive': 'his'/'her'}
@@ -1642,13 +1671,10 @@ def generate_applicant_statement(report: models.Report) -> str:
     address_str = ", ".join(address_parts) if address_parts else "[Address]"
 
     # Get pronouns
-    pronouns = get_pronoun(report.applicant_title, report.property_ownership)
+    pronouns = get_pronoun(report.applicant_title)
 
-    # Build ownership text
-    if report.property_ownership:
-        ownership_text = report.property_ownership
-    else:
-        ownership_text = f"owned by {pronouns['object']}"
+    # Build ownership text (auto-generated based on applicant title)
+    ownership_text = f"owned by {pronouns['object']}"
 
     # Property type
     property_type = report.property_type_valued or "immovable property"
@@ -1783,7 +1809,7 @@ def generate_multi_property_concluding_statement(
         return []
 
     # Get pronoun based on applicant title
-    pronouns = get_pronoun(report.applicant_title, report.property_ownership)
+    pronouns = get_pronoun(report.applicant_title)
     gender_pronoun = pronouns['possessive']  # "his" or "her"
 
     # Build applicant name
@@ -2573,7 +2599,7 @@ def render_construction_details(doc, building: Dict) -> None:
             para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
             para.paragraph_format.line_spacing = 0.9
             run = para.add_run(construction_text)
-            run.font.size = Pt(9)
+            run.font.size = FONT_SIZE_BODY
             run.font.color.rgb = RGBColor(0, 0, 0)
             return
 
@@ -2586,7 +2612,7 @@ def render_construction_details(doc, building: Dict) -> None:
         para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
         para.paragraph_format.line_spacing = 0.9
         run = para.add_run(construction_text)
-        run.font.size = Pt(9)
+        run.font.size = FONT_SIZE_BODY
         run.font.color.rgb = RGBColor(0, 0, 0)
 
 
@@ -2646,7 +2672,7 @@ def render_utilities_and_conveniences(doc, building: Dict) -> None:
             parts.append(source_text)
 
     # Parking
-    parking = utilities.get('parking', {})
+    parking = utilities.get('parking') or {}
     covered = int(to_float(parking.get('covered_spaces')))
     uncovered = int(to_float(parking.get('uncovered_spaces')))
     total_parking = covered + uncovered
@@ -2801,23 +2827,23 @@ def generate_multi_property_report_docx(report: models.Report, user: models.User
 
                     # Add bold label
                     run_label = para.add_run(label.strip())
-                    run_label.font.size = Pt(9)
+                    run_label.font.size = FONT_SIZE_BODY
                     run_label.font.bold = True
                     run_label.font.color.rgb = RGBColor(0, 0, 0)
 
                     # Add separator with proper spacing
                     run_sep = para.add_run(" : ")
-                    run_sep.font.size = Pt(9)
+                    run_sep.font.size = FONT_SIZE_BODY
                     run_sep.font.color.rgb = RGBColor(0, 0, 0)
 
                     # Add value
                     run_value = para.add_run(value)
-                    run_value.font.size = Pt(9)
+                    run_value.font.size = FONT_SIZE_BODY
                     run_value.font.color.rgb = RGBColor(0, 0, 0)
                 else:
                     # This is the introductory paragraph (paragraph 1)
                     run = para.add_run(statement)
-                    run.font.size = Pt(9)
+                    run.font.size = FONT_SIZE_BODY
                     run.font.color.rgb = RGBColor(0, 0, 0)
         else:
             # Client-side format (default for backward compatibility)
@@ -2829,7 +2855,7 @@ def generate_multi_property_report_docx(report: models.Report, user: models.User
                 para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
                 para.paragraph_format.line_spacing = 0.9
                 run = para.add_run(statement)
-                run.font.size = Pt(9)
+                run.font.size = FONT_SIZE_BODY
                 run.font.color.rgb = RGBColor(0, 0, 0)
 
             # Add deed/certificate description if applicable (matching residential/bare land logic)
@@ -2852,7 +2878,7 @@ def generate_multi_property_report_docx(report: models.Report, user: models.User
                     para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
                     para.paragraph_format.line_spacing = 0.9
                     run = para.add_run(deed_text)
-                    run.font.size = Pt(9)
+                    run.font.size = FONT_SIZE_BODY
                     run.font.color.rgb = RGBColor(0, 0, 0)
 
             # Add submission statement (matching residential/bare land format)
@@ -2864,7 +2890,7 @@ def generate_multi_property_report_docx(report: models.Report, user: models.User
                 para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
                 para.paragraph_format.line_spacing = 0.9
                 run = para.add_run(submission_text)
-                run.font.size = Pt(9)
+                run.font.size = FONT_SIZE_BODY
                 run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Add multi-property specific statement about the summary table
@@ -2877,7 +2903,7 @@ def generate_multi_property_report_docx(report: models.Report, user: models.User
             f"This report comprises the valuation of {len(properties)} properties. "
             "The summary of properties and their respective valuations are presented in the following table:"
         )
-        summary_intro_run.font.size = Pt(9)
+        summary_intro_run.font.size = FONT_SIZE_BODY
         summary_intro_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Property list table
@@ -2901,7 +2927,7 @@ def generate_multi_property_report_docx(report: models.Report, user: models.User
             for paragraph in cell.paragraphs:
                 for run in paragraph.runs:
                     run.font.bold = True
-                    run.font.size = Pt(9)
+                    run.font.size = FONT_SIZE_TABLE_HEADER
                 paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
         # Property rows
@@ -2947,7 +2973,7 @@ def generate_multi_property_report_docx(report: models.Report, user: models.User
             for cell in row_cells:
                 for paragraph in cell.paragraphs:
                     for run in paragraph.runs:
-                        run.font.size = Pt(9)
+                        run.font.size = FONT_SIZE_TABLE_CELL
 
         # Total row
         total_row_cells = table.add_row().cells
@@ -2957,14 +2983,14 @@ def generate_multi_property_report_docx(report: models.Report, user: models.User
         for paragraph in total_row_cells[0].paragraphs:
             for run in paragraph.runs:
                 run.font.bold = True
-                run.font.size = Pt(9)
+                run.font.size = FONT_SIZE_BODY
 
         total_row_cells[4].text = format_currency(grand_total)
         total_row_cells[4].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
         for paragraph in total_row_cells[4].paragraphs:
             for run in paragraph.runs:
                 run.font.bold = True
-                run.font.size = Pt(9)
+                run.font.size = FONT_SIZE_BODY
 
         # Add spacing after table
         doc.add_paragraph()
@@ -2979,18 +3005,18 @@ def generate_multi_property_report_docx(report: models.Report, user: models.User
 
             # Bold label
             run_label = para.add_run("Date of Inspection")
-            run_label.font.size = Pt(9)
+            run_label.font.size = FONT_SIZE_BODY
             run_label.font.bold = True
             run_label.font.color.rgb = RGBColor(0, 0, 0)
 
             # Separator with proper spacing
             run_sep = para.add_run(" : ")
-            run_sep.font.size = Pt(9)
+            run_sep.font.size = FONT_SIZE_BODY
             run_sep.font.color.rgb = RGBColor(0, 0, 0)
 
             # Regular date value
             run_date = para.add_run(report.inspection_date)
-            run_date.font.size = Pt(9)
+            run_date.font.size = FONT_SIZE_BODY
             run_date.font.color.rgb = RGBColor(0, 0, 0)
 
         # Add concluding statement for CLIENT REQUESTS only (after Date of Inspection)
@@ -3003,7 +3029,7 @@ def generate_multi_property_report_docx(report: models.Report, user: models.User
             para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
             para.paragraph_format.line_spacing = 0.9
             run = para.add_run(concluding_parts[0])
-            run.font.size = Pt(9)
+            run.font.size = FONT_SIZE_BODY
             run.font.color.rgb = RGBColor(0, 0, 0)
 
             # Valuer name (bold) - increased space for signature
@@ -3012,7 +3038,7 @@ def generate_multi_property_report_docx(report: models.Report, user: models.User
             name_para.paragraph_format.space_before = Pt(30)
             name_para.paragraph_format.space_after = Pt(2)
             name_run = name_para.add_run(concluding_parts[1])
-            name_run.font.size = Pt(9)
+            name_run.font.size = FONT_SIZE_BODY
             name_run.font.bold = True
             name_run.font.color.rgb = RGBColor(0, 0, 0)
 
@@ -3022,7 +3048,7 @@ def generate_multi_property_report_docx(report: models.Report, user: models.User
             desig_para.paragraph_format.space_before = Pt(0)
             desig_para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
             desig_run = desig_para.add_run(concluding_parts[2])
-            desig_run.font.size = Pt(9)
+            desig_run.font.size = FONT_SIZE_BODY
             desig_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Add special note if applicable (matching residential/bare land format)
@@ -3035,7 +3061,7 @@ def generate_multi_property_report_docx(report: models.Report, user: models.User
             para.paragraph_format.line_spacing = 0.9
             run = para.add_run("Note:")
             run.bold = True
-            run.font.size = Pt(9)
+            run.font.size = FONT_SIZE_BODY
             run.font.color.rgb = RGBColor(0, 0, 0)
 
             # Note text
@@ -3045,7 +3071,7 @@ def generate_multi_property_report_docx(report: models.Report, user: models.User
             note_para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
             note_para.paragraph_format.line_spacing = 0.9
             note_run = note_para.add_run(report.special_note_text)
-            note_run.font.size = Pt(9)
+            note_run.font.size = FONT_SIZE_BODY
             note_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # REMOVED: Forced page break - let natural pagination handle page breaks
@@ -3123,7 +3149,7 @@ def generate_multi_property_report_docx(report: models.Report, user: models.User
                 prop_loc_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
                 prop_loc_para.paragraph_format.space_after = Pt(12)
                 prop_loc_run = prop_loc_para.add_run(location)
-                prop_loc_run.font.size = Pt(9)
+                prop_loc_run.font.size = FONT_SIZE_BODY
                 prop_loc_run.font.color.rgb = RGBColor(0, 0, 0)
 
             # Generate property sections (comprehensive full sections)
@@ -3189,7 +3215,7 @@ def _generate_property_sections(doc, prop, report, user):
         situation_para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
         situation_para.paragraph_format.line_spacing = 0.9
         situation_run = situation_para.add_run(situation_text)
-        situation_run.font.size = Pt(9)
+        situation_run.font.size = FONT_SIZE_BODY
         situation_run.font.color.rgb = RGBColor(0, 0, 0)
 
     # ===== 2.0 ACCESS SECTION (CONDITIONAL) =====
@@ -3204,7 +3230,7 @@ def _generate_property_sections(doc, prop, report, user):
         access_para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
         access_para.paragraph_format.line_spacing = 0.9
         access_run = access_para.add_run(access_text)
-        access_run.font.size = Pt(9)
+        access_run.font.size = FONT_SIZE_BODY
         access_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Add coordinates if available
@@ -3217,13 +3243,13 @@ def _generate_property_sections(doc, prop, report, user):
 
             coord_label = coord_para.add_run("Property Location Coordinates: ")
             coord_label.bold = True
-            coord_label.font.size = Pt(9)
+            coord_label.font.size = FONT_SIZE_BODY
             coord_label.font.color.rgb = RGBColor(0, 0, 0)
 
             lat_value = float(prop.property_latitude)
             lng_value = float(prop.property_longitude)
             coord_text = coord_para.add_run(f"{lat_value:.6f}, {lng_value:.6f}")
-            coord_text.font.size = Pt(9)
+            coord_text.font.size = FONT_SIZE_BODY
             coord_text.font.color.rgb = RGBColor(0, 0, 0)
 
         # Add map image if available
@@ -3274,10 +3300,10 @@ def _generate_property_sections(doc, prop, report, user):
             name_para.paragraph_format.line_spacing = 0.9
             name_label = name_para.add_run("Name of Land: ")
             name_label.bold = True
-            name_label.font.size = Pt(9)
+            name_label.font.size = FONT_SIZE_BODY
             name_label.font.color.rgb = RGBColor(0, 0, 0)
             name_value = name_para.add_run(f'"{prop.land_traditional_name}"')
-            name_value.font.size = Pt(9)
+            name_value.font.size = FONT_SIZE_BODY
             name_value.font.color.rgb = RGBColor(0, 0, 0)
 
         # Survey Plan Information
@@ -3289,7 +3315,7 @@ def _generate_property_sections(doc, prop, report, user):
             plan_para.paragraph_format.line_spacing = 0.9
             plan_label = plan_para.add_run("Survey Plan: ")
             plan_label.bold = True
-            plan_label.font.size = Pt(9)
+            plan_label.font.size = FONT_SIZE_BODY
             plan_label.font.color.rgb = RGBColor(0, 0, 0)
 
             # Extract just the lot number/identifier (remove "Plan No" prefix if present)
@@ -3317,7 +3343,7 @@ def _generate_property_sections(doc, prop, report, user):
             plan_text += "."
 
             plan_value = plan_para.add_run(plan_text)
-            plan_value.font.size = Pt(9)
+            plan_value.font.size = FONT_SIZE_BODY
             plan_value.font.color.rgb = RGBColor(0, 0, 0)
 
         # Land Extent
@@ -3329,10 +3355,10 @@ def _generate_property_sections(doc, prop, report, user):
             extent_para.paragraph_format.line_spacing = 0.9
             extent_label = extent_para.add_run("Extent: ")
             extent_label.bold = True
-            extent_label.font.size = Pt(9)
+            extent_label.font.size = FONT_SIZE_BODY
             extent_label.font.color.rgb = RGBColor(0, 0, 0)
             extent_value = extent_para.add_run(prop.land_extent_formatted)
-            extent_value.font.size = Pt(9)
+            extent_value.font.size = FONT_SIZE_BODY
             extent_value.font.color.rgb = RGBColor(0, 0, 0)
 
         # Boundaries - Add detailed boundary descriptions
@@ -3346,7 +3372,7 @@ def _generate_property_sections(doc, prop, report, user):
 
             boundary_label = boundary_para.add_run("Boundaries:\n")
             boundary_label.bold = True
-            boundary_label.font.size = Pt(9)
+            boundary_label.font.size = FONT_SIZE_BODY
             boundary_label.font.color.rgb = RGBColor(0, 0, 0)
 
             # Add each direction boundary (4 main + 4 optional diagonal)
@@ -3363,7 +3389,7 @@ def _generate_property_sections(doc, prop, report, user):
                     if description:
                         boundary_text = f"{direction}: {description}\n"
                         run = boundary_para.add_run(boundary_text)
-                        run.font.size = Pt(9)
+                        run.font.size = FONT_SIZE_BODY
                         run.font.color.rgb = RGBColor(0, 0, 0)
 
     # ===== 4.0 DESCRIPTION OF PROPERTY SECTION =====
@@ -3379,7 +3405,7 @@ def _generate_property_sections(doc, prop, report, user):
         desc_para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
         desc_para.paragraph_format.line_spacing = 0.9
         desc_run = desc_para.add_run(land_desc_text)
-        desc_run.font.size = Pt(9)
+        desc_run.font.size = FONT_SIZE_BODY
         desc_run.font.color.rgb = RGBColor(0, 0, 0)
 
     # Buildings (if applicable - skip for bare land) - USE SAME FORMAT AS STANDALONE REPORTS
@@ -3405,7 +3431,7 @@ def _generate_property_sections(doc, prop, report, user):
                 opening_para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
                 opening_para.paragraph_format.line_spacing = 0.9
                 opening_run = opening_para.add_run(building.get('building_description_text'))
-                opening_run.font.size = Pt(9)
+                opening_run.font.size = FONT_SIZE_BODY
                 opening_run.font.color.rgb = RGBColor(0, 0, 0)
             else:
                 # Build opening description from materials (same logic as standalone)
@@ -3462,7 +3488,7 @@ def _generate_property_sections(doc, prop, report, user):
                     opening_para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
                     opening_para.paragraph_format.line_spacing = 0.9
                     opening_run = opening_para.add_run(desc_text)
-                    opening_run.font.size = Pt(9)
+                    opening_run.font.size = FONT_SIZE_BODY
                     opening_run.font.color.rgb = RGBColor(0, 0, 0)
 
             # === ACCOMMODATION - USE SAME AGGREGATED FORMAT AS STANDALONE ===
@@ -3547,7 +3573,7 @@ def _generate_property_sections(doc, prop, report, user):
 
                     label_run = floor_area_para.add_run("Floor area:")
                     label_run.bold = True
-                    label_run.font.size = Pt(9)
+                    label_run.font.size = FONT_SIZE_BODY
                     label_run.font.color.rgb = RGBColor(0, 0, 0)
 
                     for floor in floors:
@@ -3564,7 +3590,7 @@ def _generate_property_sections(doc, prop, report, user):
 
                             floor_name_padded = f"{floor_name:<25}"
                             floor_line_run = floor_line_para.add_run(f"{floor_name_padded}{floor_area:>10,.0f} square feet")
-                            floor_line_run.font.size = Pt(9)
+                            floor_line_run.font.size = FONT_SIZE_BODY
                             floor_line_run.font.color.rgb = RGBColor(0, 0, 0)
 
                     if total_area and total_area > 0:
@@ -3578,7 +3604,7 @@ def _generate_property_sections(doc, prop, report, user):
                         total_padded = f"{'Total':<25}"
                         total_run = total_para.add_run(f"{total_padded}{total_area:>10,.0f} square feet")
                         total_run.bold = True
-                        total_run.font.size = Pt(9)
+                        total_run.font.size = FONT_SIZE_BODY
                         total_run.font.color.rgb = RGBColor(0, 0, 0)
 
             # === AGE AND CONDITION - USE SAME FORMAT AS STANDALONE ===
@@ -3729,7 +3755,7 @@ def _generate_property_sections(doc, prop, report, user):
                                     caption_text += f": {caption}"
 
                                 caption_run = caption_para.add_run(caption_text)
-                                caption_run.font.size = Pt(7)
+                                caption_run.font.size = FONT_SIZE_CAPTION
                                 caption_run.font.italic = True
                                 caption_run.font.color.rgb = RGBColor(60, 60, 60)
 
@@ -3756,11 +3782,11 @@ def _generate_property_sections(doc, prop, report, user):
 
         label_run = construction_para.add_run("Development Feasibility: ")
         label_run.font.bold = True
-        label_run.font.size = Pt(9)
+        label_run.font.size = FONT_SIZE_BODY
         label_run.font.color.rgb = RGBColor(0, 0, 0)
 
         value_run = construction_para.add_run(prop.ongoing_construction_notes)
-        value_run.font.size = Pt(9)
+        value_run.font.size = FONT_SIZE_BODY
         value_run.font.color.rgb = RGBColor(0, 0, 0)
 
     # === TOPOGRAPHICAL FEATURES (Bare Land only) ===
@@ -3786,11 +3812,11 @@ def _generate_property_sections(doc, prop, report, user):
 
             label_run = topo_para.add_run("Topographical Features: ")
             label_run.font.bold = True
-            label_run.font.size = Pt(9)
+            label_run.font.size = FONT_SIZE_BODY
             label_run.font.color.rgb = RGBColor(0, 0, 0)
 
             value_run = topo_para.add_run(topo_text)
-            value_run.font.size = Pt(9)
+            value_run.font.size = FONT_SIZE_BODY
             value_run.font.color.rgb = RGBColor(0, 0, 0)
 
     # Property Photos (embedded in DESCRIPTION section) - USE SAME GRID TABLE FORMAT AS STANDALONE
@@ -3880,7 +3906,7 @@ def _generate_property_sections(doc, prop, report, user):
                                 caption_text += f": {caption}"
 
                             caption_run = caption_para.add_run(caption_text)
-                            caption_run.font.size = Pt(7)
+                            caption_run.font.size = FONT_SIZE_CAPTION
                             caption_run.font.italic = True
                             caption_run.font.color.rgb = RGBColor(60, 60, 60)
 
@@ -3911,7 +3937,7 @@ def _generate_property_sections(doc, prop, report, user):
         locality_para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
         locality_para.paragraph_format.line_spacing = 0.9
         locality_run = locality_para.add_run(final_locality_text)
-        locality_run.font.size = Pt(9)
+        locality_run.font.size = FONT_SIZE_BODY
         locality_run.font.color.rgb = RGBColor(0, 0, 0)
 
     # ===== 6.0 LEGAL ASPECTS SECTION (CONDITIONAL) =====
@@ -3967,7 +3993,7 @@ def _generate_property_sections(doc, prop, report, user):
             p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
             p.paragraph_format.space_after = Pt(6)
             run = p.add_run(land_values_text)
-            run.font.size = Pt(9)
+            run.font.size = FONT_SIZE_BODY
 
             # Average rate
             avg_rate = sum(c.get('rate_per_perch', 0) for c in comparables) / len(comparables) if comparables else 0
@@ -3977,14 +4003,14 @@ def _generate_property_sections(doc, prop, report, user):
                 p.paragraph_format.space_after = Pt(6)
                 run = p.add_run(f"Average Rate: LKR {avg_rate:,.2f} per perch")
                 run.font.bold = True
-                run.font.size = Pt(9)
+                run.font.size = FONT_SIZE_BODY
 
         if prop.land_market_analysis:
             p = doc.add_paragraph()
             p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
             p.paragraph_format.space_after = Pt(12)
             run = p.add_run(prop.land_market_analysis)
-            run.font.size = Pt(9)
+            run.font.size = FONT_SIZE_BODY
 
         doc.add_paragraph()
 
@@ -4007,7 +4033,7 @@ def _generate_property_sections(doc, prop, report, user):
 
             text = f"Land – {extent:,.2f} perches @ {format_currency(rate)} per perch\t= {format_currency_aligned(land_value)}"
             run = p.add_run(text)
-            run.font.size = Pt(10)
+            run.font.size = FONT_SIZE_VALUATION
             p.paragraph_format.space_after = Pt(3)
 
         # Buildings valuation (skip for bare_land)
@@ -4056,7 +4082,7 @@ def _generate_property_sections(doc, prop, report, user):
 
                     text = f"{building_name} – {total_floor_area:,.0f} sq.ft @ {format_currency(avg_rate)} per square foot\t= {format_currency_aligned(subtotal)}"
                     run = p.add_run(text)
-                    run.font.size = Pt(10)
+                    run.font.size = FONT_SIZE_VALUATION
                     p.paragraph_format.space_after = Pt(3)
                     building_value = to_float(subtotal)
 
@@ -4106,7 +4132,7 @@ def _generate_property_sections(doc, prop, report, user):
         run = p.add_run("SUMMARY OF THE VALUATION")
         run.font.bold = True
         run.font.underline = True
-        run.font.size = Pt(9)
+        run.font.size = FONT_SIZE_BODY
         p.paragraph_format.space_before = Pt(12)
         p.paragraph_format.space_after = Pt(6)
 
@@ -4117,7 +4143,7 @@ def _generate_property_sections(doc, prop, report, user):
         tab_stops.add_tab_stop(Inches(3.7), WD_TAB_ALIGNMENT.LEFT)
         text = f"Open Market Value of the property\t:\t{format_currency(market_value_rounded)}"
         run = p.add_run(text)
-        run.font.size = Pt(10)
+        run.font.size = FONT_SIZE_VALUATION
         p.paragraph_format.space_after = Pt(3)
 
         # Forced Sale Value - only show when valuation type is "Forced Sale Value"
@@ -4128,7 +4154,7 @@ def _generate_property_sections(doc, prop, report, user):
             tab_stops.add_tab_stop(Inches(3.7), WD_TAB_ALIGNMENT.LEFT)
             text = f"Forced Sale Value of the property\t:\t{format_currency(forced_sale_value)}"
             run = p.add_run(text)
-            run.font.size = Pt(10)
+            run.font.size = FONT_SIZE_VALUATION
             p.paragraph_format.space_after = Pt(3)
 
         # Insurance Value (NEW INLINE FORMAT)
@@ -4140,7 +4166,7 @@ def _generate_property_sections(doc, prop, report, user):
                 tab_stops.add_tab_stop(Inches(3.7), WD_TAB_ALIGNMENT.LEFT)
                 text = f"Insurance Value of the {building_ins['name']}\t:\t{format_currency(building_ins['value'])}"
                 run = p.add_run(text)
-                run.font.size = Pt(10)
+                run.font.size = FONT_SIZE_VALUATION
                 p.paragraph_format.space_after = Pt(2)
 
             doc.add_paragraph()  # Final spacing
@@ -4183,7 +4209,7 @@ def _generate_property_sections(doc, prop, report, user):
     cert_para.paragraph_format.line_spacing = 0.9
     cert_para.paragraph_format.space_after = Pt(12)
     cert_run = cert_para.add_run(cert_text)
-    cert_run.font.size = Pt(9)
+    cert_run.font.size = FONT_SIZE_BODY
     cert_run.font.color.rgb = RGBColor(0, 0, 0)
 
     # Signature block
@@ -4246,12 +4272,12 @@ def _generate_invoice_section(doc, invoice_data, user, report=None):
         recipient_para = doc.add_paragraph()
         recipient_run = recipient_para.add_run("To:\n")
         recipient_run.bold = True
-        recipient_run.font.size = Pt(10)
+        recipient_run.font.size = FONT_SIZE_VALUATION
 
         # Add applicant name if available
         if hasattr(report, 'applicant_full_name') and report.applicant_full_name:
             name_run = recipient_para.add_run(f"{report.applicant_full_name}\n")
-            name_run.font.size = Pt(10)
+            name_run.font.size = FONT_SIZE_VALUATION
 
         # Add applicant address if available
         address_parts = []
@@ -4262,7 +4288,7 @@ def _generate_invoice_section(doc, invoice_data, user, report=None):
 
         if address_parts:
             address_run = recipient_para.add_run(f"{', '.join(address_parts)}\n")
-            address_run.font.size = Pt(10)
+            address_run.font.size = FONT_SIZE_VALUATION
 
         # Add spacing after recipient address
         doc.add_paragraph()
@@ -4274,7 +4300,7 @@ def _generate_invoice_section(doc, invoice_data, user, report=None):
     invoice_heading.paragraph_format.space_after = Pt(12)
     invoice_run = invoice_heading.add_run("PROFESSIONAL FEES")
     invoice_run.bold = True
-    invoice_run.font.size = Pt(11)
+    invoice_run.font.size = FONT_SIZE_BODY
     invoice_run.font.color.rgb = RGBColor(0, 0, 0)
 
     # Parse and migrate invoice_data
@@ -4305,7 +4331,7 @@ def _generate_invoice_section(doc, invoice_data, user, report=None):
         for paragraph in cell.paragraphs:
             for run in paragraph.runs:
                 run.font.bold = True
-                run.font.size = Pt(9)
+                run.font.size = FONT_SIZE_TABLE_HEADER
             paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER if i == 1 else WD_ALIGN_PARAGRAPH.LEFT
         # Shading for header
         from docx.oxml import OxmlElement
@@ -4326,7 +4352,7 @@ def _generate_invoice_section(doc, invoice_data, user, report=None):
         for cell in row_cells:
             for paragraph in cell.paragraphs:
                 for run in paragraph.runs:
-                    run.font.size = Pt(9)
+                    run.font.size = FONT_SIZE_TABLE_CELL
 
     # Subtotal row
     subtotal_row = table.add_row().cells
@@ -4358,14 +4384,14 @@ def _generate_invoice_section(doc, invoice_data, user, report=None):
     for paragraph in total_row[0].paragraphs:
         for run in paragraph.runs:
             run.font.bold = True
-            run.font.size = Pt(10)
+            run.font.size = FONT_SIZE_INVOICE_TOTAL
 
     total_row[1].text = format_currency(invoice_dict.get('total', 0))
     total_row[1].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.RIGHT
     for paragraph in total_row[1].paragraphs:
         for run in paragraph.runs:
             run.font.bold = True
-            run.font.size = Pt(10)
+            run.font.size = FONT_SIZE_INVOICE_TOTAL
 
     # Shade total row
     from docx.oxml import OxmlElement
@@ -4392,7 +4418,7 @@ def _generate_invoice_section(doc, invoice_data, user, report=None):
             bank_heading = doc.add_paragraph()
             bank_heading_run = bank_heading.add_run("Bank Account Details:")
             bank_heading_run.bold = True
-            bank_heading_run.font.size = Pt(10)
+            bank_heading_run.font.size = FONT_SIZE_BANK_HEADER
             bank_heading.paragraph_format.space_before = Pt(6)
             bank_heading.paragraph_format.space_after = Pt(3)
 
@@ -4406,21 +4432,21 @@ def _generate_invoice_section(doc, invoice_data, user, report=None):
                     f"Account Number: {account['account_number']}\n"
                     f"Branch: {account['branch_name']}"
                 )
-                acc_run.font.size = Pt(9)
+                acc_run.font.size = FONT_SIZE_BANK_DETAILS
 
     elif manual_bank_details:
         # Fallback to manual entry
         bank_heading = doc.add_paragraph()
         bank_heading_run = bank_heading.add_run("Bank Account Details:")
         bank_heading_run.bold = True
-        bank_heading_run.font.size = Pt(10)
+        bank_heading_run.font.size = FONT_SIZE_BANK_HEADER
         bank_heading.paragraph_format.space_before = Pt(6)
         bank_heading.paragraph_format.space_after = Pt(3)
 
         bank_para = doc.add_paragraph()
         bank_para.paragraph_format.line_spacing = 1.0
         bank_run = bank_para.add_run(manual_bank_details)
-        bank_run.font.size = Pt(9)
+        bank_run.font.size = FONT_SIZE_BANK_DETAILS
 
     # Signature space
     doc.add_paragraph()
@@ -4428,11 +4454,11 @@ def _generate_invoice_section(doc, invoice_data, user, report=None):
     signature_para = doc.add_paragraph()
     signature_para.paragraph_format.space_before = Pt(24)
     signature_run = signature_para.add_run("_" * 40)
-    signature_run.font.size = Pt(9)
+    signature_run.font.size = FONT_SIZE_SIGNATURE
 
     sig_label = doc.add_paragraph()
     sig_label_run = sig_label.add_run("Signature")
-    sig_label_run.font.size = Pt(9)
+    sig_label_run.font.size = FONT_SIZE_SIGNATURE
     sig_label_run.font.italic = True
 
 
@@ -4509,10 +4535,10 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                 run.font.underline = True  # Add underline
             elif i == 2 or i == 3:  # Both property description lines
                 run.bold = True
-                run.font.size = Pt(9)
+                run.font.size = FONT_SIZE_BODY
                 run.font.underline = True  # Add underline for continuous block effect
             else:
-                run.font.size = Pt(9)
+                run.font.size = FONT_SIZE_BODY
                 if i == 1:  # "of" line
                     run.font.underline = True  # Add underline for continuous block effect
             run.font.color.rgb = RGBColor(0, 0, 0)
@@ -4540,23 +4566,23 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
 
                     # Add bold label
                     run_label = para.add_run(label.strip())
-                    run_label.font.size = Pt(9)
+                    run_label.font.size = FONT_SIZE_BODY
                     run_label.font.bold = True
                     run_label.font.color.rgb = RGBColor(0, 0, 0)
 
                     # Add separator with proper spacing
                     run_sep = para.add_run(" : ")
-                    run_sep.font.size = Pt(9)
+                    run_sep.font.size = FONT_SIZE_BODY
                     run_sep.font.color.rgb = RGBColor(0, 0, 0)
 
                     # Add value
                     run_value = para.add_run(value)
-                    run_value.font.size = Pt(9)
+                    run_value.font.size = FONT_SIZE_BODY
                     run_value.font.color.rgb = RGBColor(0, 0, 0)
                 else:
                     # This is the introductory paragraph (paragraph 1)
                     run = para.add_run(statement)
-                    run.font.size = Pt(9)
+                    run.font.size = FONT_SIZE_BODY
                     run.font.color.rgb = RGBColor(0, 0, 0)
         else:
             # Client-side format (default for backward compatibility)
@@ -4568,7 +4594,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                 para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
                 para.paragraph_format.line_spacing = 0.9
                 run = para.add_run(statement)
-                run.font.size = Pt(9)
+                run.font.size = FONT_SIZE_BODY
                 run.font.color.rgb = RGBColor(0, 0, 0)
 
             # Add deed/certificate description ONLY if not plan-based identification
@@ -4592,7 +4618,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                     para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
                     para.paragraph_format.line_spacing = 0.9
                     run = para.add_run(deed_text)
-                    run.font.size = Pt(9)
+                    run.font.size = FONT_SIZE_BODY
                     run.font.color.rgb = RGBColor(0, 0, 0)
 
             # Add submission statement
@@ -4604,7 +4630,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                 para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
                 para.paragraph_format.line_spacing = 0.9
                 run = para.add_run(submission_text)
-                run.font.size = Pt(9)
+                run.font.size = FONT_SIZE_BODY
                 run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Add inspection date
@@ -4617,13 +4643,13 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
 
             # Bold label
             run_label = para.add_run("Date of Inspection:")
-            run_label.font.size = Pt(9)
+            run_label.font.size = FONT_SIZE_BODY
             run_label.font.bold = True
             run_label.font.color.rgb = RGBColor(0, 0, 0)
 
             # Regular date value
             run_date = para.add_run(f" {report.inspection_date}")
-            run_date.font.size = Pt(9)
+            run_date.font.size = FONT_SIZE_BODY
             run_date.font.color.rgb = RGBColor(0, 0, 0)
 
         # Add special note if applicable
@@ -4636,7 +4662,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
             para.paragraph_format.line_spacing = 0.9
             run = para.add_run("Note:")
             run.bold = True
-            run.font.size = Pt(9)
+            run.font.size = FONT_SIZE_BODY
             run.font.color.rgb = RGBColor(0, 0, 0)
 
             # Note text
@@ -4646,7 +4672,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
             note_para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
             note_para.paragraph_format.line_spacing = 0.9
             note_run = note_para.add_run(report.special_note_text)
-            note_run.font.size = Pt(9)
+            note_run.font.size = FONT_SIZE_BODY
             note_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # ===== 1.0 SITUATION SECTION (First after opening) =====
@@ -4662,7 +4688,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
             situation_para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
             situation_para.paragraph_format.line_spacing = 0.9
             situation_run = situation_para.add_run(situation_text)
-            situation_run.font.size = Pt(9)
+            situation_run.font.size = FONT_SIZE_BODY
             situation_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # ===== 2.0 ACCESS SECTION (After SITUATION) =====
@@ -4680,7 +4706,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
             access_para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
             access_para.paragraph_format.line_spacing = 0.9
             access_run = access_para.add_run(access_text)
-            access_run.font.size = Pt(9)
+            access_run.font.size = FONT_SIZE_BODY
             access_run.font.color.rgb = RGBColor(0, 0, 0)
 
             # Add coordinates paragraph if available
@@ -4695,14 +4721,14 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                 # Coordinate label (bold)
                 coord_label = coord_para.add_run("Property Location Coordinates: ")
                 coord_label.bold = True
-                coord_label.font.size = Pt(9)
+                coord_label.font.size = FONT_SIZE_BODY
                 coord_label.font.color.rgb = RGBColor(0, 0, 0)
 
                 # Coordinate values (format to 6 decimal places)
                 lat_value = float(report.property_latitude)
                 lng_value = float(report.property_longitude)
                 coord_text = coord_para.add_run(f"{lat_value:.6f}, {lng_value:.6f}")
-                coord_text.font.size = Pt(9)
+                coord_text.font.size = FONT_SIZE_BODY
                 coord_text.font.color.rgb = RGBColor(0, 0, 0)
 
             # Add map image if available (embedded within ACCESS section)
@@ -4767,10 +4793,10 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                 name_para.paragraph_format.line_spacing = 0.9
                 name_label = name_para.add_run("Name of Land: ")
                 name_label.bold = True
-                name_label.font.size = Pt(9)
+                name_label.font.size = FONT_SIZE_BODY
                 name_label.font.color.rgb = RGBColor(0, 0, 0)
                 name_value = name_para.add_run(f'"{report.land_traditional_name}"')
-                name_value.font.size = Pt(9)
+                name_value.font.size = FONT_SIZE_BODY
                 name_value.font.color.rgb = RGBColor(0, 0, 0)
 
             # Survey Plan Information
@@ -4782,7 +4808,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                 plan_para.paragraph_format.line_spacing = 0.9
                 plan_label = plan_para.add_run("Survey Plan: ")
                 plan_label.bold = True
-                plan_label.font.size = Pt(9)
+                plan_label.font.size = FONT_SIZE_BODY
                 plan_label.font.color.rgb = RGBColor(0, 0, 0)
 
                 # Extract just the lot number/identifier (remove "Plan No" prefix if present)
@@ -4810,7 +4836,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                 plan_text += "."
 
                 plan_value = plan_para.add_run(plan_text)
-                plan_value.font.size = Pt(9)
+                plan_value.font.size = FONT_SIZE_BODY
                 plan_value.font.color.rgb = RGBColor(0, 0, 0)
 
             # Land Extent
@@ -4822,7 +4848,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                 extent_para.paragraph_format.line_spacing = 0.9
                 extent_label = extent_para.add_run("Extent: ")
                 extent_label.bold = True
-                extent_label.font.size = Pt(9)
+                extent_label.font.size = FONT_SIZE_BODY
                 extent_label.font.color.rgb = RGBColor(0, 0, 0)
 
                 extent_text = report.land_extent_formatted
@@ -4832,7 +4858,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                     extent_text += f" [{report.land_extent_square_meters:.2f} m²]"
 
                 extent_value = extent_para.add_run(extent_text)
-                extent_value.font.size = Pt(9)
+                extent_value.font.size = FONT_SIZE_BODY
                 extent_value.font.color.rgb = RGBColor(0, 0, 0)
 
             # Boundaries - Enhanced Format with all details
@@ -4850,7 +4876,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                 boundaries_heading.paragraph_format.line_spacing = 0.9
                 boundaries_heading_run = boundaries_heading.add_run("Boundaries:")
                 boundaries_heading_run.bold = True
-                boundaries_heading_run.font.size = Pt(9)
+                boundaries_heading_run.font.size = FONT_SIZE_BODY
                 boundaries_heading_run.font.color.rgb = RGBColor(0, 0, 0)
 
                 # Physical boundary type labels mapping
@@ -4898,7 +4924,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                     boundary_para.paragraph_format.left_indent = Inches(0.5)
 
                     boundary_run = boundary_para.add_run(boundary_line + boundary_text)
-                    boundary_run.font.size = Pt(9)
+                    boundary_run.font.size = FONT_SIZE_BODY
                     boundary_run.font.color.rgb = RGBColor(0, 0, 0)
 
                     # Additional boundary details (if any)
@@ -4959,7 +4985,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                 summary_para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
                 summary_para.paragraph_format.line_spacing = 0.9
                 summary_run = summary_para.add_run(boundary_summary)
-                summary_run.font.size = Pt(9)
+                summary_run.font.size = FONT_SIZE_BODY
                 summary_run.font.color.rgb = RGBColor(0, 0, 0)
 
 
@@ -5004,7 +5030,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                 land_para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
                 land_para.paragraph_format.line_spacing = 0.9
                 land_run = land_para.add_run(report.land_description_text)
-                land_run.font.size = Pt(9)
+                land_run.font.size = FONT_SIZE_BODY
                 land_run.font.color.rgb = RGBColor(0, 0, 0)
             else:
                 # Build land description from individual fields
@@ -5084,7 +5110,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                     land_para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
                     land_para.paragraph_format.line_spacing = 0.9
                     land_run = land_para.add_run(land_text)
-                    land_run.font.size = Pt(9)
+                    land_run.font.size = FONT_SIZE_BODY
                     land_run.font.color.rgb = RGBColor(0, 0, 0)
 
             # === DEVELOPMENT FEASIBILITY / ONGOING CONSTRUCTION (Bare Land Reports) ===
@@ -5097,11 +5123,11 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
 
                 run = p.add_run("Development Feasibility: ")
                 run.font.bold = True
-                run.font.size = Pt(9)
+                run.font.size = FONT_SIZE_BODY
                 run.font.color.rgb = RGBColor(0, 0, 0)
 
                 run = p.add_run(report.ongoing_construction_notes)
-                run.font.size = Pt(9)
+                run.font.size = FONT_SIZE_BODY
                 run.font.color.rgb = RGBColor(0, 0, 0)
 
             # === TOPOGRAPHICAL FEATURES (Bare Land specific) ===
@@ -5127,10 +5153,10 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
 
                     topo_label = topo_para.add_run("Topographical Features: ")
                     topo_label.font.bold = True
-                    topo_label.font.size = Pt(9)
+                    topo_label.font.size = FONT_SIZE_BODY
 
                     topo_value = topo_para.add_run(topo_text)
-                    topo_value.font.size = Pt(9)
+                    topo_value.font.size = FONT_SIZE_BODY
 
             # === PROPERTY PHOTOS (Bare Land - embedded in Section 4.0) ===
             if report.report_type == 'bare_land' and report.property_photos:
@@ -5237,7 +5263,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                                         caption_text += f": {caption}"
 
                                     caption_run = caption_para.add_run(caption_text)
-                                    caption_run.font.size = Pt(7)
+                                    caption_run.font.size = FONT_SIZE_CAPTION
                                     caption_run.font.italic = True
                                     caption_run.font.color.rgb = RGBColor(60, 60, 60)
 
@@ -5284,7 +5310,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                         opening_para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
                         opening_para.paragraph_format.line_spacing = 0.9
                         opening_run = opening_para.add_run(building.get('building_description_text'))
-                        opening_run.font.size = Pt(9)
+                        opening_run.font.size = FONT_SIZE_BODY
                         opening_run.font.color.rgb = RGBColor(0, 0, 0)
                     else:
                         # Build opening description from materials
@@ -5341,7 +5367,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                             opening_para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
                             opening_para.paragraph_format.line_spacing = 0.9
                             opening_run = opening_para.add_run(desc_text)
-                            opening_run.font.size = Pt(9)
+                            opening_run.font.size = FONT_SIZE_BODY
                             opening_run.font.color.rgb = RGBColor(0, 0, 0)
 
                     # === ACCOMMODATION ===
@@ -5431,7 +5457,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
 
                             label_run = floor_area_para.add_run("Floor area:")
                             label_run.bold = True
-                            label_run.font.size = Pt(9)
+                            label_run.font.size = FONT_SIZE_BODY
                             label_run.font.color.rgb = RGBColor(0, 0, 0)
 
                             # Add each floor's area (indented with aligned columns)
@@ -5450,7 +5476,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                                     # Use fixed-width padding for column alignment
                                     floor_name_padded = f"{floor_name:<25}"
                                     floor_line_run = floor_line_para.add_run(f"{floor_name_padded}{floor_area:>10,.0f} square feet")
-                                    floor_line_run.font.size = Pt(9)
+                                    floor_line_run.font.size = FONT_SIZE_BODY
                                     floor_line_run.font.color.rgb = RGBColor(0, 0, 0)
 
                             # Add total (indented with aligned columns)
@@ -5466,7 +5492,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                                 total_padded = f"{'Total':<25}"
                                 total_run = total_para.add_run(f"{total_padded}{total_area:>10,.0f} square feet")
                                 total_run.bold = True
-                                total_run.font.size = Pt(9)
+                                total_run.font.size = FONT_SIZE_BODY
                                 total_run.font.color.rgb = RGBColor(0, 0, 0)
 
                     # === AGE AND CONDITION (INLINE FORMAT) ===
@@ -5636,7 +5662,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                                         caption_text += f": {caption}"
 
                                     caption_run = caption_para.add_run(caption_text)
-                                    caption_run.font.size = Pt(7)
+                                    caption_run.font.size = FONT_SIZE_CAPTION
                                     caption_run.font.italic = True
                                     caption_run.font.color.rgb = RGBColor(60, 60, 60)
 
@@ -5666,7 +5692,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                         add_structures_heading.paragraph_format.line_spacing = 0.9
                         add_structures_run = add_structures_heading.add_run("Additional Structures")
                         add_structures_run.bold = True
-                        add_structures_run.font.size = Pt(9)
+                        add_structures_run.font.size = FONT_SIZE_BODY
                         add_structures_run.font.color.rgb = RGBColor(0, 0, 0)
 
                         # Add description paragraph
@@ -5678,7 +5704,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                         structures_para.paragraph_format.left_indent = INDENTED_CONTENT_LEFT_INDENT
 
                         structures_run = structures_para.add_run(additional_structures.strip())
-                        structures_run.font.size = Pt(9)
+                        structures_run.font.size = FONT_SIZE_BODY
                         structures_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # ===== 5.0 LOCALITY SECTION (Moved to last position) =====
@@ -5693,7 +5719,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
             locality_para.paragraph_format.space_after = BODY_PARA_SPACE_AFTER
             locality_para.paragraph_format.line_spacing = 0.9
             locality_run = locality_para.add_run(locality_text)
-            locality_run.font.size = Pt(9)
+            locality_run.font.size = FONT_SIZE_BODY
             locality_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # ===== 6.0 LEGAL ASPECTS =====
@@ -5755,7 +5781,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                     p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
                     p.paragraph_format.space_after = Pt(6)
                     run = p.add_run(land_values_text)
-                    run.font.size = Pt(9)
+                    run.font.size = FONT_SIZE_BODY
 
                     # Add average rate note
                     avg_rate = sum(c.get('rate_per_perch', 0) for c in comparables) / len(comparables) if comparables else 0
@@ -5765,14 +5791,14 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                         p.paragraph_format.space_after = Pt(6)
                         run = p.add_run(f"Average Rate: LKR {avg_rate:,.2f} per perch")
                         run.font.bold = True
-                        run.font.size = Pt(9)
+                        run.font.size = FONT_SIZE_BODY
 
             if report.land_market_analysis:
                 p = doc.add_paragraph()
                 p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
                 p.paragraph_format.space_after = Pt(12)
                 run = p.add_run(report.land_market_analysis)
-                run.font.size = Pt(9)
+                run.font.size = FONT_SIZE_BODY
 
             doc.add_paragraph()
 
@@ -5796,7 +5822,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
 
                 text = f"Land – {extent:,.2f} perches @ {format_currency(rate)} per perch\t= {format_currency_aligned(land_value)}"
                 run = p.add_run(text)
-                run.font.size = Pt(10)
+                run.font.size = FONT_SIZE_VALUATION
                 p.paragraph_format.space_after = Pt(3)
 
             # Buildings valuation (SKIP for bare_land)
@@ -5846,7 +5872,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
 
                         text = f"{building_name} – {total_floor_area:,.0f} sq.ft @ {format_currency(avg_rate)} per square foot\t= {format_currency_aligned(subtotal)}"
                         run = p.add_run(text)
-                        run.font.size = Pt(10)
+                        run.font.size = FONT_SIZE_VALUATION
                         p.paragraph_format.space_after = Pt(3)
                         building_value = to_float(subtotal)
 
@@ -5902,7 +5928,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
             run = p.add_run("SUMMARY OF THE VALUATION")
             run.font.bold = True
             run.font.underline = True
-            run.font.size = Pt(9)
+            run.font.size = FONT_SIZE_BODY
             p.paragraph_format.space_before = Pt(12)
             p.paragraph_format.space_after = Pt(6)
 
@@ -5913,7 +5939,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
             tab_stops.add_tab_stop(Inches(3.7), WD_TAB_ALIGNMENT.LEFT)
             text = f"Open Market Value of the property\t:\t{format_currency(market_value_rounded)}"
             run = p.add_run(text)
-            run.font.size = Pt(10)
+            run.font.size = FONT_SIZE_VALUATION
             p.paragraph_format.space_after = Pt(3)
 
             # Forced Sale Value - only show when valuation type is "Forced Sale Value"
@@ -5924,7 +5950,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                 tab_stops.add_tab_stop(Inches(3.7), WD_TAB_ALIGNMENT.LEFT)
                 text = f"Forced Sale Value of the property\t:\t{format_currency(forced_sale_value)}"
                 run = p.add_run(text)
-                run.font.size = Pt(10)
+                run.font.size = FONT_SIZE_VALUATION
                 p.paragraph_format.space_after = Pt(3)
 
             # Insurance Value (NEW INLINE FORMAT) - Only show if there are buildings
@@ -5936,7 +5962,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                     tab_stops.add_tab_stop(Inches(3.7), WD_TAB_ALIGNMENT.LEFT)
                     text = f"Insurance Value of the {building_ins['name']}\t:\t{format_currency(building_ins['value'])}"
                     run = p.add_run(text)
-                    run.font.size = Pt(10)
+                    run.font.size = FONT_SIZE_VALUATION
                     p.paragraph_format.space_after = Pt(2)
 
                 doc.add_paragraph()  # Final spacing
@@ -5977,7 +6003,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
             p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
             p.paragraph_format.space_after = Pt(12)
             run = p.add_run(cert_text)
-            run.font.size = Pt(9)
+            run.font.size = FONT_SIZE_BODY
 
             # Signature block
             add_signature_block(

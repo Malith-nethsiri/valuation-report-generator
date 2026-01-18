@@ -82,7 +82,6 @@ const FIELD_LABELS: Record<string, string> = {
   applicant_postal_code: "Postal Code",
   valuation_type: "Valuation Type",
   valuation_purpose: "Purpose of Valuation",
-  property_ownership: "Property Ownership",
   property_type_valued: "Property Type",
   has_additional_owner: "Additional Owner",
   additional_owner_names: "Additional Owner Names",

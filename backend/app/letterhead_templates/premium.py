@@ -86,7 +86,7 @@ class PremiumTemplate(BaseLetterheadTemplate):
             name_run.add_text(f"{user.honorific} ")
         name_run.add_text(user.full_name)
         name_run.bold = True
-        name_run.font.size = Pt(11)
+        name_run.font.size = Pt(14)
         name_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Academic Qualifications (Left-aligned, Medium)
@@ -96,7 +96,7 @@ class PremiumTemplate(BaseLetterheadTemplate):
             qual_para.paragraph_format.space_before = Pt(0)
             qual_para.paragraph_format.space_after = Pt(1)
             qual_run = qual_para.add_run(user.academic_qualifications)
-            qual_run.font.size = Pt(9)
+            qual_run.font.size = Pt(11)
             qual_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Professional Designation (Left-aligned, Medium Bold)
@@ -107,7 +107,7 @@ class PremiumTemplate(BaseLetterheadTemplate):
             desig_para.paragraph_format.space_after = Pt(2)
             desig_run = desig_para.add_run(user.professional_designation)
             desig_run.bold = True
-            desig_run.font.size = Pt(9)
+            desig_run.font.size = Pt(11)
             desig_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Stacked contact information with bullet points
@@ -124,7 +124,7 @@ class PremiumTemplate(BaseLetterheadTemplate):
             if user.membership_number:
                 member_text.append(user.membership_number)
             member_run = member_para.add_run(f"• {' | '.join(member_text)}")
-            member_run.font.size = Pt(7)
+            member_run.font.size = Pt(11)
             member_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Panel Valuer
@@ -136,7 +136,7 @@ class PremiumTemplate(BaseLetterheadTemplate):
             panel_para.paragraph_format.left_indent = Inches(0.2)
             banks_text = ", ".join(user.panel_valuer_banks)
             panel_run = panel_para.add_run(f"• Panel Valuer: {banks_text}")
-            panel_run.font.size = Pt(7)
+            panel_run.font.size = Pt(11)
             panel_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Residence Address
@@ -154,7 +154,7 @@ class PremiumTemplate(BaseLetterheadTemplate):
             res_para.paragraph_format.space_after = Pt(0)
             res_para.paragraph_format.left_indent = Inches(0.2)
             res_run = res_para.add_run(f"• Residence: {', '.join(res_address_parts)}")
-            res_run.font.size = Pt(7)
+            res_run.font.size = Pt(11)
             res_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Phone
@@ -165,7 +165,7 @@ class PremiumTemplate(BaseLetterheadTemplate):
             phone_para.paragraph_format.space_after = Pt(0)
             phone_para.paragraph_format.left_indent = Inches(0.2)
             phone_run = phone_para.add_run(f"• Tel: {user.phone_primary}")
-            phone_run.font.size = Pt(7)
+            phone_run.font.size = Pt(11)
             phone_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Email
@@ -176,7 +176,7 @@ class PremiumTemplate(BaseLetterheadTemplate):
             email_para.paragraph_format.space_after = Pt(2)
             email_para.paragraph_format.left_indent = Inches(0.2)
             email_run = email_para.add_run(f"• Email: {user.email}")
-            email_run.font.size = Pt(7)
+            email_run.font.size = Pt(11)
             email_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Office (if provided)
@@ -199,7 +199,7 @@ class PremiumTemplate(BaseLetterheadTemplate):
                     office_text = f"• Office Tel: {user.office_phone}"
             if office_text:
                 office_run = office_para.add_run(office_text)
-                office_run.font.size = Pt(7)
+                office_run.font.size = Pt(11)
                 office_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Thin bottom border (asymmetric design)
@@ -216,12 +216,12 @@ class PremiumTemplate(BaseLetterheadTemplate):
 
         ref_label = ref_para.add_run("Ref: ")
         ref_label.bold = True
-        ref_label.font.size = Pt(8)
+        ref_label.font.size = Pt(11)
         ref_label.font.color.rgb = RGBColor(0, 0, 0)
 
         if report.report_reference:
             ref_value = ref_para.add_run(report.report_reference)
-            ref_value.font.size = Pt(8)
+            ref_value.font.size = Pt(11)
             ref_value.font.color.rgb = RGBColor(0, 0, 0)
 
         # Add spacing and date on right
@@ -229,14 +229,14 @@ class PremiumTemplate(BaseLetterheadTemplate):
 
         date_label = ref_para.add_run("Date: ")
         date_label.bold = True
-        date_label.font.size = Pt(8)
+        date_label.font.size = Pt(11)
         date_label.font.color.rgb = RGBColor(0, 0, 0)
 
         if report.report_date:
             date_value = ref_para.add_run(report.report_date)
         else:
             date_value = ref_para.add_run(datetime.now().strftime('%Y-%m-%d'))
-        date_value.font.size = Pt(8)
+        date_value.font.size = Pt(11)
         date_value.font.color.rgb = RGBColor(0, 0, 0)
 
         # Add spacing after letterhead

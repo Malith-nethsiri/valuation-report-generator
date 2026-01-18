@@ -277,6 +277,8 @@ export interface Building {
   condition?: string;
   occupier_name?: string;
   occupier_relationship?: string;
+  is_rented?: boolean;
+  rent_details?: string;
   roof_types: string[];
   /** @deprecated Use roof_types array instead. This field is not displayed in UI and will be auto-generated from roof_types selections. */
   roof_description?: string;
@@ -423,7 +425,6 @@ export interface Report {
 
   // Valuation Purpose
   valuation_type?: string;
-  property_ownership?: string;
   property_type_valued?: string;
 
   // Valuation Purpose (new)
@@ -703,7 +704,6 @@ export interface ReportCreate {
 
   // Valuation Purpose
   valuation_type?: string;
-  property_ownership?: string;
   property_type_valued?: string;
 
   // Valuation Purpose (new)

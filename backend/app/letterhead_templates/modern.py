@@ -85,7 +85,7 @@ class ModernTemplate(BaseLetterheadTemplate):
             name_run.add_text(f"{user.honorific} ")
         name_run.add_text(user.full_name)
         name_run.bold = True
-        name_run.font.size = Pt(10)
+        name_run.font.size = Pt(14)
         name_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Academic Qualifications (Left-aligned)
@@ -95,7 +95,7 @@ class ModernTemplate(BaseLetterheadTemplate):
             qual_para.paragraph_format.space_before = Pt(0)
             qual_para.paragraph_format.space_after = Pt(1)
             qual_run = qual_para.add_run(user.academic_qualifications)
-            qual_run.font.size = Pt(8)
+            qual_run.font.size = Pt(11)
             qual_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Professional Designation (Left-aligned, Bold)
@@ -106,7 +106,7 @@ class ModernTemplate(BaseLetterheadTemplate):
             desig_para.paragraph_format.space_after = Pt(1)
             desig_run = desig_para.add_run(user.professional_designation)
             desig_run.bold = True
-            desig_run.font.size = Pt(8)
+            desig_run.font.size = Pt(11)
             desig_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Membership Information (Left-aligned)
@@ -121,7 +121,7 @@ class ModernTemplate(BaseLetterheadTemplate):
             if user.membership_number:
                 member_text.append(user.membership_number)
             member_run = member_para.add_run(" | ".join(member_text))
-            member_run.font.size = Pt(7)
+            member_run.font.size = Pt(11)
             member_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Panel Valuer Status (Left-aligned)
@@ -132,7 +132,7 @@ class ModernTemplate(BaseLetterheadTemplate):
             panel_para.paragraph_format.space_after = Pt(2)
             banks_text = ", ".join(user.panel_valuer_banks)
             panel_run = panel_para.add_run(f"Panel Valuer: {banks_text}")
-            panel_run.font.size = Pt(7)
+            panel_run.font.size = Pt(11)
             panel_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Horizontal Contact Information (Single line with pipes)
@@ -184,7 +184,7 @@ class ModernTemplate(BaseLetterheadTemplate):
             contact_para.paragraph_format.space_before = Pt(2)
             contact_para.paragraph_format.space_after = Pt(2)
             contact_run = contact_para.add_run(" | ".join(contact_parts))
-            contact_run.font.size = Pt(7)
+            contact_run.font.size = Pt(11)
             contact_run.font.color.rgb = RGBColor(0, 0, 0)
 
         # Bottom separator
@@ -201,12 +201,12 @@ class ModernTemplate(BaseLetterheadTemplate):
         # Ref on the left
         ref_label = ref_date_para.add_run("Ref: ")
         ref_label.bold = True
-        ref_label.font.size = Pt(8)
+        ref_label.font.size = Pt(11)
         ref_label.font.color.rgb = RGBColor(0, 0, 0)
 
         if report.report_reference:
             ref_value = ref_date_para.add_run(report.report_reference)
-            ref_value.font.size = Pt(8)
+            ref_value.font.size = Pt(11)
             ref_value.font.color.rgb = RGBColor(0, 0, 0)
 
         # Add spacing tabs to push date to the right
@@ -215,14 +215,14 @@ class ModernTemplate(BaseLetterheadTemplate):
         # Date on the right
         date_label = ref_date_para.add_run("Date: ")
         date_label.bold = True
-        date_label.font.size = Pt(8)
+        date_label.font.size = Pt(11)
         date_label.font.color.rgb = RGBColor(0, 0, 0)
 
         if report.report_date:
             date_value = ref_date_para.add_run(report.report_date)
         else:
             date_value = ref_date_para.add_run(datetime.now().strftime('%Y-%m-%d'))
-        date_value.font.size = Pt(8)
+        date_value.font.size = Pt(11)
         date_value.font.color.rgb = RGBColor(0, 0, 0)
 
         # Add spacing after letterhead

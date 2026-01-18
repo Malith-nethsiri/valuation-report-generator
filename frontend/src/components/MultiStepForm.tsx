@@ -58,7 +58,7 @@ import { toTitleCase } from '../utils/textFormatters';
 // Common deed types in Sri Lanka
 const COMMON_DEED_TYPES = [
   'Transfer Deed',
-  'Gift Deed',
+  'Deed of Gift',
   'Mortgage Deed',
   'Lease Deed',
   'Partition Deed',
@@ -186,7 +186,6 @@ const baseApplicantPurposeSchema = z.object({
     applicant_contact_number: z.string().nullable().optional(), // Optional contact number
     valuation_type: z.string().min(1, 'Please enter the valuation type'),
     valuation_purpose: z.string().min(1, 'Purpose of valuation is required'),
-    property_ownership: z.string().optional(),
     property_type_valued: z.string().min(1, 'Please enter the property type'),
     has_additional_owner: z.string().optional(),
     additional_owner_names: z.string().nullable().optional(),
@@ -793,7 +792,7 @@ const PropertyPlanStep: React.FC<StepComponentProps> = ({ register, errors, setV
                             <div className="flex-1">
                                 <h3 className="font-semibold text-gray-900 mb-1">Deed Only</h3>
                                 <p className="text-sm text-gray-600">
-                                    I have a deed document (transfer deed, gift deed, etc.)
+                                    I have a deed document (transfer deed, deed of gift, etc.)
                                 </p>
                             </div>
                             {identificationType === 'deed' && (
@@ -948,7 +947,7 @@ const PropertyPlanStep: React.FC<StepComponentProps> = ({ register, errors, setV
                                 value={watch('deed_type') || ''}
                                 onChange={(value) => setValue('deed_type', value)}
                                 suggestions={COMMON_DEED_TYPES}
-                                placeholder="Select or type deed type (e.g., Gift Deed, Transfer Deed)"
+                                placeholder="Select or type deed type (e.g., Deed of Gift, Transfer Deed)"
                                 allowCustom={true}
                                 className="w-full"
                             />
@@ -1174,7 +1173,7 @@ const PropertyPlanStep: React.FC<StepComponentProps> = ({ register, errors, setV
                                     value={watch('deed_type') || ''}
                                     onChange={(value) => setValue('deed_type', value)}
                                     suggestions={COMMON_DEED_TYPES}
-                                    placeholder="Select or type deed type (e.g., Gift Deed, Transfer Deed)"
+                                    placeholder="Select or type deed type (e.g., Deed of Gift, Transfer Deed)"
                                     allowCustom={true}
                                     className="w-full"
                                 />
@@ -1748,19 +1747,6 @@ const ApplicantPurposeStep: React.FC<StepComponentProps & { getValues: any }> = 
                 </div>
 
                 <div className="space-y-2 mt-4">
-                    <Label htmlFor="property_ownership" className="text-gray-700 font-medium">
-                        Property Ownership <span className="text-gray-400">(Optional, auto-generated if left blank)</span>
-                    </Label>
-                    <Input
-                        id="property_ownership"
-                        type="text"
-                        placeholder="e.g., owned by him, owned by her"
-                        className="h-14 bg-white/50 border-gray-200/50 rounded-2xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all duration-200"
-                        {...register('property_ownership')}
-                    />
-                </div>
-
-                <div className="space-y-2 mt-4">
                     <Label className="text-gray-700 font-medium">
                         Additional Property Owner?
                     </Label>
@@ -2033,7 +2019,6 @@ interface MultiStepFormProps {
         valuation_type?: string;
         valuation_purpose?: string;
         property_type_valued?: string;
-        property_ownership?: string;
         has_additional_owner?: string;
         additional_owner_names?: string;
         // Additional Details (Step 10)
@@ -2226,7 +2211,6 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
                 valuation_type: commonData.valuation_type,
                 valuation_purpose: commonData.valuation_purpose,
                 property_type_valued: commonData.property_type_valued,
-                property_ownership: commonData.property_ownership,
                 has_additional_owner: commonData.has_additional_owner,
                 additional_owner_names: commonData.additional_owner_names,
                 submission_recipient_position: commonData.submission_recipient_position,
@@ -2334,7 +2318,7 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
                 'applicant_title', 'applicant_full_name', 'applicant_id_type', 'applicant_id_number',
                 'applicant_address_line1', 'applicant_address_line2', 'applicant_district',
                 'applicant_province', 'applicant_country', 'valuation_type', 'valuation_purpose',
-                'property_ownership', 'property_type_valued', 'has_additional_owner', 'additional_owner_names',
+                'property_type_valued', 'has_additional_owner', 'additional_owner_names',
                 'submission_organization', 'submission_address', 'submission_recipient_position',
                 'inspection_date', 'has_special_note', 'special_note_text', 'report_reference', 'report_date'
             ];
@@ -2458,7 +2442,7 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
             if (!formData.deed_type) {
                 warnings.push({
                     field: 'deed_type',
-                    message: 'Deed type is missing (e.g., Transfer Deed, Gift Deed). Consider adding this.',
+                    message: 'Deed type is missing (e.g., Transfer Deed, Deed of Gift). Consider adding this.',
                     severity: 'info'
                 });
             }

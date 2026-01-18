@@ -3,6 +3,7 @@ import { UseFormReturn } from 'react-hook-form';
 import { Home, MapPin, Ruler, FileText } from 'lucide-react';
 import { Input } from './Input';
 import { Label } from './Label';
+import { DatePicker } from './DatePicker';
 import { MultiPropertyFormData } from './MultiPropertyStepForm';
 
 interface PropertyDetailsStepProps {
@@ -16,7 +17,7 @@ const PropertyDetailsStep: React.FC<PropertyDetailsStepProps> = ({
   formMethods,
   isEditMode,
 }) => {
-  const { register, watch, formState: { errors } } = formMethods;
+  const { register, watch, setValue, formState: { errors } } = formMethods;
 
   // Field prefix for this property
   const fieldPrefix = `properties.${propertyIndex}`;
@@ -51,9 +52,11 @@ const PropertyDetailsStep: React.FC<PropertyDetailsStepProps> = ({
 
           <div>
             <Label htmlFor={`${fieldPrefix}.plan_date`}>Plan Date</Label>
-            <Input
-              type="date"
-              {...register(`${fieldPrefix}.plan_date` as any)}
+            <DatePicker
+              id={`${fieldPrefix}.plan_date`}
+              value={watch(`${fieldPrefix}.plan_date` as any) || ''}
+              onChange={(date) => setValue(`${fieldPrefix}.plan_date` as any, date)}
+              placeholder="DD-MM-YYYY"
             />
           </div>
 
@@ -81,7 +84,7 @@ const PropertyDetailsStep: React.FC<PropertyDetailsStepProps> = ({
             <Label htmlFor={`${fieldPrefix}.property_village`}>Village/City *</Label>
             <Input
               {...register(`${fieldPrefix}.property_village` as any)}
-              placeholder="e.g., Colombo"
+              placeholder="Enter village name"
               required
             />
           </div>
@@ -109,7 +112,31 @@ const PropertyDetailsStep: React.FC<PropertyDetailsStepProps> = ({
             </Label>
             <Input
               {...register(`${fieldPrefix}.grama_niladari_division` as any)}
-              placeholder="GN Division"
+              placeholder="Enter GN Division name"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor={`${fieldPrefix}.property_number`}>Property Number</Label>
+            <Input
+              {...register(`${fieldPrefix}.property_number` as any)}
+              placeholder="Enter property number"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor={`${fieldPrefix}.korale`}>Korale</Label>
+            <Input
+              {...register(`${fieldPrefix}.korale` as any)}
+              placeholder="Enter Korale name"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor={`${fieldPrefix}.pradeshiya_sabha`}>Pradeshiya Sabha</Label>
+            <Input
+              {...register(`${fieldPrefix}.pradeshiya_sabha` as any)}
+              placeholder="Enter Pradeshiya Sabha name"
             />
           </div>
 

@@ -109,7 +109,6 @@ const step1Schema = z.object({
         .refine((val) => val.length <= 200, {
             message: 'Purpose must be 200 characters or less'
         }),
-    property_ownership: z.string().optional(),
     property_type_valued: z.string().min(1, 'Please enter the property type'),
     has_additional_owner: z.string().optional(),
     additional_owner_names: z.string().nullable().optional(),
@@ -208,7 +207,6 @@ const multiPropertyCommonSchema = z.object({
     applicant_contact_number: z.string().nullable().optional(), // Optional contact number
     valuation_type: z.string().optional(),
     valuation_purpose: z.string().optional(),
-    property_ownership: z.string().optional(),
     property_type_valued: z.string().optional(),
     has_additional_owner: z.string().optional(),
     additional_owner_names: z.string().nullable().optional(),
@@ -304,7 +302,6 @@ export const MultiPropertyRedesignedStepForm: React.FC<MultiPropertyRedesignedSt
             applicant_country: initialData.applicant_country || 'Sri Lanka',
             valuation_type: initialData.valuation_type || '',
             valuation_purpose: initialData.valuation_purpose || '',
-            property_ownership: initialData.property_ownership || '',
             property_type_valued: initialData.property_type_valued || '',
             has_additional_owner: initialData.has_additional_owner || '',
             additional_owner_names: initialData.additional_owner_names || '',

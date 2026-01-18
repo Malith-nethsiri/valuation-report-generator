@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Upload, FileImage, X, Loader2, CheckCircle2, AlertCircle, Eye } from 'lucide-react';
 import { Button } from './Button';
 import { Label } from './Label';
-import { cleanOCRText, formatPlaceName, formatBoundaryDescription } from '../utils/textFormatter';
+import { cleanOCRText, formatBoundaryDescription, smartTitleCase } from '../utils/textFormatter';
 import { authTokenStorage } from '../utils/secureStorage';
 
 interface OCRResult {
@@ -83,23 +83,69 @@ export function DocumentUploadOCR({
   const formatOCRData = (data: any): any => {
     const formatted = { ...data };
 
+    // Apply smartTitleCase to all text fields from OCR
+    // This converts ALL CAPS to proper Title Case while preserving:
+    // - Initials (A.D.SILVA → A.D.Silva)
+    // - Acronyms (LLC, PO, NE, SW, etc.)
+    // - Hyphenated names (PERERA-SILVA → Perera-Silva)
+
+    // Location fields
     if (formatted.property_village) {
-      formatted.property_village = formatPlaceName(formatted.property_village);
+      formatted.property_village = smartTitleCase(formatted.property_village);
+    }
+    if (formatted.village) {
+      formatted.village = smartTitleCase(formatted.village);
+    }
+    if (formatted.gn_division_name) {
+      formatted.gn_division_name = smartTitleCase(formatted.gn_division_name);
+    }
+    if (formatted.ds_division) {
+      formatted.ds_division = smartTitleCase(formatted.ds_division);
+    }
+    if (formatted.district) {
+      formatted.district = smartTitleCase(formatted.district);
+    }
+    if (formatted.province) {
+      formatted.province = smartTitleCase(formatted.province);
+    }
+    if (formatted.korale) {
+      formatted.korale = smartTitleCase(formatted.korale);
+    }
+    if (formatted.pradeshiya_sabha) {
+      formatted.pradeshiya_sabha = smartTitleCase(formatted.pradeshiya_sabha);
     }
 
+    // Plan-related fields
     if (formatted.licensed_surveyor_name) {
-      formatted.licensed_surveyor_name = cleanOCRText(formatted.licensed_surveyor_name);
+      formatted.licensed_surveyor_name = smartTitleCase(cleanOCRText(formatted.licensed_surveyor_name));
     }
-
     if (formatted.land_traditional_name) {
-      formatted.land_traditional_name = cleanOCRText(formatted.land_traditional_name);
+      // Force transformation by converting to uppercase first to ensure smartTitleCase always processes it
+      const cleanedName = cleanOCRText(formatted.land_traditional_name);
+      formatted.land_traditional_name = smartTitleCase(cleanedName.toUpperCase());
     }
 
+    // Deed-related fields
+    if (formatted.deeds && Array.isArray(formatted.deeds)) {
+      formatted.deeds = formatted.deeds.map((deed: any) => ({
+        ...deed,
+        deed_type: deed.deed_type ? smartTitleCase(deed.deed_type) : deed.deed_type,
+        notary_name: deed.notary_name ? smartTitleCase(deed.notary_name) : deed.notary_name,
+        notary_location: deed.notary_location ? smartTitleCase(deed.notary_location) : deed.notary_location,
+      }));
+    }
+
+    // Boundary descriptions
     if (formatted.boundaries) {
       Object.keys(formatted.boundaries).forEach(direction => {
         if (formatted.boundaries[direction]?.description) {
-          formatted.boundaries[direction].description = formatBoundaryDescription(
-            formatted.boundaries[direction].description
+          formatted.boundaries[direction].description = smartTitleCase(
+            formatBoundaryDescription(formatted.boundaries[direction].description)
+          );
+        }
+        if (formatted.boundaries[direction]?.adjoins) {
+          formatted.boundaries[direction].adjoins = smartTitleCase(
+            formatted.boundaries[direction].adjoins
           );
         }
       });

@@ -19,6 +19,7 @@ import {
 import { Button } from './Button';
 import { Input } from './Input';
 import { Label } from './Label';
+import { DatePicker } from './DatePicker';
 import { useDraftManager } from '../hooks/useDraftManager';
 import { useNavigationBlocker } from '../hooks/useNavigationBlocker';
 import NavigationConfirmModal from './NavigationConfirmModal';
@@ -71,7 +72,6 @@ export interface MultiPropertyFormData {
   // Step 2: Valuation Purpose
   valuation_type?: string;
   valuation_purpose?: string;
-  property_ownership?: string;
   property_type_valued?: string;
   submission_organization?: string;
   submission_address?: string;
@@ -513,9 +513,11 @@ const MultiPropertyStepForm: React.FC<MultiPropertyStepFormProps> = ({
 
         <div className="md:col-span-2">
           <Label htmlFor="inspection_date">Inspection Date (Shared)</Label>
-          <Input
-            type="date"
-            {...register('inspection_date')}
+          <DatePicker
+            id="inspection_date"
+            value={watch('inspection_date') || ''}
+            onChange={(date) => setValue('inspection_date', date)}
+            placeholder="DD-MM-YYYY"
             className="w-full"
           />
           <p className="text-sm text-gray-500 mt-1">This date applies to all properties in this report</p>
@@ -706,9 +708,11 @@ const MultiPropertyStepForm: React.FC<MultiPropertyStepFormProps> = ({
 
         <div>
           <Label htmlFor="certification_date">Certification Date</Label>
-          <Input
-            type="date"
-            {...register('certification_date')}
+          <DatePicker
+            id="certification_date"
+            value={watch('certification_date') || ''}
+            onChange={(date) => setValue('certification_date', date)}
+            placeholder="DD-MM-YYYY"
           />
         </div>
 

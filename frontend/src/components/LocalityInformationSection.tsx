@@ -429,7 +429,7 @@ const LocalityInformationSection: React.FC<Props> = ({
             <Input
               value={data.major_town_name || ''}
               onChange={(e) => onChange({ major_town_name: e.target.value })}
-              placeholder="e.g., Rambukkana"
+              placeholder="Enter nearest major town"
             />
           </div>
           <div>
@@ -643,7 +643,7 @@ const LocalityInformationSection: React.FC<Props> = ({
                   <Input
                     value={data.nearest_bus_stop_name || ''}
                     onChange={(e) => onChange({ nearest_bus_stop_name: e.target.value })}
-                    placeholder="e.g., Rambukkana Bus Stand"
+                    placeholder="Enter nearest bus stop"
                   />
                 </div>
                 <div>
@@ -663,7 +663,7 @@ const LocalityInformationSection: React.FC<Props> = ({
                   <Input
                     value={data.nearest_railway_station || ''}
                     onChange={(e) => onChange({ nearest_railway_station: e.target.value })}
-                    placeholder="e.g., Rambukkana Railway Station"
+                    placeholder="Enter nearest railway station"
                   />
                 </div>
                 <div>
@@ -682,7 +682,7 @@ const LocalityInformationSection: React.FC<Props> = ({
                 <Input
                   value={data.public_transport_routes || ''}
                   onChange={(e) => onChange({ public_transport_routes: e.target.value })}
-                  placeholder="e.g., Colombo-Kandy bus route, Galigamuwa-Awissawella road"
+                  placeholder="Enter public transport routes"
                 />
               </div>
             </>

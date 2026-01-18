@@ -157,7 +157,7 @@ class BankAccountUpdate(BaseModel):
 
 # Deed Information Schema
 class DeedInfo(BaseModel):
-    deed_type: str = Field(..., description="Type of deed (Gift deed, Transfer deed, etc.)")
+    deed_type: str = Field(..., description="Type of deed (Deed of Gift, Transfer deed, etc.)")
     deed_number: str = Field(..., description="Deed number")
     deed_date: str = Field(..., description="Deed date (DD-MM-YYYY)")
     notary_name: Optional[str] = Field(None, description="Notary name")
@@ -287,6 +287,8 @@ class Building(BaseModel):
     condition: Optional[str] = Field(None, max_length=50, description="Building condition")
     occupier_name: Optional[str] = Field(None, max_length=300, description="Occupier name")
     occupier_relationship: Optional[str] = Field(None, max_length=50, description="Relationship: owner, tenant, caretaker, family_member, vacant")
+    is_rented: Optional[bool] = Field(None, description="Whether this building is rented")
+    rent_details: Optional[str] = Field(None, max_length=500, description="Optional rent details if building is rented")
     roof_types: List[str] = Field(default_factory=list, description="Roof types")
     roof_description: Optional[str] = Field(None, description="Roof description")
     wall_types: List[str] = Field(default_factory=list, description="Wall types")
@@ -360,7 +362,6 @@ class ReportBase(BaseModel):
 
     # Valuation Purpose
     valuation_type: Optional[str] = Field(None, max_length=100, description="Type of valuation (Market Value, etc.)")
-    property_ownership: Optional[str] = Field(None, max_length=200, description="Property ownership description")
     property_type_valued: Optional[str] = Field(None, max_length=200, description="Type of property being valued")
 
     # Valuation Purpose (new)
@@ -860,7 +861,6 @@ class ReportResponse(BaseModel):
     applicant_province: Optional[str] = None
     applicant_country: Optional[str] = None
     valuation_type: Optional[str] = None
-    property_ownership: Optional[str] = None
     property_type_valued: Optional[str] = None
     valuation_purpose: Optional[str] = None
     has_additional_owner: Optional[str] = None
@@ -1418,7 +1418,6 @@ class MultiPropertyReportCreate(BaseModel):
 
     valuation_type: Optional[str] = None
     valuation_purpose: Optional[str] = None
-    property_ownership: Optional[str] = None
     property_type_valued: Optional[str] = None
 
     submission_organization: Optional[str] = None
