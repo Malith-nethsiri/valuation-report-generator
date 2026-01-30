@@ -275,3 +275,39 @@ def too_many_requests_response(message: str = "Too many requests. Please try aga
         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
         request_id=request_id
     )
+
+
+def internal_server_error_response(request_id: Optional[str] = None) -> JSONResponse:
+    """Create 500 Internal Server Error response without exposing details"""
+    return create_error_response(
+        error="InternalServerError",
+        message="An unexpected error occurred. Please try again.",
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        request_id=request_id
+    )
+
+
+def safe_exception_handler(
+    exception: Exception,
+    context: str,
+    user_message: str = "An unexpected error occurred. Please try again."
+) -> Dict[str, str]:
+    """
+    Safely handle exceptions without leaking internal details.
+
+    Args:
+        exception: The caught exception
+        context: Context string for logging (e.g., "creating report")
+        user_message: User-friendly message to return
+
+    Returns:
+        Dict with error information suitable for HTTPException detail
+    """
+    # Log the full error for debugging
+    logger.error(
+        f"[ERROR] Error while {context}: {type(exception).__name__}: {str(exception)}\n"
+        f"{traceback.format_exc()}"
+    )
+
+    # Return sanitized error message
+    return user_message

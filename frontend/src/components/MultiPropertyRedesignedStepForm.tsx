@@ -36,6 +36,7 @@ import { AdditionalDetailsStep } from './AdditionalDetailsStep';
 import { PropertyMiniDashboard } from './PropertyMiniDashboard';
 import { PropertyInReport } from '../types';
 import MultiStepForm from './MultiStepForm';
+import { VehicleStepForm } from './VehicleStepForm';
 import InvoiceDataStep from './InvoiceDataStep';
 import { validateSriLankanNIC, validatePassport } from '../utils/validators';
 import { reportApi, api } from '../services/api';
@@ -426,7 +427,7 @@ export const MultiPropertyRedesignedStepForm: React.FC<MultiPropertyRedesignedSt
         toast.success('Property duplicated');
     };
 
-    const handleAddPropertyBatch = (type: 'residential' | 'bare_land', count: number) => {
+    const handleAddPropertyBatch = (type: 'residential' | 'bare_land' | 'vehicle', count: number) => {
         const newProperties: PropertyInReport[] = [];
 
         for (let i = 0; i < count; i++) {
@@ -440,7 +441,15 @@ export const MultiPropertyRedesignedStepForm: React.FC<MultiPropertyRedesignedSt
         }
 
         setProperties(prev => [...prev, ...newProperties]);
-        toast.success(`Added ${count} ${type === 'residential' ? 'Residential/Commercial' : 'Bare Land'} ${count === 1 ? 'property' : 'properties'}`);
+
+        // Type-specific success message
+        const typeLabels: Record<string, string> = {
+            residential: 'Residential/Commercial',
+            bare_land: 'Bare Land',
+            vehicle: 'Vehicle'
+        };
+        const itemName = type === 'vehicle' ? 'vehicle' : 'property';
+        toast.success(`Added ${count} ${typeLabels[type]} ${count === 1 ? itemName : itemName + 's'}`);
     };
 
     // Property editing handlers
@@ -719,7 +728,21 @@ export const MultiPropertyRedesignedStepForm: React.FC<MultiPropertyRedesignedSt
 
         const commonData = getValues();
 
-        // Determine report type based on property type
+        // Handle vehicle type separately
+        if (property.type === 'vehicle') {
+            return (
+                <VehicleStepForm
+                    mode={property.data && Object.keys(property.data).length > 0 ? 'edit' : 'create'}
+                    initialData={property.data}
+                    isMultiPropertyContext={true}
+                    onSaveProperty={(data) => handlePropertySave(property.id, data)}
+                    onFinishProperty={(data) => handlePropertyFinish(property.id, data)}
+                    onCancel={() => setEditingPropertyId(null)}
+                />
+            );
+        }
+
+        // Determine report type based on property type (for residential/bare_land)
         const reportType = property.type === 'residential' ? 'residential_property' : 'bare_land';
 
         return (
@@ -776,10 +799,11 @@ export const MultiPropertyRedesignedStepForm: React.FC<MultiPropertyRedesignedSt
                         <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 max-w-2xl mx-auto">
                             <h4 className="font-semibold text-blue-900 mb-2">Report Summary</h4>
                             <ul className="text-sm text-blue-800 space-y-1 text-left">
-                                <li>• Total Properties: {properties.filter(p => p.status === 'completed').length}</li>
+                                <li>• Total Items: {properties.filter(p => p.status === 'completed').length}</li>
                                 <li>• Residential/Commercial: {properties.filter(p => p.type === 'residential' && p.status === 'completed').length}</li>
                                 <li>• Bare Land: {properties.filter(p => p.type === 'bare_land' && p.status === 'completed').length}</li>
-                                <li>• Draft properties will be excluded from the report</li>
+                                <li>• Vehicles: {properties.filter(p => p.type === 'vehicle' && p.status === 'completed').length}</li>
+                                <li>• Draft items will be excluded from the report</li>
                             </ul>
                         </div>
                     </div>

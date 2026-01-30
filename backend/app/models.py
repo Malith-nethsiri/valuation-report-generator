@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, JSON, Numeric, Boolean
+from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, JSON, Numeric, Boolean, UniqueConstraint, Index
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from .database import Base
@@ -108,6 +108,7 @@ class User(Base):
     # Relationships (with cascading delete)
     reports = relationship("Report", back_populates="user", cascade="all, delete-orphan")
     properties = relationship("Property", back_populates="user", cascade="all, delete-orphan")
+    vehicles = relationship("Vehicle", back_populates="user", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<User(id={self.id}, email='{self.email}', full_name='{self.full_name}', designation='{self.professional_designation}')>"
@@ -116,7 +117,7 @@ class Report(Base):
     __tablename__ = "reports"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)  # Added index for query performance
     report_type = Column(String(100), nullable=False, default="residential_property")
     status = Column(String(50), nullable=False, default="draft")  # draft, completed
 
@@ -186,7 +187,6 @@ class Report(Base):
 
     # Property Location Information
     use_applicant_address_as_property = Column(Boolean, nullable=True, default=False)  # Checkbox to reuse applicant address
-    property_name = Column(String(200), nullable=True)  # Optional property name (e.g., "Searock The Kings Domain")
     assessment_number = Column(String(100), nullable=True)  # Optional assessment number
     property_village = Column(String(200), nullable=True)  # Village name (from Google or manual)
     property_divisional_secretariat = Column(String(200), nullable=True)  # Divisional Secretariat division
@@ -407,17 +407,33 @@ class Report(Base):
     total_valuation_amount = Column(Numeric(15, 2), nullable=True)
     invoice_data = Column(JSON, nullable=True)  # {items: [...], subtotal, discount, total, payment_terms, bank_details}
 
+    # ===== VEHICLE REPORT SUPPORT =====
+    primary_vehicle_id = Column(Integer, ForeignKey("vehicles.id", ondelete="SET NULL"), nullable=True)  # For standalone vehicle reports
+    is_office_use = Column(Boolean, default=False, nullable=True)  # Office/Private distinction
+    vehicle_count = Column(Integer, default=0, nullable=True)  # Number of vehicles in report
+
+    # ===== VEHICLE REPORT HEADER FIELDS =====
+    folio_number = Column(String(100), nullable=True)  # Manual entry by user
+    inspection_place = Column(Text, nullable=True)  # Free text entry
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
     # Relationships
     user = relationship("User", back_populates="reports")
     property_associations = relationship("ReportProperty", back_populates="report", cascade="all, delete-orphan")
+    vehicle_associations = relationship("ReportVehicle", back_populates="report", cascade="all, delete-orphan")
+    primary_vehicle = relationship("Vehicle", foreign_keys=[primary_vehicle_id])
 
     @property
     def properties(self):
         """Get all properties for this report, ordered by property_order"""
         return [rp.property for rp in sorted(self.property_associations, key=lambda x: x.property_order)]
+
+    @property
+    def vehicles(self):
+        """Get all vehicles for this report, ordered by vehicle_order"""
+        return [rv.vehicle for rv in sorted(self.vehicle_associations, key=lambda x: x.vehicle_order)]
 
     def __repr__(self):
         return f"<Report(id={self.id}, user_id={self.user_id}, type='{self.report_type}', status='{self.status}', multi={self.is_multi_property})>"
@@ -437,7 +453,7 @@ class Property(Base):
     __tablename__ = "properties"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)  # Added index for query performance
 
     # Property Status & Type (for multi-property reports)
     status = Column(String(50), nullable=False, default="draft")  # 'draft' or 'completed'
@@ -457,7 +473,6 @@ class Property(Base):
     deeds = Column(JSON, nullable=True)
 
     # Property Location
-    property_name = Column(String(200), nullable=True)
     assessment_number = Column(String(100), nullable=True)
     property_village = Column(String(200), nullable=True)
     property_divisional_secretariat = Column(String(200), nullable=True)
@@ -645,8 +660,8 @@ class ReportProperty(Base):
     __tablename__ = "report_properties"
 
     id = Column(Integer, primary_key=True, index=True)
-    report_id = Column(Integer, ForeignKey("reports.id", ondelete="CASCADE"), nullable=False)
-    property_id = Column(Integer, ForeignKey("properties.id", ondelete="CASCADE"), nullable=False)
+    report_id = Column(Integer, ForeignKey("reports.id", ondelete="CASCADE"), nullable=False, index=True)  # Added index
+    property_id = Column(Integer, ForeignKey("properties.id", ondelete="CASCADE"), nullable=False, index=True)  # Added index
     property_order = Column(Integer, nullable=False, default=1)  # For drag-drop ordering
 
     # Optional per-report-property data
@@ -662,3 +677,249 @@ class ReportProperty(Base):
 
     def __repr__(self):
         return f"<ReportProperty(report_id={self.report_id}, property_id={self.property_id}, order={self.property_order})>"
+
+
+class Vehicle(Base):
+    """
+    Vehicle model for vehicle valuation reports.
+
+    Supports:
+    - All vehicle types (cars, motorcycles, trucks, special vehicles)
+    - Standalone vehicle reports
+    - Multi-property reports with mixed assets (properties + vehicles)
+    - Vehicle Library feature for reuse across reports
+    """
+    __tablename__ = "vehicles"
+
+    # Table-level constraints
+    __table_args__ = (
+        # Unique constraint: registration number must be unique per user (excluding deleted vehicles)
+        # Note: This is enforced at the database level for data integrity
+        UniqueConstraint('user_id', 'registration_number', name='uq_vehicle_user_registration'),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # Status & Type
+    status = Column(String(50), nullable=False, default="draft")  # 'draft' or 'completed'
+    vehicle_type = Column(String(50), nullable=True)  # 'car', 'motorcycle', 'truck', 'special'
+    is_template = Column(Boolean, default=False, nullable=True)  # For Vehicle Library
+    is_deleted = Column(Boolean, default=False, nullable=True)  # Soft delete
+    original_vehicle_id = Column(Integer, ForeignKey("vehicles.id"), nullable=True)  # For duplicates
+
+    # ===== VEHICLE IDENTIFICATION =====
+    registration_number = Column(String(50), nullable=True, index=True)
+    provincial_council = Column(String(100), nullable=True)  # Sri Lankan provinces
+    class_of_vehicle = Column(String(100), nullable=True)  # Car, Van, SUV, Motorcycle, etc.
+    body_colour = Column(String(100), nullable=True)
+    chassis_number = Column(String(100), nullable=True)
+    engine_number = Column(String(100), nullable=True)
+    vehicle_status = Column(String(100), nullable=True)  # Registered, De-registered, Pending, Imported
+    country_of_origin = Column(String(100), nullable=True)
+    make = Column(String(100), nullable=True, index=True)  # Toyota, Honda, etc.
+    model = Column(String(200), nullable=True)
+    date_of_first_registration = Column(String(50), nullable=True)  # DD/MM/YYYY
+    year_of_manufacture = Column(Integer, nullable=True)
+    cylinder_capacity = Column(Integer, nullable=True)  # in cc
+    fuel_type = Column(String(50), nullable=True)  # Petrol, Diesel, Hybrid, Electric, etc.
+    mileage = Column(Integer, nullable=True)
+    mileage_unit = Column(String(20), nullable=True, default="km")  # 'km' or 'miles'
+
+    # ===== ENGINE & TRANSMISSION =====
+    engine_type = Column(String(100), nullable=True)  # V6, Inline-4, etc.
+    transmission = Column(String(50), nullable=True)  # Manual, Automatic, CVT, etc.
+    wheel_drive = Column(String(20), nullable=True)  # 2WD, 4WD, AWD
+
+    # ===== CONDITION FIELDS (separate columns for querying) =====
+    running_condition = Column(String(50), nullable=True)  # Excellent/Good/Fair/Poor/Very Poor
+    clutch_status = Column(String(100), nullable=True)  # Working Properly / Needs Adjustment / Needs Replacement
+    engine_condition = Column(String(50), nullable=True)
+    gear_box_condition = Column(String(50), nullable=True)
+    differential_status = Column(String(100), nullable=True)  # Working Properly / Has Issues / Not Working
+    gear_selection = Column(String(50), nullable=True)  # Smooth / Stiff / Difficult / Not Working
+    body_condition = Column(String(50), nullable=True)
+    chassis_condition = Column(String(50), nullable=True)
+    upholstery_condition = Column(String(50), nullable=True)
+    underside_condition = Column(String(50), nullable=True)
+
+    # ===== PARTS AVAILABILITY =====
+    body_parts_status = Column(String(100), nullable=True)  # Available, Rare, Cannot Find, etc.
+    engine_parts_status = Column(String(100), nullable=True)
+    accessories_status = Column(String(100), nullable=True)
+
+    # ===== FUEL & PERFORMANCE =====
+    fuel_consumption = Column(Numeric(6, 2), nullable=True)
+    fuel_consumption_unit = Column(String(20), nullable=True)  # 'km/L' or 'L/100km'
+
+    # ===== BRAKES =====
+    foot_brake_condition = Column(String(50), nullable=True)
+    disc_brake_available = Column(Boolean, nullable=True)
+    parking_brake_condition = Column(String(50), nullable=True)
+    abs_available = Column(Boolean, nullable=True)
+
+    # ===== FEATURES (JSONB for flexibility) =====
+    features = Column(JSON, nullable=True)
+    # Structure: {
+    #   air_condition: Boolean,
+    #   dual_air_condition: Boolean,
+    #   power_mirror: Boolean,
+    #   power_window: Boolean,
+    #   power_steering: Boolean,
+    #   airbag: Boolean,
+    #   num_airbags: Integer,
+    #   seats: Integer,
+    #   doors: Integer
+    # }
+
+    # ===== SUSPENSION (JSONB) =====
+    suspension = Column(JSON, nullable=True)
+    # Structure: { front: String, rear: String }
+
+    # ===== TYRES (JSONB) =====
+    tyres = Column(JSON, nullable=True)
+    # Structure: {
+    #   front: {brand, size, tread_percent, condition},
+    #   rear: {brand, size, tread_percent, condition},
+    #   spare_available: Boolean,
+    #   need_replacement: Boolean,
+    #   rear_type: 'single' | 'dual'
+    # }
+
+    # ===== ELECTRICAL (JSONB) =====
+    electrical = Column(JSON, nullable=True)
+    # Structure: { starter: Boolean, horn: Boolean, wiper: Boolean, battery_condition: String }
+
+    # ===== LIGHTS (JSONB) =====
+    lights = Column(JSON, nullable=True)
+    # Structure: { head: Boolean, dim: Boolean, signal: Boolean, parking: Boolean, reverse: Boolean, meter: Boolean }
+
+    # ===== HISTORY =====
+    has_accidents = Column(Boolean, nullable=True)
+    has_repairs = Column(Boolean, nullable=True)
+    needs_repairs_within_year = Column(Boolean, nullable=True)
+    body_parts_replaced = Column(Boolean, nullable=True)
+
+    # ===== VALUATION =====
+    purchase_price = Column(Numeric(15, 2), nullable=True)  # LKR
+    brand_new_price = Column(Numeric(15, 2), nullable=True)  # LKR
+    market_value = Column(Numeric(15, 2), nullable=True)  # LKR
+    forced_sale_value = Column(Numeric(15, 2), nullable=True)  # LKR
+    valuation_summary = Column(Text, nullable=True)  # AI-generated, editable
+
+    # ===== OFFICE USE (JSONB for conditional fields) =====
+    office_data = Column(JSON, nullable=True)
+    # Structure: { civil_no: String, military_no: String, approval_position: String }
+
+    # ===== PAST VALUATIONS (JSONB for dynamic rows) =====
+    past_valuations = Column(JSON, nullable=True)
+    # Structure: [{ serial, civil_no, military_no, year, value, market_value }, ...]
+
+    # ===== PHOTOS (JSONB) =====
+    vehicle_photos = Column(JSON, nullable=True)  # [{id, image_data, caption, order}]
+    book_images = Column(JSON, nullable=True)  # [{id, image_data, order}] - for OCR
+
+    # ===== TIMESTAMPS =====
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Relationships
+    user = relationship("User", back_populates="vehicles")
+    report_associations = relationship("ReportVehicle", back_populates="vehicle", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<Vehicle(id={self.id}, make='{self.make}', model='{self.model}', reg='{self.registration_number}')>"
+
+
+class ReportVehicle(Base):
+    """
+    ReportVehicle junction table - enables many-to-many relationship between Reports and Vehicles.
+
+    Allows:
+    - One report to contain multiple vehicles
+    - One vehicle to be included in multiple reports (reuse via Vehicle Library)
+    - Custom ordering of vehicles within a report (drag-drop support)
+    - Per-report-vehicle overrides (e.g., different valuation for different purposes)
+    """
+    __tablename__ = "report_vehicles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    report_id = Column(Integer, ForeignKey("reports.id", ondelete="CASCADE"), nullable=False)
+    vehicle_id = Column(Integer, ForeignKey("vehicles.id", ondelete="CASCADE"), nullable=False)
+    vehicle_order = Column(Integer, nullable=False, default=1)  # For drag-drop ordering
+
+    # Optional per-report-vehicle data
+    report_specific_notes = Column(Text, nullable=True)
+    override_market_value = Column(Numeric(15, 2), nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    report = relationship("Report", back_populates="vehicle_associations")
+    vehicle = relationship("Vehicle", back_populates="report_associations")
+
+    def __repr__(self):
+        return f"<ReportVehicle(report_id={self.report_id}, vehicle_id={self.vehicle_id}, order={self.vehicle_order})>"
+
+
+class AuditAction(str, enum.Enum):
+    """Types of auditable actions."""
+    CREATE = "create"
+    READ = "read"
+    UPDATE = "update"
+    DELETE = "delete"
+    LOGIN = "login"
+    LOGOUT = "logout"
+    PASSWORD_CHANGE = "password_change"
+    PASSWORD_RESET = "password_reset"
+    ROLE_CHANGE = "role_change"
+    EXPORT = "export"
+
+
+class AuditLog(Base):
+    """
+    Audit log model for tracking sensitive operations.
+
+    Records:
+    - User actions (who did what)
+    - Resource modifications (reports, properties, vehicles)
+    - Authentication events
+    - Role changes
+    - Data exports
+
+    Important for:
+    - Security compliance
+    - Debugging issues
+    - Forensic analysis
+    """
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    # Action details
+    action = Column(String(50), nullable=False, index=True)  # create, update, delete, login, etc.
+    resource_type = Column(String(50), nullable=False, index=True)  # report, property, vehicle, user
+    resource_id = Column(Integer, nullable=True, index=True)  # ID of affected resource
+
+    # Additional context
+    description = Column(Text, nullable=True)  # Human-readable description
+    details = Column(JSON, nullable=True)  # Additional structured data (e.g., changed fields)
+
+    # Request context
+    ip_address = Column(String(45), nullable=True)  # IPv4 or IPv6
+    user_agent = Column(String(500), nullable=True)
+    request_id = Column(String(36), nullable=True)  # Correlation ID
+
+    # Status
+    success = Column(Boolean, default=True, nullable=False)
+    error_message = Column(Text, nullable=True)  # If success=False
+
+    # Timestamp
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    # Relationship (nullable because user might be deleted)
+    user = relationship("User")
+
+    def __repr__(self):
+        return f"<AuditLog(id={self.id}, user_id={self.user_id}, action='{self.action}', resource='{self.resource_type}:{self.resource_id}')>"

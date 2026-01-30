@@ -168,14 +168,14 @@ async def generate_locality_narrative(
 
         if predominant_building_type:
             building_labels = {
-                "Single Storey Residential": "single storey residential",
-                "Multi Storey Residential": "multi storey residential",
+                "Single Story Residential": "single story residential",
+                "Multi Story Residential": "multi story residential",
                 "Apartments": "apartments",
                 "Commercial Buildings": "commercial buildings",
                 "Mixed": "mixed-use buildings",
                 # Backward compatibility
-                "single_storey_residential": "single storey residential",
-                "multi_storey_residential": "multi storey residential",
+                "single_storey_residential": "single story residential",
+                "multi_storey_residential": "multi story residential",
                 "apartments": "apartments",
                 "commercial_buildings": "commercial buildings",
                 "mixed": "mixed-use buildings"

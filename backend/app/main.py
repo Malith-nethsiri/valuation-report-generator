@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, BackgroundTasks
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, BackgroundTasks, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.exceptions import RequestValidationError
@@ -12,7 +12,11 @@ from datetime import timedelta, datetime
 from typing import Optional, List
 
 # Load environment variables FIRST (before Sentry init)
-load_dotenv()
+# Load .env.local first if it exists (for local development), then .env as fallback
+# Use absolute path relative to this file's location
+_env_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+load_dotenv(os.path.join(_env_dir, '.env.local'), override=True)
+load_dotenv(os.path.join(_env_dir, '.env'))
 
 # Initialize Sentry before other imports (production only)
 import sentry_sdk
@@ -46,8 +50,11 @@ from .autocomplete import get_all_autocomplete_data, search_autocomplete
 from .auth import (
     authenticate_user,
     create_access_token,
+    create_refresh_token,
+    verify_refresh_token,
     get_current_user,
-    ACCESS_TOKEN_EXPIRE_MINUTES
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+    REFRESH_TOKEN_EXPIRE_MINUTES
 )
 from .services.ocr_service import process_uploaded_document, process_multiple_documents
 from .services.redis_client import get_redis_client, close_redis_connection, redis_health_check
@@ -63,6 +70,7 @@ from .middleware.rate_limiting import (
     configure_rate_limits,
     cleanup_task
 )
+from .middleware.csrf_protection import CSRFMiddleware, get_csrf_token_endpoint
 
 # Configure logging
 logging.basicConfig(
@@ -207,9 +215,15 @@ else:
     origins = ["http://localhost:5173", "http://localhost:5174"]
     logger.warning("Using development CORS origins. Set CORS_ORIGINS for production.")
 
-# Validate no localhost in production
+# Validate no localhost in production - This is a security requirement
 if IS_PRODUCTION and any("localhost" in origin for origin in origins):
-    logger.warning("WARNING: localhost origins detected in production CORS config!")
+    error_msg = (
+        "SECURITY ERROR: localhost origins detected in production CORS config! "
+        "This exposes the API to CSRF attacks. Remove localhost from CORS_ORIGINS "
+        "or set ENV=development for local development."
+    )
+    logger.critical(error_msg)
+    raise RuntimeError(error_msg)
 
 logger.info(f"CORS configured for origins: {origins}")
 
@@ -224,6 +238,9 @@ app.add_middleware(
 
 # Add rate limiting middleware
 app.add_middleware(RateLimitMiddleware)
+
+# Add CSRF protection middleware
+app.add_middleware(CSRFMiddleware, is_production=IS_PRODUCTION)
 
 
 # ===== SECURITY HEADERS MIDDLEWARE =====
@@ -359,6 +376,17 @@ async def health_check():
         "message": "API is healthy and running"
     }
 
+@app.get("/api/csrf-token")
+async def csrf_token(request: Request):
+    """
+    Get CSRF token.
+
+    Frontend should call this endpoint on initial load to ensure
+    a CSRF token cookie is set. The token should then be included
+    as X-CSRF-Token header on all state-changing requests.
+    """
+    return get_csrf_token_endpoint(request)
+
 @app.get("/api/health/detailed")
 async def detailed_health_check():
     """
@@ -454,22 +482,31 @@ async def register_user(
         # Create new user
         db_user = crud.create_user(db, user_data)
 
-        # Create access token
+        # Create access token (short-lived)
         access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_access_token(
             data={"sub": db_user.email},
             expires_delta=access_token_expires
         )
 
+        # Create refresh token (longer-lived)
+        refresh_token_expires = timedelta(minutes=REFRESH_TOKEN_EXPIRE_MINUTES)
+        refresh_token = create_refresh_token(
+            data={"sub": db_user.email},
+            expires_delta=refresh_token_expires
+        )
+
         return {
             "access_token": access_token,
+            "refresh_token": refresh_token,
             "token_type": "bearer",
             "user": db_user
         }
     except Exception as e:
+        logger.error(f"[REGISTRATION_ERROR] Failed to create user: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error creating user: {str(e)}"
+            detail="Error creating user. Please try again."
         )
 
 from .services.login_limiter import LoginLimiter
@@ -531,18 +568,82 @@ async def login_user(
     # Clear failed attempts on successful login
     await LoginLimiter.clear_attempts(client_ip, user_credentials.email)
 
-    # Create access token
+    # Create access token (short-lived)
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={"sub": user.email},
         expires_delta=access_token_expires
     )
 
+    # Create refresh token (longer-lived)
+    refresh_token_expires = timedelta(minutes=REFRESH_TOKEN_EXPIRE_MINUTES)
+    refresh_token = create_refresh_token(
+        data={"sub": user.email},
+        expires_delta=refresh_token_expires
+    )
+
     return {
         "access_token": access_token,
+        "refresh_token": refresh_token,
         "token_type": "bearer",
         "user": user
     }
+
+
+@app.post("/api/auth/refresh", response_model=schemas.RefreshTokenResponse)
+async def refresh_access_token(
+    request_body: schemas.RefreshTokenRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Refresh an access token using a valid refresh token.
+
+    - **refresh_token**: The refresh token obtained during login
+
+    Returns a new access token. The refresh token remains valid until it expires.
+    """
+    # Verify the refresh token
+    payload = verify_refresh_token(request_body.refresh_token)
+
+    if payload is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Get the email from the token
+    email: str = payload.get("sub")
+    if email is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token payload",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Verify the user still exists and is valid
+    user = crud.get_user_by_email(db, email=email)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # Create new access token
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    new_access_token = create_access_token(
+        data={"sub": user.email},
+        expires_delta=access_token_expires
+    )
+
+    logger.info(f"[TOKEN_REFRESH] New access token issued for user {user.email}")
+
+    return {
+        "access_token": new_access_token,
+        "token_type": "bearer"
+    }
+
 
 @app.get("/api/auth/me", response_model=schemas.UserResponse)
 async def get_current_user_info(
@@ -835,21 +936,75 @@ async def create_report(
         logger.info(f"[CREATE REPORT] Report created with ID: {db_report.id}")
         return db_report
     except Exception as e:
-        logger.error(f"[CREATE REPORT] Error: {str(e)}")
+        import traceback
+        logger.error(f"[CREATE REPORT] Error: {type(e).__name__}: {str(e)}\n{traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error creating report: {str(e)}"
+            detail="Error creating report. Please try again."
         )
 
-@app.get("/api/reports", response_model=list[schemas.ReportResponse])
+@app.get("/api/reports", response_model=schemas.PaginatedReportResponse)
 async def get_user_reports(
-    skip: int = 0,
-    limit: int = 100,
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    page_size: int = Query(8, ge=1, le=100, description="Number of reports per page"),
+    reference: Optional[str] = Query(None, description="Filter by report reference (exact match, case insensitive)"),
+    applicant_name: Optional[str] = Query(None, description="Filter by applicant name (partial match)"),
+    village: Optional[str] = Query(None, description="Filter by village name (partial match)"),
+    report_date: Optional[str] = Query(None, description="Filter by report date (YYYY-MM-DD)"),
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get all reports for the authenticated user (paginated)"""
-    return crud.get_user_reports(db, current_user.id, skip=skip, limit=limit)
+    """Get filtered and paginated reports for the authenticated user"""
+    import math
+
+    # Convert page to skip
+    skip = (page - 1) * page_size
+
+    # Get filtered reports
+    reports, total, stats = crud.get_user_reports_filtered(
+        db=db,
+        user_id=current_user.id,
+        skip=skip,
+        limit=page_size,
+        reference=reference,
+        applicant_name=applicant_name,
+        village=village,
+        report_date=report_date
+    )
+
+    # Calculate total pages
+    total_pages = math.ceil(total / page_size) if total > 0 else 1
+
+    return schemas.PaginatedReportResponse(
+        items=reports,
+        total=total,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages,
+        stats=schemas.ReportStats(**stats)
+    )
+
+
+@app.get("/api/reports/adjacent-date")
+async def get_adjacent_report_date(
+    current_date: str = Query(..., description="Current date in YYYY-MM-DD format"),
+    direction: str = Query(..., pattern="^(next|previous)$", description="Direction: 'next' or 'previous'"),
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get the next or previous date that has reports for date filter navigation.
+    Used when reports for current date are exhausted.
+    """
+    adjacent_date = crud.get_adjacent_report_date(
+        db=db,
+        user_id=current_user.id,
+        current_date=current_date,
+        direction=direction
+    )
+
+    return {"adjacent_date": adjacent_date}
+
 
 @app.get("/api/reports/{report_id}")
 async def get_report(
@@ -882,17 +1037,24 @@ async def get_report(
 @app.put("/api/reports/{report_id}")
 async def update_report(
     report_id: int,
-    request_body: dict,
+    request_body: schemas.ReportUpdateRequest,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Update a report (must belong to authenticated user)"""
-    logger.info(f"[UPDATE_REPORT] Received PUT request for report {report_id}")
-    logger.info(f"[UPDATE_REPORT] Request body keys: {list(request_body.keys())}")
+    """Update a report (must belong to authenticated user)
 
-    # Extract properties from request if present
-    properties_data = request_body.pop('properties', None)
-    property_metadata = request_body.pop('property_metadata', None)
+    Security: Uses ReportUpdateRequest schema with extra='forbid' to prevent
+    injection of internal fields like user_id, id, or other protected fields.
+    """
+    logger.info(f"[UPDATE_REPORT] Received PUT request for report {report_id}")
+
+    # Convert validated request to dict, excluding properties and metadata
+    request_dict = request_body.model_dump(exclude={'properties', 'property_metadata'}, exclude_unset=True)
+    logger.info(f"[UPDATE_REPORT] Request body keys: {list(request_dict.keys())}")
+
+    # Extract properties from validated request
+    properties_data = request_body.properties
+    property_metadata = request_body.property_metadata
 
     logger.info(f"[UPDATE_REPORT] Properties data present: {properties_data is not None}")
     if properties_data:
@@ -900,12 +1062,12 @@ async def update_report(
 
     # If properties are being sent, ensure report is marked as multi-property
     if properties_data:
-        request_body['is_multi_property'] = True
-        request_body['property_count'] = len(properties_data)
+        request_dict['is_multi_property'] = True
+        request_dict['property_count'] = len(properties_data)
         logger.info(f"[UPDATE_REPORT] Setting is_multi_property=True because properties provided")
 
     # Update report common fields
-    report_update = schemas.ReportUpdate(**request_body)
+    report_update = schemas.ReportUpdate(**request_dict)
     updated_report = crud.update_report(db, report_id, report_update, current_user.id)
     if not updated_report:
         raise HTTPException(
@@ -1001,16 +1163,29 @@ async def update_report(
 @app.delete("/api/reports/{report_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_report(
     report_id: int,
+    request: Request,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Delete a report (must belong to authenticated user)"""
+    from .services.audit_service import AuditService
+
     success = crud.delete_report(db, report_id, current_user.id)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Report with ID {report_id} not found"
         )
+
+    # Audit log the deletion
+    await AuditService.log_resource_delete(
+        db=db,
+        user_id=current_user.id,
+        resource_type="report",
+        resource_id=report_id,
+        request=request
+    )
+
     return None
 
 @app.post("/api/reports/{report_id}/duplicate", response_model=schemas.ReportResponse, status_code=status.HTTP_201_CREATED)
@@ -1040,8 +1215,21 @@ async def generate_report_docx(
     db: Session = Depends(get_db)
 ):
     """
-    Generate a DOCX file from report data combined with user profile data
+    Generate a DOCX file from report data combined with user profile data.
+
+    NOTE: For production use with high load, prefer using the async endpoint
+    /api/reports/{report_id}/generate-async which uses background jobs.
+
+    This endpoint runs the DOCX generation in a thread pool to avoid
+    blocking the event loop.
     """
+    import warnings
+    if IS_PRODUCTION:
+        logger.warning(
+            f"[DOCX_GENERATION] Sync endpoint used in production by user={current_user.email}. "
+            "Consider using /api/reports/{report_id}/generate-async for better scalability."
+        )
+
     logger.info(f"[DOCX_GENERATION] Starting generation for report_id={report_id}, user={current_user.email}")
 
     # Get report data from database
@@ -1057,9 +1245,10 @@ async def generate_report_docx(
     logger.debug(f"[DOCX_GENERATION] Has buildings: {bool(db_report.buildings)}, num_buildings: {len(db_report.buildings) if db_report.buildings else 0}")
 
     try:
-        # Generate DOCX file with both report and user data
-        logger.info(f"[DOCX_GENERATION] Calling generate_user_data_docx...")
-        docx_stream = generate_user_data_docx(db_report, current_user)
+        # Generate DOCX file in thread pool to avoid blocking event loop
+        # This prevents the sync operation from blocking other async requests
+        logger.info(f"[DOCX_GENERATION] Calling generate_user_data_docx in thread pool...")
+        docx_stream = await asyncio.to_thread(generate_user_data_docx, db_report, current_user)
         logger.info(f"[DOCX_GENERATION] DOCX generated successfully, size: {len(docx_stream.getvalue())} bytes")
 
         filename = get_filename_for_user(db_report)
@@ -1082,7 +1271,7 @@ async def generate_report_docx(
 
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error generating DOCX file: {type(e).__name__}: {str(e)}"
+            detail="Error generating DOCX file. Please try again."
         )
 
 
@@ -1251,10 +1440,11 @@ async def create_property(
             detail=str(e)
         )
     except Exception as e:
-        logger.error(f"[CREATE PROPERTY] Error: {str(e)}")
+        import traceback
+        logger.error(f"[CREATE PROPERTY] Error: {type(e).__name__}: {str(e)}\n{traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error creating property: {str(e)}"
+            detail="Error creating property. Please try again."
         )
 
 @app.get("/api/properties", response_model=list[schemas.PropertyResponse])
@@ -1328,10 +1518,13 @@ async def update_property(
 @app.delete("/api/properties/{property_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_property(
     property_id: int,
+    request: Request,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """Delete a property (must belong to authenticated user, and not used in any reports)"""
+    from .services.audit_service import AuditService
+
     try:
         success = crud.delete_property(db, property_id, current_user.id)
         if not success:
@@ -1339,6 +1532,16 @@ async def delete_property(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Property with ID {property_id} not found"
             )
+
+        # Audit log the deletion
+        await AuditService.log_resource_delete(
+            db=db,
+            user_id=current_user.id,
+            resource_type="property",
+            resource_id=property_id,
+            request=request
+        )
+
         return None
     except ValueError as e:
         # Property is in use
@@ -1383,10 +1586,11 @@ async def create_multi_property_report(
             detail=str(e)
         )
     except Exception as e:
-        logger.error(f"[CREATE MULTI-PROPERTY REPORT] Error: {str(e)}")
+        import traceback
+        logger.error(f"[CREATE MULTI-PROPERTY REPORT] Error: {type(e).__name__}: {str(e)}\n{traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error creating multi-property report: {str(e)}"
+            detail="Error creating multi-property report. Please try again."
         )
 
 @app.post("/api/reports/{report_id}/properties/{property_id}", response_model=schemas.ReportPropertyResponse, status_code=status.HTTP_201_CREATED)
@@ -1574,6 +1778,330 @@ async def get_report_properties(
 
     return crud.get_report_properties(db, report_id)
 
+
+# ===== VEHICLE ENDPOINTS (Protected) =====
+@app.post("/api/vehicles", response_model=schemas.VehicleResponse, status_code=status.HTTP_201_CREATED)
+async def create_vehicle(
+    vehicle_data: schemas.VehicleCreate,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new vehicle for the authenticated user"""
+    logger.info(f"[CREATE VEHICLE] User: {current_user.email}")
+    try:
+        db_vehicle = crud.create_vehicle(db, vehicle_data, current_user.id)
+        logger.info(f"[CREATE VEHICLE] Vehicle created with ID: {db_vehicle.id}")
+        return db_vehicle
+    except ValueError as e:
+        logger.error(f"[CREATE VEHICLE] Validation error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        import traceback
+        logger.error(f"[CREATE VEHICLE] Error: {type(e).__name__}: {str(e)}\n{traceback.format_exc()}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error creating vehicle. Please try again."
+        )
+
+
+@app.get("/api/vehicles", response_model=list[schemas.VehicleResponse])
+async def get_user_vehicles(
+    skip: int = 0,
+    limit: int = 100,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all vehicles for the authenticated user (paginated)"""
+    return crud.get_user_vehicles(db, current_user.id, skip=skip, limit=limit)
+
+
+@app.get("/api/vehicles/templates", response_model=list[schemas.VehicleTemplateResponse])
+async def get_vehicle_templates(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all vehicle templates (Vehicle Library) for the authenticated user"""
+    templates = crud.get_vehicle_templates(db, current_user.id)
+    return [
+        schemas.VehicleTemplateResponse(
+            id=v.id,
+            make=v.make,
+            model=v.model,
+            registration_number=v.registration_number,
+            year_of_manufacture=v.year_of_manufacture,
+            market_value=float(v.market_value) if v.market_value else None,
+            created_at=v.created_at
+        )
+        for v in templates
+    ]
+
+
+@app.get("/api/vehicles/{vehicle_id}", response_model=schemas.VehicleResponse)
+async def get_vehicle(
+    vehicle_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get a specific vehicle by ID (must belong to authenticated user)"""
+    db_vehicle = crud.get_vehicle(db, vehicle_id, current_user.id)
+    if db_vehicle is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Vehicle with ID {vehicle_id} not found"
+        )
+    return db_vehicle
+
+
+@app.put("/api/vehicles/{vehicle_id}", response_model=schemas.VehicleResponse)
+async def update_vehicle(
+    vehicle_id: int,
+    vehicle_update: schemas.VehicleUpdate,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update a vehicle (must belong to authenticated user)"""
+    try:
+        updated_vehicle = crud.update_vehicle(db, vehicle_id, vehicle_update, current_user.id)
+        if not updated_vehicle:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Vehicle with ID {vehicle_id} not found"
+            )
+        return updated_vehicle
+    except ValueError as e:
+        logger.error(f"[UPDATE VEHICLE] Validation error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+
+@app.delete("/api/vehicles/{vehicle_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_vehicle(
+    vehicle_id: int,
+    hard_delete: bool = Query(False, description="Permanently delete instead of soft delete"),
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a vehicle (soft delete by default, must belong to authenticated user)"""
+    try:
+        success = crud.delete_vehicle(db, vehicle_id, current_user.id, soft_delete=not hard_delete)
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Vehicle with ID {vehicle_id} not found"
+            )
+        return None
+    except ValueError as e:
+        logger.warning(f"[DELETE VEHICLE] Cannot delete: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(e)
+        )
+
+
+@app.post("/api/vehicles/{vehicle_id}/duplicate", response_model=schemas.VehicleResponse, status_code=status.HTTP_201_CREATED)
+async def duplicate_vehicle(
+    vehicle_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Duplicate a vehicle (create a copy)"""
+    logger.info(f"[DUPLICATE VEHICLE] Vehicle: {vehicle_id}")
+
+    new_vehicle = crud.duplicate_vehicle(db, vehicle_id, current_user.id)
+    if not new_vehicle:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Vehicle with ID {vehicle_id} not found"
+        )
+
+    logger.info(f"  Vehicle duplicated successfully (new ID: {new_vehicle.id})")
+    return new_vehicle
+
+
+# ===== REPORT-VEHICLE ENDPOINTS (Protected) =====
+@app.post("/api/reports/{report_id}/vehicles/{vehicle_id}", response_model=schemas.ReportVehicleResponse, status_code=status.HTTP_201_CREATED)
+async def add_vehicle_to_report(
+    report_id: int,
+    vehicle_id: int,
+    vehicle_order: Optional[int] = None,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Add an existing vehicle to a report"""
+    logger.info(f"[ADD VEHICLE TO REPORT] Report: {report_id}, Vehicle: {vehicle_id}")
+
+    try:
+        report_vehicle = crud.add_vehicle_to_report(
+            db, report_id, vehicle_id, current_user.id, vehicle_order
+        )
+        logger.info(f"  Added with order: {report_vehicle.vehicle_order}")
+        return report_vehicle
+    except ValueError as e:
+        logger.error(f"[ADD VEHICLE TO REPORT] Error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+
+@app.delete("/api/reports/{report_id}/vehicles/{vehicle_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_vehicle_from_report(
+    report_id: int,
+    vehicle_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Remove a vehicle from a report"""
+    logger.info(f"[REMOVE VEHICLE FROM REPORT] Report: {report_id}, Vehicle: {vehicle_id}")
+
+    try:
+        crud.remove_vehicle_from_report(db, report_id, vehicle_id, current_user.id)
+        logger.info(f"  Vehicle removed successfully")
+        return None
+    except ValueError as e:
+        logger.error(f"[REMOVE VEHICLE FROM REPORT] Error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+
+@app.put("/api/reports/{report_id}/vehicles/reorder", status_code=status.HTTP_200_OK)
+async def reorder_report_vehicles(
+    report_id: int,
+    vehicle_order_map: dict[int, int],
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Reorder vehicles in a report (drag-drop support)
+
+    Body: {"vehicle_id": new_order, ...}
+    Example: {1: 2, 2: 1, 3: 3} swaps first two vehicles
+    """
+    logger.info(f"[REORDER VEHICLES] Report: {report_id}")
+    logger.info(f"  New order: {vehicle_order_map}")
+
+    try:
+        crud.reorder_report_vehicles(db, report_id, vehicle_order_map, current_user.id)
+        logger.info(f"  Vehicles reordered successfully")
+        return {"status": "success", "message": "Vehicles reordered"}
+    except ValueError as e:
+        logger.error(f"[REORDER VEHICLES] Error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+
+@app.get("/api/reports/{report_id}/vehicles", response_model=list[schemas.ReportVehicleResponse])
+async def get_report_vehicles(
+    report_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all vehicles for a report, ordered by vehicle_order"""
+    # Verify user owns the report
+    db_report = crud.get_report(db, report_id, current_user.id)
+    if not db_report:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Report with ID {report_id} not found"
+        )
+
+    return crud.get_report_vehicles(db, report_id)
+
+
+@app.put("/api/reports/{report_id}/vehicles/{vehicle_id}", response_model=schemas.VehicleResponse)
+async def update_report_vehicle(
+    report_id: int,
+    vehicle_id: int,
+    vehicle_update: schemas.VehicleUpdate,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update an individual vehicle within a report
+
+    Supports updating all vehicle fields including status ('draft' or 'completed')
+    """
+    logger.info(f"[UPDATE REPORT VEHICLE] Report: {report_id}, Vehicle: {vehicle_id}")
+
+    # Verify user owns the report
+    db_report = crud.get_report(db, report_id, current_user.id)
+    if not db_report:
+        logger.error(f"  Report not found or access denied")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Report not found or access denied"
+        )
+
+    # Update the vehicle
+    db_vehicle = crud.update_vehicle(db, vehicle_id, vehicle_update, current_user.id)
+    if not db_vehicle:
+        logger.error(f"  Vehicle not found or access denied")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Vehicle not found or access denied"
+        )
+
+    logger.info(f"  Vehicle updated successfully (status: {db_vehicle.status})")
+    return db_vehicle
+
+
+@app.post("/api/vehicles/{vehicle_id}/suggest-valuation", response_model=schemas.VehicleValuationSuggestion)
+async def suggest_vehicle_valuation(
+    vehicle_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get AI-suggested valuation for a vehicle.
+
+    Uses vehicle data (make, model, year, mileage, condition, etc.) to generate
+    suggested market value, forced sale value, and valuation summary.
+    """
+    logger.info(f"[SUGGEST VEHICLE VALUATION] Vehicle: {vehicle_id}")
+
+    # Get the vehicle
+    db_vehicle = crud.get_vehicle(db, vehicle_id, current_user.id)
+    if not db_vehicle:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Vehicle with ID {vehicle_id} not found"
+        )
+
+    # Generate AI valuation suggestion
+    try:
+        from .services.ai_valuation import suggest_vehicle_valuation as ai_suggest
+
+        suggestion = await ai_suggest(db_vehicle)
+        logger.info(f"  Valuation suggestion generated: Market Value={suggestion.get('suggested_market_value')}")
+        return suggestion
+    except ImportError:
+        # AI valuation service not implemented yet - return placeholder
+        logger.warning("  AI valuation service not available, returning placeholder")
+        return schemas.VehicleValuationSuggestion(
+            suggested_market_value=None,
+            suggested_forced_sale_value=None,
+            suggested_brand_new_price=None,
+            valuation_summary="By considering the above facts, the market value of the vehicle valued is estimated.",
+            confidence=None,
+            reasoning="AI valuation service not available. Please enter values manually."
+        )
+    except Exception as e:
+        logger.error(f"[SUGGEST VEHICLE VALUATION] Error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating valuation suggestion: {str(e)}"
+        )
+
+
 # OCR Document Processing Endpoint
 @app.post("/api/ocr/extract")
 async def extract_data_from_document(
@@ -1651,9 +2179,59 @@ async def extract_data_from_document(
     except HTTPException:
         raise
     except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        error_str = str(e).lower()
+
+        # Log the full error internally for debugging
+        logger.error(f"[OCR_ERROR] Full traceback:\n{error_trace}")
+
+        # Categorize errors and return structured responses with guidance
+        error_code = "OCR_UNKNOWN_ERROR"
+        user_message = "Document processing failed. Please try again."
+        retry_after = None
+
+        # Google Vision API errors
+        if "api_key" in error_str or "authentication" in error_str:
+            error_code = "GOOGLE_VISION_AUTH_ERROR"
+            user_message = "OCR service configuration error. Please contact support."
+        elif "quota" in error_str or "limit" in error_str or "429" in error_str:
+            error_code = "GOOGLE_VISION_RATE_LIMIT"
+            user_message = "OCR service is temporarily overloaded. Please try again in a few minutes."
+            retry_after = 60
+        elif "timeout" in error_str or "timed out" in error_str:
+            error_code = "GOOGLE_VISION_TIMEOUT"
+            user_message = "OCR request timed out. The document may be too complex. Try uploading smaller files."
+            retry_after = 30
+
+        # Claude AI errors
+        elif "anthropic" in error_str or "claude" in error_str:
+            error_code = "AI_PARSING_ERROR"
+            user_message = "AI document parsing failed. Please try again."
+            retry_after = 10
+
+        # File processing errors
+        elif "file" in error_str or "decode" in error_str or "corrupt" in error_str:
+            error_code = "FILE_PROCESSING_ERROR"
+            user_message = "Could not process the document. Please ensure it's a valid image or PDF file."
+
+        # Connection errors
+        elif "connection" in error_str or "network" in error_str:
+            error_code = "NETWORK_ERROR"
+            user_message = "Network error during OCR processing. Please check your connection and try again."
+            retry_after = 5
+
+        # Build error response
+        error_detail = {
+            "error_code": error_code,
+            "message": user_message,
+        }
+        if retry_after:
+            error_detail["retry_after_seconds"] = retry_after
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error processing document: {str(e)}"
+            detail=error_detail
         )
 
 # Autocomplete API Endpoints (Public - no authentication required)

@@ -22,12 +22,24 @@ _redis_client: Optional[redis.Redis] = None
 _connection_pool: Optional[ConnectionPool] = None
 
 
+def is_production() -> bool:
+    """Check if running in production mode."""
+    env = os.getenv("ENV", "development").lower()
+    return env == "production"
+
+
 async def get_redis_client() -> Optional[redis.Redis]:
     """
     Get or create Redis client with connection pooling.
 
+    In production mode, Redis is REQUIRED for proper rate limiting across instances.
+    In development mode, Redis is optional and falls back to in-memory storage.
+
     Returns:
-        Redis client instance or None if Redis is unavailable
+        Redis client instance or None if Redis is unavailable (development only)
+
+    Raises:
+        RuntimeError: In production if REDIS_URL is not configured
     """
     global _redis_client, _connection_pool
 
@@ -37,8 +49,18 @@ async def get_redis_client() -> Optional[redis.Redis]:
     redis_url = os.getenv("REDIS_URL")
 
     if not redis_url:
-        logger.warning("REDIS_URL not configured. Redis features will be disabled.")
-        return None
+        if is_production():
+            # In production, Redis is required for distributed rate limiting
+            error_msg = (
+                "CRITICAL: REDIS_URL not configured in production! "
+                "Redis is required for rate limiting across multiple instances. "
+                "Set REDIS_URL environment variable to connect to Redis."
+            )
+            logger.critical(error_msg)
+            raise RuntimeError(error_msg)
+        else:
+            logger.warning("REDIS_URL not configured. Redis features will be disabled (development mode only).")
+            return None
 
     try:
         # Create connection pool

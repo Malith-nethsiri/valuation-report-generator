@@ -18,7 +18,6 @@ interface CertificationData {
   plan_number?: string;
   plan_date?: string;
   licensed_surveyor_name?: string;
-  property_name?: string;
   property_identification_type?: string; // NEW: 'plan', 'deed', 'plan_and_deed', 'certificate_of_sale'
   deeds?: Array<{
     deed_type?: string;

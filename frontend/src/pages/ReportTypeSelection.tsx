@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Home, Building2, ChevronRight, Star,
   Clock, Users, Award, TrendingUp, Sparkles,
-  FileText, Calendar, MapPin, Shield, Layers, Landmark
+  FileText, Calendar, MapPin, Shield, Layers, Landmark, Car
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -87,6 +87,27 @@ const reportTypes: ReportType[] = [
     difficulty: 'Beginner',
     isAvailable: true,
     popular: false
+  },
+  {
+    id: 'vehicle',
+    name: 'Vehicle Valuation Report',
+    description: 'Complete vehicle assessment and valuation for cars, motorcycles, trucks, and special vehicles including condition rating, OCR book extraction, and market analysis.',
+    category: 'Vehicles',
+    icon: Car,
+    color: 'from-cyan-500 to-blue-600',
+    gradient: 'from-cyan-50 to-blue-100',
+    features: [
+      'Vehicle book OCR extraction',
+      'Comprehensive condition assessment',
+      'Tyre and electrical inspection',
+      'Market value analysis',
+      'Government/office report support',
+      'Photo gallery in report'
+    ],
+    estimatedTime: '10-15 minutes',
+    difficulty: 'Beginner',
+    isAvailable: true,
+    popular: true
   }
 ];
 

@@ -732,8 +732,8 @@ const LocalityInformationSection: React.FC<Props> = ({
               value={data.predominant_building_type || []}
               onChange={(values) => onChange({ predominant_building_type: values })}
               predefinedOptions={[
-                { value: 'Single Storey Residential', label: 'Single Storey Residential' },
-                { value: 'Multi Storey Residential', label: 'Multi Storey Residential' },
+                { value: 'Single Story Residential', label: 'Single Story Residential' },
+                { value: 'Multi Story Residential', label: 'Multi Story Residential' },
                 { value: 'Apartments', label: 'Apartments' },
                 { value: 'Commercial Buildings', label: 'Commercial Buildings' },
                 { value: 'Mixed', label: 'Mixed' }

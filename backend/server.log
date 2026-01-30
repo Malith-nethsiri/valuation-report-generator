@@ -1,0 +1,17 @@
+INFO:     Will watch for changes in these directories: ['D:\\project\\backend']
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [3220] using WatchFiles
+INFO:app.database:\u2713 Database connection established successfully
+INFO:     Started server process [9480]
+INFO:     Waiting for application startup.
+INFO:app.middleware.rate_limiting:Rate limit configured: /api/ocr/extract = 10 req/min
+INFO:app.middleware.rate_limiting:Rate limit configured: /api/building/generate-description = 20 req/min
+INFO:app.middleware.rate_limiting:Rate limit configured: /api/land/generate-description = 20 req/min
+INFO:app.middleware.rate_limiting:Rate limit configured: /api/locality/generate-narrative = 20 req/min
+INFO:app.middleware.rate_limiting:Rate limit configured: /api/reports = 30 req/min
+INFO:app.middleware.rate_limiting:Rate limit configured: /api/submit-and-generate = 5 req/min
+INFO:app.middleware.rate_limiting:Rate limit configured: /api/maps/geocode = 60 req/min
+INFO:app.middleware.rate_limiting:Rate limit configured: /api/maps/directions = 60 req/min
+INFO:app.middleware.rate_limiting:Rate limit configured: /api/maps/static-map = 60 req/min
+INFO:app.middleware.rate_limiting:\u2713 Rate limits configured for all endpoints
+INFO:     Application startup complete.
