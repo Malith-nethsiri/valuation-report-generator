@@ -2,15 +2,9 @@
 AI-powered narrative generation service for locality descriptions in valuation reports.
 Uses Claude API to generate professional, contextual locality descriptions.
 """
-import os
 from typing import Dict, List, Optional
-from anthropic import Anthropic
-from dotenv import load_dotenv
 from ..docx_generator import format_list_with_grammar
-
-load_dotenv()
-
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+from .anthropic_client import get_anthropic_client, is_anthropic_configured
 
 
 def format_facilities_list(facilities: List[Dict]) -> str:
@@ -73,12 +67,12 @@ async def generate_locality_narrative(
     Returns:
         Generated narrative text or None if generation fails
     """
-    if not ANTHROPIC_API_KEY:
+    if not is_anthropic_configured():
         print("[LOCALITY_NARRATIVE] Warning: ANTHROPIC_API_KEY not set")
         return None
 
     try:
-        client = Anthropic(api_key=ANTHROPIC_API_KEY)
+        client = get_anthropic_client()
 
         # Build the context for AI
         context_parts = []

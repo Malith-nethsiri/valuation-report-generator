@@ -967,7 +967,7 @@ class ReportResponse(BaseModel):
     development_level: Optional[str] = None
     predominant_building_type: Optional[List[str]] = None
     is_tourist_area: Optional[bool] = None
-    tourist_attractions_nearby: Optional[List[str]] = None
+    tourist_attractions_nearby: Optional[str] = None  # Text field, not list
     locality_description_text: Optional[str] = None
     ownership_type: Optional[str] = None
     street_lines_status: Optional[str] = None

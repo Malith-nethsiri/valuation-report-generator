@@ -10,6 +10,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../services/api';
+import { downloadBlobFile, DOCX_MIME_TYPE } from '../utils/downloadHelper';
 
 export interface JobStatus {
   id: string;
@@ -82,19 +83,8 @@ export function useJobPolling(options: UseJobPollingOptions = {}): UseJobPolling
         responseType: 'blob',
       });
 
-      // Create blob and trigger download
-      const blob = new Blob([response.data], {
-        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      });
-
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = status.filename || 'document.docx';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      const blob = new Blob([response.data], { type: DOCX_MIME_TYPE });
+      downloadBlobFile(blob, status.filename || 'document.docx');
     } catch (err) {
       console.error('Download failed:', err);
       throw new Error('Failed to download file');

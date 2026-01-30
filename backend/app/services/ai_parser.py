@@ -3,10 +3,9 @@ AI-powered parser for Sri Lankan property documents using Claude AI.
 Extracts structured data from OCR text with confidence scoring.
 """
 
-import os
 import json
 from typing import Dict, Any, List, Optional
-from anthropic import Anthropic
+from .anthropic_client import get_anthropic_client
 
 
 def parse_with_claude(ocr_text: str, document_type: Optional[str] = None) -> Dict[str, Any]:
@@ -26,13 +25,8 @@ def parse_with_claude(ocr_text: str, document_type: Optional[str] = None) -> Dic
         - metadata: Additional parsing metadata
     """
 
-    # Get API key from environment
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise ValueError("ANTHROPIC_API_KEY not found in environment variables")
-
-    # Initialize Anthropic client
-    client = Anthropic(api_key=api_key)
+    # Get singleton client
+    client = get_anthropic_client()
 
     # Construct the parsing prompt
     prompt = f"""You are an expert at extracting structured data from Sri Lankan property documents (deeds, survey plans, certificates).

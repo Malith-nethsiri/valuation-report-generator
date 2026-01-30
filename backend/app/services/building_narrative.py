@@ -2,14 +2,9 @@
 AI-powered narrative generation for building descriptions in valuation reports.
 Uses Claude API (same as locality descriptions).
 """
-import os
 from typing import Dict, List, Optional
-from anthropic import Anthropic
-from dotenv import load_dotenv
 from ..docx_generator import format_list_with_grammar
-
-load_dotenv()
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+from .anthropic_client import get_anthropic_client, is_anthropic_configured
 
 
 def format_floors(floors: Optional[List[Dict]]) -> str:
@@ -364,12 +359,12 @@ async def generate_building_narrative(
     Generate professional building description for Sri Lankan valuation reports.
     Returns condensed one-paragraph description matching industry standards.
     """
-    if not ANTHROPIC_API_KEY:
+    if not is_anthropic_configured():
         print("[BUILDING_NARRATIVE] Warning: ANTHROPIC_API_KEY not set")
         return None
 
     try:
-        client = Anthropic(api_key=ANTHROPIC_API_KEY)
+        client = get_anthropic_client()
 
         # Build context from all building data
         context_parts = []

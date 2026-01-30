@@ -1003,3 +1003,23 @@ export interface TemplateMetadata {
 export interface TemplateListResponse {
   templates: TemplateMetadata[];
 }
+
+// ===== MULTI-PROPERTY FORM TYPES =====
+
+/**
+ * Represents a property within a multi-property report.
+ * Used in PropertyMiniDashboard and multi-property form components.
+ */
+export interface PropertyInReport {
+  id: string | number; // temp ID or DB ID
+  type: 'residential' | 'bare_land';
+  order: number;
+  status: 'draft' | 'completed';
+  data: {
+    property_village?: string;
+    property_district?: string;
+    lot_number?: string;
+    plan_number?: string;
+    [key: string]: any;
+  };
+}

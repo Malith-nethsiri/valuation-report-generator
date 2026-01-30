@@ -3,11 +3,10 @@ AI-powered transformer for converting Google Maps directions to professional val
 Uses Claude AI to generate natural, professional access descriptions.
 """
 
-import os
 import json
 from typing import Dict, Any, List, Optional
-from anthropic import Anthropic
 import re
+from .anthropic_client import get_anthropic_client
 
 # MAJOR landmarks to KEEP (for turn reference):
 MAJOR_LANDMARK_KEYWORDS = {
@@ -308,13 +307,8 @@ def transform_directions_to_professional(
         Professional access description text suitable for valuation reports
     """
 
-    # Get API key from environment
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise ValueError("ANTHROPIC_API_KEY not found in environment variables")
-
-    # Initialize Anthropic client
-    client = Anthropic(api_key=api_key)
+    # Get singleton client
+    client = get_anthropic_client()
 
     property_side = property_position if property_position else "right"
 

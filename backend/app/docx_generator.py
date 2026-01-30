@@ -1565,7 +1565,7 @@ def generate_title_block(report: models.Report) -> str:
     if id_type == "plan" or id_type == "plan_and_deed":
         # Plan-based title (original format)
         # For plan_and_deed: show plan info in header, deed info appears in certification section
-        lot_desc = report.lot_number or report.property_lot_description or '[Lot Number]'
+        lot_desc = report.lot_number or '[Lot Number]'
 
         # Remove common prefixes that shouldn't be in lot description
         lot_desc_stripped = lot_desc.strip()
@@ -2947,8 +2947,8 @@ def generate_multi_property_report_docx(report: models.Report, user: models.User
 
             # Description (Lot/Plan)
             desc = ""
-            if prop.lot_number or prop.property_lot_description:
-                lot = prop.lot_number or prop.property_lot_description
+            if prop.lot_number:
+                lot = prop.lot_number
                 desc = f"Lot {lot}"
             if prop.plan_number:
                 if desc:
@@ -3087,9 +3087,9 @@ def generate_multi_property_report_docx(report: models.Report, user: models.User
 
             # Professional property description (NO "PROPERTY 1" header - removed per user request)
             # Format: "The Property Depicted as Lot [X] in Plan No: [Y]"
-            if (prop.lot_number or prop.property_lot_description) and prop.plan_number:
+            if prop.lot_number and prop.plan_number:
                 # Extract just the lot number/identifier (remove "Plan No" prefix if present)
-                lot_desc = (prop.lot_number or prop.property_lot_description).strip()
+                lot_desc = prop.lot_number.strip() if prop.lot_number else ''
 
                 # Remove common prefixes that shouldn't be in lot description
                 prefixes_to_remove = ['plan no', 'plan no:', 'lot plan no', 'lot plan no:']
@@ -3307,7 +3307,7 @@ def _generate_property_sections(doc, prop, report, user):
             name_value.font.color.rgb = RGBColor(0, 0, 0)
 
         # Survey Plan Information
-        if (prop.lot_number or prop.property_lot_description) and prop.plan_number:
+        if prop.lot_number and prop.plan_number:
             plan_para = doc.add_paragraph()
             plan_para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
             plan_para.paragraph_format.space_before = Pt(0)
@@ -3319,7 +3319,7 @@ def _generate_property_sections(doc, prop, report, user):
             plan_label.font.color.rgb = RGBColor(0, 0, 0)
 
             # Extract just the lot number/identifier (remove "Plan No" prefix if present)
-            lot_desc = (prop.lot_number or prop.property_lot_description).strip()
+            lot_desc = prop.lot_number.strip() if prop.lot_number else ''
 
             # Remove common prefixes that shouldn't be in lot description
             prefixes_to_remove = ['plan no', 'plan no:', 'lot plan no', 'lot plan no:']
@@ -4182,8 +4182,8 @@ def _generate_property_sections(doc, prop, report, user):
     elif report.certification_valuer_name and report.certification_valuer_designation:
         # Auto-generate simplified certification using report-level data
         # Multi-property uses single unified certification
-        # Get lot_number, fallback to deprecated property_lot_description
-        lot_num = report.lot_number or report.property_lot_description
+        # Get lot_number
+        lot_num = report.lot_number
 
         # Get plan_number, fallback to deprecated certificate_survey_plan_ref
         plan_ref = report.plan_number or report.certificate_survey_plan_ref
@@ -4800,7 +4800,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                 name_value.font.color.rgb = RGBColor(0, 0, 0)
 
             # Survey Plan Information
-            if (report.lot_number or report.property_lot_description) and report.plan_number:
+            if report.lot_number and report.plan_number:
                 plan_para = doc.add_paragraph()
                 plan_para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
                 plan_para.paragraph_format.space_before = Pt(0)
@@ -4812,7 +4812,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                 plan_label.font.color.rgb = RGBColor(0, 0, 0)
 
                 # Extract just the lot number/identifier (remove "Plan No" prefix if present)
-                lot_desc = (report.lot_number or report.property_lot_description).strip()
+                lot_desc = report.lot_number.strip() if report.lot_number else ''
 
                 # Remove common prefixes that shouldn't be in lot description
                 prefixes_to_remove = ['plan no', 'plan no:', 'lot plan no', 'lot plan no:']
@@ -5977,8 +5977,8 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                 cert_text = report.certification_text.strip()
             elif report.certification_valuer_name and report.certification_valuer_designation:
                 # Auto-generate simplified certification
-                # Get lot_number, fallback to deprecated property_lot_description
-                lot_num = report.lot_number or report.property_lot_description
+                # Get lot_number
+                lot_num = report.lot_number
 
                 # Get plan_number, fallback to deprecated certificate_survey_plan_ref
                 plan_ref = report.plan_number or report.certificate_survey_plan_ref

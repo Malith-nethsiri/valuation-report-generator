@@ -1,9 +1,121 @@
 from sqlalchemy.orm import Session
+from sqlalchemy import inspect
+import copy
 from . import models, schemas
 from .auth import get_password_hash
-from typing import List
+from typing import List, Optional, Set, Dict, Any, Type
 
 # Validation Functions
+def verify_ownership(db: Session, entity_type: type, entity_id: int,
+                     user_id: int, entity_name: str = "Entity"):
+    """
+    Generic ownership verification helper.
+
+    Queries for entity by ID and user_id, raises ValueError if not found.
+
+    Args:
+        db: Database session
+        entity_type: SQLAlchemy model class (e.g., models.Report)
+        entity_id: ID of the entity to verify
+        user_id: User ID that must own the entity
+        entity_name: Human-readable name for error messages
+
+    Returns:
+        The entity if found and owned by user
+
+    Raises:
+        ValueError: If entity not found or not owned by user
+    """
+    entity = db.query(entity_type).filter(
+        entity_type.id == entity_id,
+        entity_type.user_id == user_id
+    ).first()
+    if not entity:
+        raise ValueError(f"{entity_name} not found or access denied")
+    return entity
+
+
+def _normalize_and_validate_buildings(buildings) -> Optional[List[dict]]:
+    """
+    Convert buildings to dicts and validate in one step.
+
+    Handles both Pydantic Building objects and raw dicts.
+    Returns None if buildings is empty/None.
+
+    Args:
+        buildings: List of Building objects or dicts, or None
+
+    Returns:
+        List of validated building dicts, or None if input is empty
+    """
+    if not buildings:
+        return None
+
+    # Convert Building objects to dicts if needed
+    buildings_dicts = [
+        b.model_dump() if hasattr(b, 'model_dump') else b
+        for b in buildings
+    ]
+
+    # Validate the buildings
+    validate_report_buildings(buildings_dicts)
+
+    return buildings_dicts
+
+
+def _duplicate_entity_data(
+    entity,
+    exclude_fields: Set[str] = None,
+    override_fields: Dict[str, Any] = None
+) -> Dict[str, Any]:
+    """
+    Extract all column data from a SQLAlchemy entity for duplication.
+
+    Uses SQLAlchemy inspection to automatically copy all columns,
+    eliminating manual field mappings that can become outdated.
+
+    Args:
+        entity: SQLAlchemy model instance to duplicate
+        exclude_fields: Set of field names to exclude (default: id, created_at, updated_at)
+        override_fields: Dict of field values to override after copying
+
+    Returns:
+        Dictionary of field values ready to create a new entity
+
+    Example:
+        data = _duplicate_entity_data(
+            db_property,
+            exclude_fields={'id', 'created_at', 'updated_at'},
+            override_fields={'status': 'draft', 'is_template': False}
+        )
+        new_property = models.Property(**data, user_id=user_id)
+    """
+    # Default excluded fields
+    default_exclude = {'id', 'created_at', 'updated_at'}
+    exclude = default_exclude | (exclude_fields or set())
+
+    # Get all column names from the model using inspection
+    mapper = inspect(entity.__class__)
+
+    # Build dictionary of fields to copy
+    data = {}
+    for column in mapper.columns:
+        if column.key not in exclude:
+            value = getattr(entity, column.key)
+
+            # Deep copy mutable types (dict, list) to avoid reference issues
+            if isinstance(value, (dict, list)):
+                data[column.key] = copy.deepcopy(value)
+            else:
+                data[column.key] = value
+
+    # Apply overrides
+    if override_fields:
+        data.update(override_fields)
+
+    return data
+
+
 def validate_report_buildings(buildings: List[dict]):
     """Validate building data including photos"""
     if not buildings:
@@ -162,10 +274,7 @@ def get_bank_accounts(db: Session, user_id: int):
 def create_report(db: Session, report: schemas.ReportCreate, user_id: int):
     """Create a new report for a user"""
     # Validate building photos before creating report
-    if report.buildings:
-        # Convert Building objects to dicts for validation
-        buildings_dicts = [b.model_dump() for b in report.buildings]
-        validate_report_buildings(buildings_dicts)
+    _normalize_and_validate_buildings(report.buildings)
 
     db_report = models.Report(**report.model_dump(), user_id=user_id)
     db.add(db_report)
@@ -218,13 +327,7 @@ def update_report(db: Session, report_id: int, report_update: schemas.ReportUpda
 
     # Validate building photos if buildings are being updated
     if 'buildings' in update_data and update_data['buildings']:
-        # Convert Building objects to dicts for validation if needed
-        buildings = update_data['buildings']
-        if buildings and hasattr(buildings[0], 'model_dump'):
-            buildings_dicts = [b.model_dump() for b in buildings]
-        else:
-            buildings_dicts = buildings
-        validate_report_buildings(buildings_dicts)
+        _normalize_and_validate_buildings(update_data['buildings'])
 
     for field, value in update_data.items():
         setattr(db_report, field, value)
@@ -247,38 +350,35 @@ def delete_report(db: Session, report_id: int, user_id: int = None):
     return False
 
 def duplicate_report(db: Session, report_id: int, user_id: int):
-    """Duplicate an existing report as a new draft"""
-    from sqlalchemy import inspect
+    """
+    Duplicate an existing report as a new draft.
 
+    Uses SQLAlchemy reflection to automatically copy all fields,
+    ensuring new fields added to the Report model are included.
+    """
     # Get original report
     original_report = get_report(db, report_id, user_id)
     if not original_report:
         return None
 
-    # Get all column names except id, created_at, updated_at
-    mapper = inspect(models.Report)
-    columns_to_copy = [
-        column.key for column in mapper.columns
-        if column.key not in ['id', 'created_at', 'updated_at']
-    ]
-
-    # Build dictionary of fields to copy
-    report_data = {}
-    for column in columns_to_copy:
-        value = getattr(original_report, column)
-        report_data[column] = value
-
-    # Reset draft-specific fields
-    report_data['status'] = 'draft'
-    report_data['report_reference'] = None
-    report_data['report_date'] = None
-    report_data['certification_text'] = None
-    report_data['certification_date'] = None
-    report_data['certification_valuer_name'] = None
-    report_data['certification_valuer_designation'] = None
-    report_data['certificate_survey_plan_ref'] = None
-    report_data['certificate_survey_plan_date'] = None
-    report_data['certificate_identity_confirmed'] = False
+    # Use reflection-based duplication to copy all fields automatically
+    report_data = _duplicate_entity_data(
+        original_report,
+        exclude_fields={'id', 'created_at', 'updated_at'},
+        override_fields={
+            # Reset draft-specific fields
+            'status': 'draft',
+            'report_reference': None,
+            'report_date': None,
+            'certification_text': None,
+            'certification_date': None,
+            'certification_valuer_name': None,
+            'certification_valuer_designation': None,
+            'certificate_survey_plan_ref': None,
+            'certificate_survey_plan_date': None,
+            'certificate_identity_confirmed': False,
+        }
+    )
 
     # Create new report
     new_report = models.Report(**report_data)
@@ -304,10 +404,7 @@ def duplicate_report(db: Session, report_id: int, user_id: int):
 def create_property(db: Session, property: schemas.PropertyCreate, user_id: int):
     """Create a new property for a user"""
     # Validate building photos if present
-    if property.buildings:
-        # Convert Building objects to dicts for validation
-        buildings_dicts = [b.model_dump() if hasattr(b, 'model_dump') else b for b in property.buildings]
-        validate_report_buildings(buildings_dicts)
+    _normalize_and_validate_buildings(property.buildings)
 
     db_property = models.Property(**property.model_dump(), user_id=user_id)
     db.add(db_property)
@@ -349,12 +446,7 @@ def update_property(db: Session, property_id: int, property_update: schemas.Prop
 
     # Validate building photos if buildings are being updated
     if 'buildings' in update_data and update_data['buildings']:
-        buildings = update_data['buildings']
-        if buildings and hasattr(buildings[0], 'model_dump'):
-            buildings_dicts = [b.model_dump() for b in buildings]
-        else:
-            buildings_dicts = buildings
-        validate_report_buildings(buildings_dicts)
+        _normalize_and_validate_buildings(update_data['buildings'])
 
     for field, value in update_data.items():
         setattr(db_property, field, value)
@@ -425,7 +517,10 @@ def update_property_status(db: Session, property_id: int, status: str, user_id: 
 
 def duplicate_property(db: Session, report_id: int, property_id: int, user_id: int):
     """
-    Duplicate a property within a report (deep copy including images)
+    Duplicate a property within a report (deep copy including images).
+
+    Uses SQLAlchemy reflection to automatically copy all fields,
+    ensuring new fields added to the Property model are included.
 
     Args:
         db: Database session
@@ -458,156 +553,17 @@ def duplicate_property(db: Session, report_id: int, property_id: int, user_id: i
     if not report_property:
         raise ValueError("Property is not in this report")
 
-    # Create a deep copy of the property
-    property_dict = {
-        "property_lot_description": db_property.property_lot_description,  # DEPRECATED
-        "lot_number": db_property.lot_number,
-        "plan_number": db_property.plan_number,
-        "plan_date": db_property.plan_date,
-        "licensed_surveyor_name": db_property.licensed_surveyor_name,
-        "property_identification_type": db_property.property_identification_type,
-        "property_identification_documents": db_property.property_identification_documents,
-        "has_deed_info": db_property.has_deed_info,
-        "deeds": db_property.deeds,
-        "property_name": db_property.property_name,
-        "assessment_number": db_property.assessment_number,
-        "property_village": db_property.property_village,
-        "property_divisional_secretariat": db_property.property_divisional_secretariat,
-        "property_district": db_property.property_district,
-        "property_province": db_property.property_province,
-        "property_latitude": db_property.property_latitude,
-        "property_longitude": db_property.property_longitude,
-        "property_number": db_property.property_number,
-        "grama_niladari_division": db_property.grama_niladari_division,
-        "korale": db_property.korale,
-        "pradeshiya_sabha": db_property.pradeshiya_sabha,
-        "ward_number": db_property.ward_number,
-        "is_municipal_limit": db_property.is_municipal_limit,
-        "location_direction": db_property.location_direction,
-        "access_starting_point_name": db_property.access_starting_point_name,
-        "access_starting_point_latitude": db_property.access_starting_point_latitude,
-        "access_starting_point_longitude": db_property.access_starting_point_longitude,
-        "access_route_data": db_property.access_route_data,
-        "access_directions_text": db_property.access_directions_text,
-        "access_distance_km": db_property.access_distance_km,
-        "access_duration_minutes": db_property.access_duration_minutes,
-        "access_road_type": db_property.access_road_type,
-        "property_road_position": db_property.property_road_position,
-        "location_map_image_data": db_property.location_map_image_data,
-        "access_road_segments": db_property.access_road_segments,
-        "access_road_conditions": db_property.access_road_conditions,
-        "access_entry_mode": db_property.access_entry_mode,
-        "access_road_classes_detected": db_property.access_road_classes_detected,
-        "land_extent_acres": db_property.land_extent_acres,
-        "land_extent_roods": db_property.land_extent_roods,
-        "land_extent_perches": db_property.land_extent_perches,
-        "land_extent_hectares": db_property.land_extent_hectares,
-        "land_extent_square_meters": db_property.land_extent_square_meters,
-        "land_extent_formatted": db_property.land_extent_formatted,
-        "land_traditional_name": db_property.land_traditional_name,
-        "boundaries": db_property.boundaries,
-        "physical_boundaries_types": db_property.physical_boundaries_types,
-        "physical_boundaries_description": db_property.physical_boundaries_description,
-        "boundary_types_per_direction": db_property.boundary_types_per_direction,
-        "entrance_type": db_property.entrance_type,
-        "boundaries_summary_text": db_property.boundaries_summary_text,
-        "has_multiple_lots": db_property.has_multiple_lots,
-        "lots_data": db_property.lots_data,
-        "land_shape": db_property.land_shape,
-        "land_type": db_property.land_type,
-        "land_frontage_type": db_property.land_frontage_type,
-        "land_frontage_width": db_property.land_frontage_width,
-        "land_frontage_description": db_property.land_frontage_description,
-        "land_level": db_property.land_level,
-        "land_level_difference": db_property.land_level_difference,
-        "soil_type": db_property.soil_type,
-        "water_table_depth": db_property.water_table_depth,
-        "flood_risk": db_property.flood_risk,
-        "inundation_risk": db_property.inundation_risk,
-        "earth_slip_risk": db_property.earth_slip_risk,
-        "land_condition": db_property.land_condition,
-        "land_condition_description": db_property.land_condition_description,
-        "land_description_text": db_property.land_description_text,
-        "elevation_changes": db_property.elevation_changes,
-        "drainage_pattern": db_property.drainage_pattern,
-        "vegetation_type": db_property.vegetation_type,
-        "natural_features": db_property.natural_features,
-        "buildings": db_property.buildings,  # Includes building photos (Base64)
-        "occupier_name": db_property.occupier_name,
-        "occupier_relationship": db_property.occupier_relationship,
-        "property_photos": db_property.property_photos,  # Includes property photos (Base64)
-        "distance_to_major_town_km": db_property.distance_to_major_town_km,
-        "major_town_name": db_property.major_town_name,
-        "nearby_facilities": db_property.nearby_facilities,
-        "has_electricity": db_property.has_electricity,
-        "water_supply_type": db_property.water_supply_type,
-        "telecommunication_types": db_property.telecommunication_types,
-        "internet_types": db_property.internet_types,
-        "has_public_transport": db_property.has_public_transport,
-        "public_transport_routes": db_property.public_transport_routes,
-        "public_transport_frequency": db_property.public_transport_frequency,
-        "nearest_bus_stop_distance_km": db_property.nearest_bus_stop_distance_km,
-        "nearest_bus_stop_name": db_property.nearest_bus_stop_name,
-        "nearest_railway_station": db_property.nearest_railway_station,
-        "nearest_railway_distance_km": db_property.nearest_railway_distance_km,
-        "area_type": db_property.area_type,
-        "development_level": db_property.development_level,
-        "predominant_building_type": db_property.predominant_building_type,
-        "is_tourist_area": db_property.is_tourist_area,
-        "tourist_attractions_nearby": db_property.tourist_attractions_nearby,
-        "locality_description_text": db_property.locality_description_text,
-        "ownership_type": db_property.ownership_type,
-        "street_lines_status": db_property.street_lines_status,
-        "street_lines_gazette_ref": db_property.street_lines_gazette_ref,
-        "street_lines_gazette_date": db_property.street_lines_gazette_date,
-        "street_lines_impact_description": db_property.street_lines_impact_description,
-        "building_limits_status": db_property.building_limits_status,
-        "building_distance_from_road": db_property.building_distance_from_road,
-        "building_plan_approved": db_property.building_plan_approved,
-        "building_plan_reference": db_property.building_plan_reference,
-        "building_approval_authority": db_property.building_approval_authority,
-        "building_within_limits": db_property.building_within_limits,
-        "local_authority_data": db_property.local_authority_data,
-        "local_authority_rated": db_property.local_authority_rated,
-        "local_authority_tax_levy": db_property.local_authority_tax_levy,
-        "rent_act_effectiveness": db_property.rent_act_effectiveness,
-        "title_search_conducted": db_property.title_search_conducted,
-        "pedigree_search_conducted": db_property.pedigree_search_conducted,
-        "valuation_basis_note": db_property.valuation_basis_note,
-        "property_encumbered": db_property.property_encumbered,
-        "encumbrance_type": db_property.encumbrance_type,
-        "encumbrance_details": db_property.encumbrance_details,
-        "comparable_properties": db_property.comparable_properties,
-        "land_market_analysis": db_property.land_market_analysis,
-        "valuation_land_extent": db_property.valuation_land_extent,
-        "valuation_rate_per_perch": db_property.valuation_rate_per_perch,
-        "valuation_total_land_value": db_property.valuation_total_land_value,
-        "valuation_buildings_data": db_property.valuation_buildings_data,
-        "valuation_total_buildings_value": db_property.valuation_total_buildings_value,
-        "valuation_addons": db_property.valuation_addons,
-        "valuation_total_addons_value": db_property.valuation_total_addons_value,
-        "valuation_market_value": db_property.valuation_market_value,
-        "valuation_forced_sale_percentage": db_property.valuation_forced_sale_percentage,
-        "valuation_forced_sale_value": db_property.valuation_forced_sale_value,
-        "valuation_insurance_value": db_property.valuation_insurance_value,
-        "valuation_manual_overrides": db_property.valuation_manual_overrides,
-        "property_owner_title": db_property.property_owner_title,
-        "property_owner_full_name": db_property.property_owner_full_name,
-        "property_owner_id_type": db_property.property_owner_id_type,
-        "property_owner_id_number": db_property.property_owner_id_number,
-        "has_additional_owner": db_property.has_additional_owner,
-        "additional_owner_names": db_property.additional_owner_names,
-        "inspection_date": db_property.inspection_date,
-        "uploaded_documents": db_property.uploaded_documents,
-        "field_sources": db_property.field_sources,
-        "survey_plan_scale": db_property.survey_plan_scale,
-        "plan_reference_notes": db_property.plan_reference_notes,
-        "is_template": False,  # Duplicates are not templates
-        "template_name": None,
-        "last_valued_date": db_property.last_valued_date,
-        "status": "draft",  # Duplicates start as draft
-        "property_type": db_property.property_type,
-    }
+    # Use reflection-based duplication to copy all fields automatically
+    # This ensures new fields added to the model are always included
+    property_dict = _duplicate_entity_data(
+        db_property,
+        exclude_fields={'id', 'created_at', 'updated_at', 'user_id'},
+        override_fields={
+            'status': 'draft',        # Duplicates start as draft
+            'is_template': False,     # Duplicates are not templates
+            'template_name': None,    # Clear template name
+        }
+    )
 
     # Create new property
     new_property = models.Property(**property_dict, user_id=user_id)
@@ -849,24 +805,29 @@ def create_multi_property_report(db: Session, report_data: schemas.MultiProperty
     return db_report
 
 def _update_report_total_valuation(db: Session, db_report: models.Report):
-    """Helper function to recalculate total valuation for a report"""
-    # Query report properties with joined property data
-    report_properties = db.query(models.ReportProperty).filter(
-        models.ReportProperty.report_id == db_report.id
-    ).all()
+    """
+    Recalculate total valuation for a report.
+
+    Uses joinedload to efficiently load property data in a single query,
+    avoiding N+1 query performance issues.
+    """
+    from sqlalchemy.orm import joinedload
+
+    # Query report properties with joined property data (single query)
+    report_properties = (
+        db.query(models.ReportProperty)
+        .options(joinedload(models.ReportProperty.property))
+        .filter(models.ReportProperty.report_id == db_report.id)
+        .all()
+    )
 
     total = 0
     for rp in report_properties:
         # Use override value if set, otherwise use property's market value
         if rp.override_market_value is not None:
             total += float(rp.override_market_value)
-        else:
-            # Get the property to access its market value
-            prop = db.query(models.Property).filter(
-                models.Property.id == rp.property_id
-            ).first()
-            if prop and prop.valuation_market_value is not None:
-                total += float(prop.valuation_market_value)
+        elif rp.property and rp.property.valuation_market_value is not None:
+            total += float(rp.property.valuation_market_value)
 
     db_report.total_valuation_amount = total if total > 0 else None
 

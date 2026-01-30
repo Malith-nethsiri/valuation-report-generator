@@ -5,8 +5,12 @@ from sqlalchemy.exc import OperationalError, DisconnectionError
 from dotenv import load_dotenv
 import os
 import logging
+from pathlib import Path
 
-load_dotenv()
+# Load environment files: .env first, then .env.local overrides
+env_path = Path(__file__).parent.parent
+load_dotenv(env_path / '.env')
+load_dotenv(env_path / '.env.local', override=True)  # .env.local takes priority
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)

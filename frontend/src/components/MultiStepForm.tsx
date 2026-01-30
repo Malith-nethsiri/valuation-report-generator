@@ -54,7 +54,7 @@ import { DatePicker } from './DatePicker';
 import { LoadingOverlay } from './LoadingOverlay';
 import { validateSriLankanNIC, validatePassport, useFieldValidation } from '../utils/validators';
 import { PREDEFINED_VALUATION_PURPOSES } from '../constants/valuationPurposes';
-import { toTitleCase } from '../utils/textFormatters';
+import { toTitleCase } from '../utils/textFormatter';
 
 // Common deed types in Sri Lanka
 const COMMON_DEED_TYPES = [

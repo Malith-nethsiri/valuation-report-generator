@@ -456,6 +456,7 @@ const LocalityInformationSection: React.FC<Props> = ({
             {Object.entries(facilitiesByCategory).map(([category, facilities]) => (
               <div key={category} className="border border-gray-200 rounded-lg">
                 <button
+                  type="button"
                   onClick={() => toggleCategory(category)}
                   className="w-full flex items-center justify-between p-3 hover:bg-gray-50 transition-colors"
                 >

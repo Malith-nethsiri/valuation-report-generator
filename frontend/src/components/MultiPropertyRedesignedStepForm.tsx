@@ -33,7 +33,8 @@ import {
 import { Button } from './Button';
 import { ApplicantAndPurposeStep } from './ApplicantAndPurposeStep';
 import { AdditionalDetailsStep } from './AdditionalDetailsStep';
-import { PropertyMiniDashboard, PropertyInReport } from './PropertyMiniDashboard';
+import { PropertyMiniDashboard } from './PropertyMiniDashboard';
+import { PropertyInReport } from '../types';
 import MultiStepForm from './MultiStepForm';
 import InvoiceDataStep from './InvoiceDataStep';
 import { validateSriLankanNIC, validatePassport } from '../utils/validators';

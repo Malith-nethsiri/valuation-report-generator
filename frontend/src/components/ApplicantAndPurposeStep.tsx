@@ -17,7 +17,7 @@ import { AutocompleteInput } from './AutocompleteInput';
 import toast from 'react-hot-toast';
 import { validateSriLankanNIC, validatePassport, useFieldValidation } from '../utils/validators';
 import { PREDEFINED_VALUATION_PURPOSES } from '../constants/valuationPurposes';
-import { toTitleCase } from '../utils/textFormatters';
+import { toTitleCase } from '../utils/textFormatter';
 
 interface ApplicantAndPurposeStepProps {
     register: UseFormRegister<any>;

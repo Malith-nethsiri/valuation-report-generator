@@ -2,14 +2,8 @@
 AI-powered narrative generation for land descriptions in valuation reports.
 Uses Claude API to generate professional, contextual land descriptions.
 """
-import os
 from typing import Optional
-from anthropic import Anthropic
-from dotenv import load_dotenv
-
-load_dotenv()
-
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+from .anthropic_client import get_anthropic_client, is_anthropic_configured
 
 
 def format_land_value(value: str) -> str:
@@ -132,12 +126,12 @@ async def generate_land_narrative(
     Returns:
         Generated narrative text or None if generation fails
     """
-    if not ANTHROPIC_API_KEY:
+    if not is_anthropic_configured():
         print("[LAND_NARRATIVE] Warning: ANTHROPIC_API_KEY not set")
         return None
 
     try:
-        client = Anthropic(api_key=ANTHROPIC_API_KEY)
+        client = get_anthropic_client()
 
         # Build the context for AI
         context_parts = []

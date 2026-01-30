@@ -31,21 +31,10 @@ import {
 } from 'lucide-react';
 import { AddPropertyDialog } from './AddPropertyDialog';
 import toast from 'react-hot-toast';
+import type { PropertyInReport } from '../types';
 
-export interface PropertyInReport {
-    id: string | number; // temp ID or DB ID
-    type: 'residential' | 'bare_land';
-    order: number;
-    status: 'draft' | 'completed';
-    data: {
-        property_village?: string;
-        property_district?: string;
-        lot_number?: string;
-        property_lot_description?: string;  // deprecated
-        plan_number?: string;
-        [key: string]: any;
-    };
-}
+// Re-export for backward compatibility
+export type { PropertyInReport };
 
 interface PropertyMiniDashboardProps {
     properties: PropertyInReport[];

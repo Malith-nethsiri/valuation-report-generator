@@ -15,6 +15,7 @@ import type {
 } from '../types';
 import { authTokenStorage } from '../utils/secureStorage';
 import { API_URL } from '../config';
+import { downloadFromResponse } from '../utils/downloadHelper';
 
 const API_BASE_URL = API_URL;
 
@@ -223,28 +224,11 @@ export const generateAndDownloadDocx = async (userDataId: number): Promise<void>
     }
   );
 
-  // Extract filename from Content-Disposition header
-  const contentDisposition = response.headers['content-disposition'];
-  let filename = 'document.docx';
-  if (contentDisposition) {
-    const filenameMatch = contentDisposition.match(/filename="?(.+)"?/);
-    if (filenameMatch) {
-      filename = filenameMatch[1];
-    }
-  }
-
-  // Create blob and download
-  const blob = new Blob([response.data], {
-    type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  });
-  const url = window.URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  window.URL.revokeObjectURL(url);
+  downloadFromResponse(
+    response.data,
+    response.headers['content-disposition'],
+    'document.docx'
+  );
 };
 
 export const submitAndGenerateDocx = async (data: UserData): Promise<void> => {
@@ -252,28 +236,11 @@ export const submitAndGenerateDocx = async (data: UserData): Promise<void> => {
     responseType: 'blob',
   });
 
-  // Extract filename from Content-Disposition header
-  const contentDisposition = response.headers['content-disposition'];
-  let filename = 'document.docx';
-  if (contentDisposition) {
-    const filenameMatch = contentDisposition.match(/filename="?(.+)"?/);
-    if (filenameMatch) {
-      filename = filenameMatch[1];
-    }
-  }
-
-  // Create blob and download
-  const blob = new Blob([response.data], {
-    type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  });
-  const url = window.URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  window.URL.revokeObjectURL(url);
+  downloadFromResponse(
+    response.data,
+    response.headers['content-disposition'],
+    'document.docx'
+  );
 };
 
 export const getAllUserData = async (): Promise<UserDataResponse[]> => {
@@ -392,28 +359,11 @@ export const reportApi = {
       }
     );
 
-    // Extract filename from Content-Disposition header
-    const contentDisposition = response.headers['content-disposition'];
-    let filename = 'report.docx';
-    if (contentDisposition) {
-      const filenameMatch = contentDisposition.match(/filename="?(.+)"?/);
-      if (filenameMatch) {
-        filename = filenameMatch[1];
-      }
-    }
-
-    // Create blob and download
-    const blob = new Blob([response.data], {
-      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(url);
+    downloadFromResponse(
+      response.data,
+      response.headers['content-disposition'],
+      'report.docx'
+    );
   },
 
   duplicateReport: async (id: number): Promise<Report> => {
@@ -467,28 +417,11 @@ export const jobApi = {
       responseType: 'blob',
     });
 
-    // Extract filename from Content-Disposition header
-    const contentDisposition = response.headers['content-disposition'];
-    let filename = 'document.docx';
-    if (contentDisposition) {
-      const filenameMatch = contentDisposition.match(/filename="?(.+)"?/);
-      if (filenameMatch) {
-        filename = filenameMatch[1];
-      }
-    }
-
-    // Create blob and download
-    const blob = new Blob([response.data], {
-      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(url);
+    downloadFromResponse(
+      response.data,
+      response.headers['content-disposition'],
+      'document.docx'
+    );
   },
 
   listJobs: async (limit: number = 10, statusFilter?: string): Promise<Job[]> => {
