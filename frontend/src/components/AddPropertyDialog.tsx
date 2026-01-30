@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Building, Sprout, Plus, Minus, X } from 'lucide-react';
+import { Building, Sprout, Plus, Minus, X, Car } from 'lucide-react';
 import { Button } from './Button';
 
 interface AddPropertyDialogProps {
   isOpen: boolean;
-  propertyType: 'residential' | 'bare_land';
+  propertyType: 'residential' | 'bare_land' | 'vehicle';
   maxAllowed: number;
   onConfirm: (count: number) => void;
   onCancel: () => void;
@@ -29,15 +29,52 @@ export const AddPropertyDialog: React.FC<AddPropertyDialogProps> = ({
   if (!isOpen) return null;
 
   const isResidential = propertyType === 'residential';
-  const propertyTypeLabel = isResidential ? 'Residential/Commercial' : 'Bare Land';
-  const gradientClass = isResidential
-    ? 'from-blue-500 to-indigo-600'
-    : 'from-green-500 to-emerald-600';
-  const iconBgClass = isResidential ? 'bg-blue-100' : 'bg-green-100';
-  const iconTextClass = isResidential ? 'text-blue-600' : 'text-green-600';
-  const buttonClass = isResidential
-    ? 'bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700'
-    : 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700';
+  const isVehicle = propertyType === 'vehicle';
+
+  // Type-specific configurations
+  const getTypeConfig = () => {
+    if (isVehicle) {
+      return {
+        label: 'Vehicle',
+        itemName: 'vehicle',
+        gradientClass: 'from-cyan-500 to-blue-600',
+        iconBgClass: 'bg-cyan-100',
+        iconTextClass: 'text-cyan-600',
+        buttonClass: 'bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700',
+        borderClass: 'text-cyan-600 border-cyan-200 focus:ring-cyan-200',
+        icon: <Car className="h-6 w-6" />
+      };
+    } else if (isResidential) {
+      return {
+        label: 'Residential/Commercial',
+        itemName: 'property',
+        gradientClass: 'from-blue-500 to-indigo-600',
+        iconBgClass: 'bg-blue-100',
+        iconTextClass: 'text-blue-600',
+        buttonClass: 'bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700',
+        borderClass: 'text-blue-600 border-blue-200 focus:ring-blue-200',
+        icon: <Building className="h-6 w-6" />
+      };
+    } else {
+      return {
+        label: 'Bare Land',
+        itemName: 'property',
+        gradientClass: 'from-green-500 to-emerald-600',
+        iconBgClass: 'bg-green-100',
+        iconTextClass: 'text-green-600',
+        buttonClass: 'bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700',
+        borderClass: 'text-green-600 border-green-200 focus:ring-green-200',
+        icon: <Sprout className="h-6 w-6" />
+      };
+    }
+  };
+
+  const typeConfig = getTypeConfig();
+  const propertyTypeLabel = typeConfig.label;
+  const gradientClass = typeConfig.gradientClass;
+  const iconBgClass = typeConfig.iconBgClass;
+  const iconTextClass = typeConfig.iconTextClass;
+  const buttonClass = typeConfig.buttonClass;
 
   const handleIncrement = () => {
     if (count < maxAllowed) {
@@ -80,16 +117,12 @@ export const AddPropertyDialog: React.FC<AddPropertyDialogProps> = ({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="p-2 bg-white/20 rounded-xl">
-                {isResidential ? (
-                  <Building className="h-6 w-6" />
-                ) : (
-                  <Sprout className="h-6 w-6" />
-                )}
+                {typeConfig.icon}
               </div>
               <div>
-                <h3 className="text-lg font-bold">Add {propertyTypeLabel} Properties</h3>
+                <h3 className="text-lg font-bold">Add {propertyTypeLabel} {isVehicle ? 'Vehicles' : 'Properties'}</h3>
                 <p className="text-sm text-white/80">
-                  How many properties would you like to add?
+                  How many {isVehicle ? 'vehicles' : 'properties'} would you like to add?
                 </p>
               </div>
             </div>
@@ -127,11 +160,7 @@ export const AddPropertyDialog: React.FC<AddPropertyDialogProps> = ({
                   setCount(Math.max(1, Math.min(val, maxAllowed)));
                 }}
                 onKeyDown={handleKeyDown}
-                className={`text-6xl font-bold text-center w-32 border-2 rounded-xl px-4 py-2 focus:outline-none focus:ring-4 ${
-                  isResidential
-                    ? 'text-blue-600 border-blue-200 focus:ring-blue-200'
-                    : 'text-green-600 border-green-200 focus:ring-green-200'
-                }`}
+                className={`text-6xl font-bold text-center w-32 border-2 rounded-xl px-4 py-2 focus:outline-none focus:ring-4 ${typeConfig.borderClass}`}
               />
             </div>
 
@@ -159,10 +188,10 @@ export const AddPropertyDialog: React.FC<AddPropertyDialogProps> = ({
               </div>
               <div className="flex-1">
                 <p className="text-sm text-gray-700">
-                  <span className="font-semibold">You can add up to {maxAllowed} more {maxAllowed === 1 ? 'property' : 'properties'}</span>
+                  <span className="font-semibold">You can add up to {maxAllowed} more {maxAllowed === 1 ? typeConfig.itemName : typeConfig.itemName + 's'}</span>
                 </p>
                 <p className="text-xs text-gray-500 mt-1">
-                  Maximum total limit: 20 properties per report
+                  Maximum total limit: 20 items per report
                 </p>
               </div>
             </div>
@@ -173,7 +202,7 @@ export const AddPropertyDialog: React.FC<AddPropertyDialogProps> = ({
             <p>
               Entering <span className="font-semibold">{count}</span> will create{' '}
               <span className="font-semibold">{count} {propertyTypeLabel.toLowerCase()}</span>{' '}
-              {count === 1 ? 'property' : 'properties'} in draft status
+              {count === 1 ? typeConfig.itemName : typeConfig.itemName + 's'} in draft status
             </p>
           </div>
         </div>
@@ -191,7 +220,7 @@ export const AddPropertyDialog: React.FC<AddPropertyDialogProps> = ({
             disabled={count < 1 || count > maxAllowed}
             className={`flex-1 px-4 py-3 text-white font-bold rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed ${buttonClass}`}
           >
-            Add {count} {count === 1 ? 'Property' : 'Properties'}
+            Add {count} {count === 1 ? (isVehicle ? 'Vehicle' : 'Property') : (isVehicle ? 'Vehicles' : 'Properties')}
           </button>
         </div>
       </div>

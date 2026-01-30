@@ -186,6 +186,152 @@ def get_user_reports(db: Session, user_id: int, skip: int = 0, limit: int = 100)
         models.Report.user_id == user_id
     ).offset(skip).limit(limit).all()
 
+
+def get_user_reports_filtered(
+    db: Session,
+    user_id: int,
+    skip: int = 0,
+    limit: int = 8,
+    reference: str = None,
+    applicant_name: str = None,
+    village: str = None,
+    report_date: str = None  # YYYY-MM-DD format
+):
+    """
+    Get filtered and paginated reports for a user.
+    Returns tuple: (reports, total_count, stats)
+
+    Filter behaviors:
+    - reference: Exact match (normalized - spaces removed, case insensitive)
+    - applicant_name: Partial match (ILIKE, case insensitive)
+    - village: Partial match (ILIKE, case insensitive)
+    - report_date: Exact date match on created_at
+    """
+    from sqlalchemy import func, and_, cast, Date
+    from datetime import datetime, date
+
+    # Base query for user's reports
+    base_query = db.query(models.Report).filter(models.Report.user_id == user_id)
+
+    # Apply filters
+    filters = []
+
+    # Reference number - partial match, case insensitive
+    if reference:
+        # Use ILIKE for partial matching (contains)
+        filters.append(
+            models.Report.report_reference.ilike(f"%{reference}%")
+        )
+
+    # Applicant name - partial match, case insensitive
+    if applicant_name:
+        filters.append(
+            models.Report.applicant_full_name.ilike(f"%{applicant_name}%")
+        )
+
+    # Village - partial match, case insensitive
+    if village:
+        filters.append(
+            models.Report.property_village.ilike(f"%{village}%")
+        )
+
+    # Report date - exact date match on created_at
+    if report_date:
+        try:
+            target_date = datetime.strptime(report_date, "%Y-%m-%d").date()
+            filters.append(
+                cast(models.Report.created_at, Date) == target_date
+            )
+        except ValueError:
+            pass  # Invalid date format, ignore filter
+
+    # Apply all filters with AND logic
+    filtered_query = base_query
+    if filters:
+        filtered_query = base_query.filter(and_(*filters))
+
+    # Get total count of filtered results
+    total_count = filtered_query.count()
+
+    # Get paginated reports (sorted by created_at descending)
+    reports = filtered_query.order_by(
+        models.Report.created_at.desc()
+    ).offset(skip).limit(limit).all()
+
+    # Calculate stats (based on filtered results)
+    current_month = date.today().replace(day=1)
+
+    # Stats for filtered results
+    stats_query = filtered_query
+
+    this_month_count = stats_query.filter(
+        models.Report.created_at >= current_month
+    ).count()
+
+    completed_count = stats_query.filter(
+        models.Report.status == 'completed'
+    ).count()
+
+    draft_count = stats_query.filter(
+        models.Report.status == 'draft'
+    ).count()
+
+    stats = {
+        "total_count": total_count,
+        "this_month_count": this_month_count,
+        "completed_count": completed_count,
+        "draft_count": draft_count
+    }
+
+    return reports, total_count, stats
+
+
+def get_adjacent_report_date(
+    db: Session,
+    user_id: int,
+    current_date: str,  # YYYY-MM-DD format
+    direction: str  # "next" or "previous"
+) -> str:
+    """
+    Get the next or previous date that has reports for the user.
+    Used for date filter navigation when reports for current date are exhausted.
+    Returns date string (YYYY-MM-DD) or None if no adjacent date found.
+    """
+    from sqlalchemy import func, cast, Date
+    from datetime import datetime
+
+    try:
+        target_date = datetime.strptime(current_date, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+    # Get distinct dates with reports
+    if direction == "next":
+        # Find the next date after current_date that has reports
+        result = db.query(
+            cast(models.Report.created_at, Date)
+        ).filter(
+            models.Report.user_id == user_id,
+            cast(models.Report.created_at, Date) > target_date
+        ).order_by(
+            cast(models.Report.created_at, Date).asc()
+        ).first()
+    else:  # previous
+        # Find the previous date before current_date that has reports
+        result = db.query(
+            cast(models.Report.created_at, Date)
+        ).filter(
+            models.Report.user_id == user_id,
+            cast(models.Report.created_at, Date) < target_date
+        ).order_by(
+            cast(models.Report.created_at, Date).desc()
+        ).first()
+
+    if result and result[0]:
+        return result[0].strftime("%Y-%m-%d")
+    return None
+
+
 def get_all_reports(db: Session, skip: int = 0, limit: int = 100):
     """Get all reports (admin function)"""
     return db.query(models.Report).offset(skip).limit(limit).all()
@@ -469,7 +615,6 @@ def duplicate_property(db: Session, report_id: int, property_id: int, user_id: i
         "property_identification_documents": db_property.property_identification_documents,
         "has_deed_info": db_property.has_deed_info,
         "deeds": db_property.deeds,
-        "property_name": db_property.property_name,
         "assessment_number": db_property.assessment_number,
         "property_village": db_property.property_village,
         "property_divisional_secretariat": db_property.property_divisional_secretariat,
@@ -795,80 +940,417 @@ def reorder_report_properties(db: Session, report_id: int, property_order_map: d
 # Multi-Property Report Operations
 def create_multi_property_report(db: Session, report_data: schemas.MultiPropertyReportCreate, user_id: int):
     """
-    Create a multi-property report
-    Can either link to existing properties (property_ids) or create new ones (properties)
+    Create a multi-property report with proper transaction handling.
+
+    Can either link to existing properties (property_ids) or create new ones (properties).
+
+    Transaction Safety: The entire operation is wrapped in try/except with proper
+    rollback to ensure atomic operation - either all changes succeed or none do.
     """
-    # Extract property-related data
-    property_ids = report_data.property_ids or []
-    properties_to_create = report_data.properties or []
-    invoice_data = report_data.invoice_data
+    try:
+        # Extract property-related data
+        property_ids = list(report_data.property_ids or [])  # Copy to avoid modifying original
+        properties_to_create = report_data.properties or []
+        invoice_data = report_data.invoice_data
 
-    # Create the base report with common fields
-    report_dict = report_data.model_dump(exclude={'property_ids', 'properties', 'invoice_data'})
-    report_dict['user_id'] = user_id
-    report_dict['is_multi_property'] = True
-    report_dict['property_count'] = len(property_ids) + len(properties_to_create)
+        # Create the base report with common fields
+        report_dict = report_data.model_dump(exclude={'property_ids', 'properties', 'invoice_data'})
+        report_dict['user_id'] = user_id
+        report_dict['is_multi_property'] = True
+        report_dict['property_count'] = len(property_ids) + len(properties_to_create)
 
-    if invoice_data:
-        report_dict['invoice_data'] = invoice_data.model_dump() if hasattr(invoice_data, 'model_dump') else invoice_data
+        if invoice_data:
+            report_dict['invoice_data'] = invoice_data.model_dump() if hasattr(invoice_data, 'model_dump') else invoice_data
 
-    db_report = models.Report(**report_dict)
-    db.add(db_report)
-    db.flush()  # Get report ID without committing
+        db_report = models.Report(**report_dict)
+        db.add(db_report)
+        db.flush()  # Get report ID without committing
 
-    # Create new properties if provided
-    created_properties = []
-    for prop_data in properties_to_create:
-        db_property = create_property(db, prop_data, user_id)
-        created_properties.append(db_property)
-        property_ids.append(db_property.id)
+        # Create new properties if provided
+        created_properties = []
+        for prop_data in properties_to_create:
+            db_property = create_property(db, prop_data, user_id)
+            created_properties.append(db_property)
+            property_ids.append(db_property.id)
 
-    # Create report-property associations
-    for idx, property_id in enumerate(property_ids, start=1):
-        # Verify user owns the property
-        db_property = get_property(db, property_id, user_id)
-        if not db_property:
-            db.rollback()
-            raise ValueError(f"Property {property_id} not found or access denied")
+        # Create report-property associations
+        for idx, property_id in enumerate(property_ids, start=1):
+            # Verify user owns the property
+            db_property = get_property(db, property_id, user_id)
+            if not db_property:
+                raise ValueError(f"Property {property_id} not found or access denied")
 
-        report_property = models.ReportProperty(
-            report_id=db_report.id,
-            property_id=property_id,
-            property_order=idx
-        )
-        db.add(report_property)
+            report_property = models.ReportProperty(
+                report_id=db_report.id,
+                property_id=property_id,
+                property_order=idx
+            )
+            db.add(report_property)
 
-    # Flush to ensure associations are in database
-    db.flush()
+        # Flush to ensure associations are in database
+        db.flush()
 
-    # Calculate total valuation after associations are flushed
-    _update_report_total_valuation(db, db_report)
+        # Calculate total valuation after associations are flushed
+        _update_report_total_valuation(db, db_report)
 
-    db.commit()
-    db.refresh(db_report)
-    return db_report
+        db.commit()
+        db.refresh(db_report)
+        return db_report
+
+    except Exception as e:
+        # Rollback entire transaction on any error to prevent partial state
+        db.rollback()
+        raise
 
 def _update_report_total_valuation(db: Session, db_report: models.Report):
-    """Helper function to recalculate total valuation for a report"""
-    # Query report properties with joined property data
-    report_properties = db.query(models.ReportProperty).filter(
-        models.ReportProperty.report_id == db_report.id
-    ).all()
+    """
+    Helper function to recalculate total valuation for a report.
+
+    Security: Uses SELECT FOR UPDATE to prevent race conditions when
+    concurrent updates modify property valuations.
+    """
+    from sqlalchemy.orm import joinedload
+
+    # Use a single query with JOIN and FOR UPDATE to prevent race conditions
+    # This locks the rows being read until the transaction commits
+    report_properties = (
+        db.query(models.ReportProperty)
+        .options(joinedload(models.ReportProperty.property))
+        .filter(models.ReportProperty.report_id == db_report.id)
+        .with_for_update()  # Lock rows to prevent race conditions
+        .all()
+    )
 
     total = 0
     for rp in report_properties:
         # Use override value if set, otherwise use property's market value
         if rp.override_market_value is not None:
             total += float(rp.override_market_value)
+        elif rp.property and rp.property.valuation_market_value is not None:
+            # Access property through the already-loaded relationship
+            total += float(rp.property.valuation_market_value)
+
+    db_report.total_valuation_amount = total if total > 0 else None
+
+# ===== VEHICLE CRUD OPERATIONS =====
+
+def create_vehicle(db: Session, vehicle: schemas.VehicleCreate, user_id: int):
+    """Create a new vehicle for a user"""
+    db_vehicle = models.Vehicle(**vehicle.model_dump(), user_id=user_id)
+    db.add(db_vehicle)
+    db.commit()
+    db.refresh(db_vehicle)
+    return db_vehicle
+
+
+def get_vehicle(db: Session, vehicle_id: int, user_id: int = None):
+    """Get vehicle by ID, optionally filtered by user_id"""
+    query = db.query(models.Vehicle).filter(
+        models.Vehicle.id == vehicle_id,
+        models.Vehicle.is_deleted == False
+    )
+    if user_id:
+        query = query.filter(models.Vehicle.user_id == user_id)
+    return query.first()
+
+
+def get_user_vehicles(db: Session, user_id: int, skip: int = 0, limit: int = 100, include_deleted: bool = False):
+    """Get all vehicles for a specific user"""
+    query = db.query(models.Vehicle).filter(models.Vehicle.user_id == user_id)
+    if not include_deleted:
+        query = query.filter(models.Vehicle.is_deleted == False)
+    return query.order_by(models.Vehicle.created_at.desc()).offset(skip).limit(limit).all()
+
+
+def get_vehicle_templates(db: Session, user_id: int):
+    """Get all vehicle templates (Vehicle Library) for a user"""
+    return db.query(models.Vehicle).filter(
+        models.Vehicle.user_id == user_id,
+        models.Vehicle.is_template == True,
+        models.Vehicle.is_deleted == False
+    ).order_by(models.Vehicle.make, models.Vehicle.model).all()
+
+
+def update_vehicle(db: Session, vehicle_id: int, vehicle_update: schemas.VehicleUpdate, user_id: int = None):
+    """Update a vehicle"""
+    query = db.query(models.Vehicle).filter(
+        models.Vehicle.id == vehicle_id,
+        models.Vehicle.is_deleted == False
+    )
+    if user_id:
+        query = query.filter(models.Vehicle.user_id == user_id)
+
+    db_vehicle = query.first()
+    if not db_vehicle:
+        return None
+
+    update_data = vehicle_update.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        setattr(db_vehicle, field, value)
+
+    db.commit()
+    db.refresh(db_vehicle)
+    return db_vehicle
+
+
+def delete_vehicle(db: Session, vehicle_id: int, user_id: int = None, soft_delete: bool = True):
+    """Delete a vehicle (soft delete by default)"""
+    query = db.query(models.Vehicle).filter(models.Vehicle.id == vehicle_id)
+    if user_id:
+        query = query.filter(models.Vehicle.user_id == user_id)
+
+    db_vehicle = query.first()
+    if not db_vehicle:
+        return False
+
+    # Check if vehicle is used in any reports
+    usage_count = db.query(models.ReportVehicle).filter(
+        models.ReportVehicle.vehicle_id == vehicle_id
+    ).count()
+
+    if usage_count > 0 and not soft_delete:
+        raise ValueError(
+            f"Cannot permanently delete vehicle. It is used in {usage_count} report(s). "
+            "Use soft delete instead."
+        )
+
+    if soft_delete:
+        db_vehicle.is_deleted = True
+        db.commit()
+    else:
+        db.delete(db_vehicle)
+        db.commit()
+
+    return True
+
+
+def duplicate_vehicle(db: Session, vehicle_id: int, user_id: int):
+    """Duplicate a vehicle (create a copy)"""
+    original = get_vehicle(db, vehicle_id, user_id)
+    if not original:
+        return None
+
+    # Create a copy with key fields
+    vehicle_data = {
+        'status': 'draft',
+        'vehicle_type': original.vehicle_type,
+        'is_template': False,  # Copies are not templates
+        'registration_number': original.registration_number,
+        'provincial_council': original.provincial_council,
+        'class_of_vehicle': original.class_of_vehicle,
+        'body_colour': original.body_colour,
+        'chassis_number': original.chassis_number,
+        'engine_number': original.engine_number,
+        'vehicle_status': original.vehicle_status,
+        'country_of_origin': original.country_of_origin,
+        'make': original.make,
+        'model': original.model,
+        'date_of_first_registration': original.date_of_first_registration,
+        'year_of_manufacture': original.year_of_manufacture,
+        'cylinder_capacity': original.cylinder_capacity,
+        'fuel_type': original.fuel_type,
+        'mileage': original.mileage,
+        'mileage_unit': original.mileage_unit,
+        'engine_type': original.engine_type,
+        'transmission': original.transmission,
+        'wheel_drive': original.wheel_drive,
+        'running_condition': original.running_condition,
+        'clutch_status': original.clutch_status,
+        'engine_condition': original.engine_condition,
+        'gear_box_condition': original.gear_box_condition,
+        'differential_status': original.differential_status,
+        'gear_selection': original.gear_selection,
+        'body_condition': original.body_condition,
+        'chassis_condition': original.chassis_condition,
+        'upholstery_condition': original.upholstery_condition,
+        'underside_condition': original.underside_condition,
+        'body_parts_status': original.body_parts_status,
+        'engine_parts_status': original.engine_parts_status,
+        'accessories_status': original.accessories_status,
+        'fuel_consumption': original.fuel_consumption,
+        'fuel_consumption_unit': original.fuel_consumption_unit,
+        'foot_brake_condition': original.foot_brake_condition,
+        'disc_brake_available': original.disc_brake_available,
+        'parking_brake_condition': original.parking_brake_condition,
+        'abs_available': original.abs_available,
+        'features': original.features,
+        'suspension': original.suspension,
+        'tyres': original.tyres,
+        'electrical': original.electrical,
+        'lights': original.lights,
+        'has_accidents': original.has_accidents,
+        'has_repairs': original.has_repairs,
+        'needs_repairs_within_year': original.needs_repairs_within_year,
+        'body_parts_replaced': original.body_parts_replaced,
+        'purchase_price': original.purchase_price,
+        'brand_new_price': original.brand_new_price,
+        'market_value': original.market_value,
+        'forced_sale_value': original.forced_sale_value,
+        'valuation_summary': original.valuation_summary,
+        'office_data': original.office_data,
+        'past_valuations': original.past_valuations,
+        'vehicle_photos': original.vehicle_photos,
+        'book_images': original.book_images,
+        'original_vehicle_id': original.id,  # Track original
+    }
+
+    new_vehicle = models.Vehicle(**vehicle_data, user_id=user_id)
+    db.add(new_vehicle)
+    db.commit()
+    db.refresh(new_vehicle)
+    return new_vehicle
+
+
+# ===== REPORT-VEHICLE JUNCTION OPERATIONS =====
+
+def add_vehicle_to_report(db: Session, report_id: int, vehicle_id: int, user_id: int, vehicle_order: int = None):
+    """Add an existing vehicle to a report"""
+    # Verify user owns both report and vehicle
+    db_report = get_report(db, report_id, user_id)
+    if not db_report:
+        raise ValueError("Report not found or access denied")
+
+    db_vehicle = get_vehicle(db, vehicle_id, user_id)
+    if not db_vehicle:
+        raise ValueError("Vehicle not found or access denied")
+
+    # Check if vehicle is already in this report
+    existing = db.query(models.ReportVehicle).filter(
+        models.ReportVehicle.report_id == report_id,
+        models.ReportVehicle.vehicle_id == vehicle_id
+    ).first()
+    if existing:
+        raise ValueError("Vehicle is already in this report")
+
+    # Determine vehicle order
+    if vehicle_order is None:
+        max_order = db.query(models.ReportVehicle).filter(
+            models.ReportVehicle.report_id == report_id
+        ).count()
+        vehicle_order = max_order + 1
+
+    # Create association
+    report_vehicle = models.ReportVehicle(
+        report_id=report_id,
+        vehicle_id=vehicle_id,
+        vehicle_order=vehicle_order
+    )
+    db.add(report_vehicle)
+    db.flush()
+
+    # Update report metadata
+    new_count = db.query(models.ReportVehicle).filter(
+        models.ReportVehicle.report_id == report_id
+    ).count()
+    db_report.vehicle_count = new_count
+
+    # Recalculate total valuation including vehicles
+    _update_report_total_valuation_with_vehicles(db, db_report)
+
+    db.commit()
+    db.refresh(report_vehicle)
+    return report_vehicle
+
+
+def remove_vehicle_from_report(db: Session, report_id: int, vehicle_id: int, user_id: int):
+    """Remove a vehicle from a report"""
+    # Verify user owns the report
+    db_report = get_report(db, report_id, user_id)
+    if not db_report:
+        raise ValueError("Report not found or access denied")
+
+    # Find the association
+    report_vehicle = db.query(models.ReportVehicle).filter(
+        models.ReportVehicle.report_id == report_id,
+        models.ReportVehicle.vehicle_id == vehicle_id
+    ).first()
+
+    if not report_vehicle:
+        raise ValueError("Vehicle is not in this report")
+
+    db.delete(report_vehicle)
+    db.flush()
+
+    # Update report metadata
+    new_count = db.query(models.ReportVehicle).filter(
+        models.ReportVehicle.report_id == report_id
+    ).count()
+    db_report.vehicle_count = new_count
+
+    # Recalculate total valuation
+    _update_report_total_valuation_with_vehicles(db, db_report)
+
+    db.commit()
+    return True
+
+
+def reorder_report_vehicles(db: Session, report_id: int, vehicle_order_map: dict, user_id: int):
+    """
+    Reorder vehicles in a report
+    vehicle_order_map: {vehicle_id: new_order, ...}
+    """
+    # Verify user owns the report
+    db_report = get_report(db, report_id, user_id)
+    if not db_report:
+        raise ValueError("Report not found or access denied")
+
+    # Update each vehicle's order
+    for vehicle_id, new_order in vehicle_order_map.items():
+        report_vehicle = db.query(models.ReportVehicle).filter(
+            models.ReportVehicle.report_id == report_id,
+            models.ReportVehicle.vehicle_id == vehicle_id
+        ).first()
+
+        if report_vehicle:
+            report_vehicle.vehicle_order = new_order
+
+    db.commit()
+    return True
+
+
+def get_report_vehicles(db: Session, report_id: int):
+    """Get all vehicles for a report, ordered by vehicle_order"""
+    return db.query(models.ReportVehicle).filter(
+        models.ReportVehicle.report_id == report_id
+    ).order_by(models.ReportVehicle.vehicle_order).all()
+
+
+def _update_report_total_valuation_with_vehicles(db: Session, db_report: models.Report):
+    """Helper function to recalculate total valuation including vehicles"""
+    total = 0
+
+    # Sum property values
+    report_properties = db.query(models.ReportProperty).filter(
+        models.ReportProperty.report_id == db_report.id
+    ).all()
+
+    for rp in report_properties:
+        if rp.override_market_value is not None:
+            total += float(rp.override_market_value)
         else:
-            # Get the property to access its market value
             prop = db.query(models.Property).filter(
                 models.Property.id == rp.property_id
             ).first()
             if prop and prop.valuation_market_value is not None:
                 total += float(prop.valuation_market_value)
 
+    # Sum vehicle values
+    report_vehicles = db.query(models.ReportVehicle).filter(
+        models.ReportVehicle.report_id == db_report.id
+    ).all()
+
+    for rv in report_vehicles:
+        if rv.override_market_value is not None:
+            total += float(rv.override_market_value)
+        else:
+            vehicle = db.query(models.Vehicle).filter(
+                models.Vehicle.id == rv.vehicle_id
+            ).first()
+            if vehicle and vehicle.market_value is not None:
+                total += float(vehicle.market_value)
+
     db_report.total_valuation_amount = total if total > 0 else None
+
 
 # Legacy functions removed for clean v0.1 implementation
 # All functionality moved to authenticated user + report system

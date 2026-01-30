@@ -2,11 +2,11 @@
 
 ## Recommended Stack (100% Free)
 
-| Component | Platform | Cost | Notes |
-|-----------|----------|------|-------|
-| Frontend | **Vercel** | FREE | Perfect for React/Vite, global CDN |
-| Backend | **Render** | FREE | Cold starts after 15min idle |
-| Database | **Neon.tech** | FREE | Already configured |
+| Component | Platform      | Cost | Notes                              |
+| --------- | ------------- | ---- | ---------------------------------- |
+| Frontend  | **Vercel**    | FREE | Perfect for React/Vite, global CDN |
+| Backend   | **Render**    | FREE | Cold starts after 15min idle       |
+| Database  | **Neon.tech** | FREE | Already configured                 |
 
 **Total Cost: $0/month**
 
@@ -263,44 +263,44 @@ Then update:
 
 ### Option 2: Railway (If Budget Allows - $5/month)
 
-| Component | Platform | Cost |
-|-----------|----------|------|
-| Frontend | Vercel | FREE |
-| Backend | Railway | $5/mo |
-| Database | Neon.tech | FREE |
+| Component | Platform  | Cost  |
+| --------- | --------- | ----- |
+| Frontend  | Vercel    | FREE  |
+| Backend   | Railway   | $5/mo |
+| Database  | Neon.tech | FREE  |
 
 **Pros:** No cold starts, better performance, better developer experience
 **Cons:** Costs $5/month
 
 ### Option 3: Fly.io (Free but Complex)
 
-| Component | Platform | Cost |
-|-----------|----------|------|
-| Frontend | Vercel | FREE |
-| Backend | Fly.io | FREE (limited) |
-| Database | Neon.tech | FREE |
+| Component | Platform  | Cost           |
+| --------- | --------- | -------------- |
+| Frontend  | Vercel    | FREE           |
+| Backend   | Fly.io    | FREE (limited) |
+| Database  | Neon.tech | FREE           |
 
 **Pros:** More control, Docker-based
 **Cons:** Reduced free tier, more complex setup, still has cold starts
 
 ### Option 4: All on Render (Simpler)
 
-| Component | Platform | Cost |
-|-----------|----------|------|
-| Frontend | Render Static | FREE |
-| Backend | Render Web Service | FREE |
-| Database | Neon.tech | FREE |
+| Component | Platform           | Cost |
+| --------- | ------------------ | ---- |
+| Frontend  | Render Static      | FREE |
+| Backend   | Render Web Service | FREE |
+| Database  | Neon.tech          | FREE |
 
 **Pros:** Single platform for frontend and backend
 **Cons:** Vercel is faster/better for frontend
 
 ### Option 5: DigitalOcean (Paid, More Control)
 
-| Component | Platform | Cost |
-|-----------|----------|------|
-| Frontend | Vercel | FREE |
-| Backend | DigitalOcean App Platform | $5/mo |
-| Database | Neon.tech | FREE |
+| Component | Platform                  | Cost  |
+| --------- | ------------------------- | ----- |
+| Frontend  | Vercel                    | FREE  |
+| Backend   | DigitalOcean App Platform | $5/mo |
+| Database  | Neon.tech                 | FREE  |
 
 **Total: $5/month**
 

@@ -539,10 +539,10 @@ export function InteractivePropertyMap({
   };
 
   // Helper function - kept for potential future use
+  // Security: Uses textContent instead of innerHTML to prevent XSS
   const extractRoadName = (htmlInstruction: string): string => {
-    const temp = document.createElement('div');
-    temp.innerHTML = htmlInstruction;
-    const text = temp.textContent || temp.innerText || '';
+    // Strip HTML tags safely using regex instead of innerHTML
+    const text = htmlInstruction.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
     const match = text.match(/(?:onto|along|on)\s+([^,\.]+)/i);
     return match ? match[1].trim() : '';
   };
@@ -829,10 +829,10 @@ export function InteractivePropertyMap({
   };
 
   // Clean HTML from instructions
+  // Security: Uses regex instead of innerHTML to prevent XSS
   const cleanInstruction = (html: string): string => {
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = html;
-    return tempDiv.textContent || tempDiv.innerText || '';
+    // Strip HTML tags safely using regex instead of innerHTML
+    return html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
   };
 
   // Detect property position (left/right) from directions

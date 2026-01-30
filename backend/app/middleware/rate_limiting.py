@@ -404,24 +404,31 @@ def configure_rate_limits():
 
     Called during application startup.
     """
-    # OCR endpoints (expensive, limit strictly)
+    # ===== SECURITY-CRITICAL: Authentication Endpoints =====
+    # Password reset - strict limits to prevent brute force
+    rate_limiter.configure_endpoint("/api/auth/reset-password", requests_per_minute=5)  # 5 attempts per minute
+    rate_limiter.configure_endpoint("/api/auth/forgot-password", requests_per_minute=3)  # 3 per minute per IP
+    rate_limiter.configure_endpoint("/api/auth/login", requests_per_minute=10)  # 10 login attempts per minute
+    rate_limiter.configure_endpoint("/api/auth/register", requests_per_minute=5)  # 5 registrations per minute
+
+    # ===== OCR endpoints (expensive, limit strictly) =====
     rate_limiter.configure_endpoint("/api/ocr/extract", requests_per_minute=10)
 
-    # AI generation endpoints (expensive)
+    # ===== AI generation endpoints (expensive) =====
     rate_limiter.configure_endpoint("/api/building/generate-description", requests_per_minute=20)
     rate_limiter.configure_endpoint("/api/land/generate-description", requests_per_minute=20)
     rate_limiter.configure_endpoint("/api/locality/generate-narrative", requests_per_minute=20)
 
-    # Document generation (resource intensive)
+    # ===== Document generation (resource intensive) =====
     rate_limiter.configure_endpoint("/api/reports", requests_per_minute=30)  # Prefix match for all report operations
     rate_limiter.configure_endpoint("/api/submit-and-generate", requests_per_minute=5)
 
-    # Maps API endpoints (has external quota)
+    # ===== Maps API endpoints (has external quota) =====
     rate_limiter.configure_endpoint("/api/maps/geocode", requests_per_minute=60)
     rate_limiter.configure_endpoint("/api/maps/directions", requests_per_minute=60)
     rate_limiter.configure_endpoint("/api/maps/static-map", requests_per_minute=60)
 
-    logger.info("✓ Rate limits configured for all endpoints")
+    logger.info("Rate limits configured for all endpoints")
 
 
 # ===== PERIODIC CLEANUP TASK =====

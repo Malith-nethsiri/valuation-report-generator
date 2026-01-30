@@ -1,0 +1,307 @@
+LOT_DESCRIPTION -> LOT_NUMBER MIGRATION AUDIT TRAIL
+================================================================================
+Migration Date: 2026-01-13T20:56:15.758344
+Total Records Migrated: 43
+================================================================================
+
+Type: REPORT
+ID: 39
+Field: lot_number
+Source: property_lot_description = 'lot 3'
+New Value: lot 3
+Timestamp: 2026-01-13T20:56:10.003361
+--------------------------------------------------------------------------------
+Type: REPORT
+ID: 54
+Field: lot_number
+Source: property_lot_description = 'Plan No 2009/K/30'
+New Value: Plan No 2009/K/30
+Timestamp: 2026-01-13T20:56:10.003579
+--------------------------------------------------------------------------------
+Type: REPORT
+ID: 70
+Field: lot_number
+Source: property_lot_description = 'lot 2'
+New Value: lot 2
+Timestamp: 2026-01-13T20:56:10.003734
+--------------------------------------------------------------------------------
+Type: REPORT
+ID: 67
+Field: lot_number
+Source: property_lot_description = 'Plan No 2009/K/30'
+New Value: Plan No 2009/K/30
+Timestamp: 2026-01-13T20:56:10.003928
+--------------------------------------------------------------------------------
+Type: REPORT
+ID: 37
+Field: lot_number
+Source: property_lot_description = 'lot 3'
+New Value: lot 3
+Timestamp: 2026-01-13T20:56:10.004085
+--------------------------------------------------------------------------------
+Type: REPORT
+ID: 38
+Field: lot_number
+Source: property_lot_description = 'lot 3'
+New Value: lot 3
+Timestamp: 2026-01-13T20:56:10.004230
+--------------------------------------------------------------------------------
+Type: REPORT
+ID: 36
+Field: lot_number
+Source: property_lot_description = 'lot 3'
+New Value: lot 3
+Timestamp: 2026-01-13T20:56:10.004376
+--------------------------------------------------------------------------------
+Type: REPORT
+ID: 72
+Field: lot_number
+Source: property_lot_description = 'Lot 2'
+New Value: Lot 2
+Timestamp: 2026-01-13T20:56:10.004519
+--------------------------------------------------------------------------------
+Type: PROPERTY
+ID: 36
+Field: lot_number
+Source: property_lot_description = 'Plan No 2009/K/30'
+New Value: Plan No 2009/K/30
+Timestamp: 2026-01-13T20:56:12.350747
+--------------------------------------------------------------------------------
+Type: PROPERTY
+ID: 38
+Field: lot_number
+Source: property_lot_description = 'Plan No 2009/K/30'
+New Value: Plan No 2009/K/30
+Timestamp: 2026-01-13T20:56:12.350901
+--------------------------------------------------------------------------------
+Type: PROPERTY
+ID: 40
+Field: lot_number
+Source: property_lot_description = 'Plan No 2009/K/30'
+New Value: Plan No 2009/K/30
+Timestamp: 2026-01-13T20:56:12.351014
+--------------------------------------------------------------------------------
+Type: PROPERTY
+ID: 46
+Field: lot_number
+Source: property_lot_description = 'Plan No 2009/K/30'
+New Value: Plan No 2009/K/30
+Timestamp: 2026-01-13T20:56:12.351147
+--------------------------------------------------------------------------------
+Type: PROPERTY
+ID: 54
+Field: lot_number
+Source: property_lot_description = 'Plan No 2009/K/30'
+New Value: Plan No 2009/K/30
+Timestamp: 2026-01-13T20:56:12.351288
+--------------------------------------------------------------------------------
+Type: PROPERTY
+ID: 58
+Field: lot_number
+Source: property_lot_description = 'Plan No 2009/K/30'
+New Value: Plan No 2009/K/30
+Timestamp: 2026-01-13T20:56:12.351409
+--------------------------------------------------------------------------------
+Type: PROPERTY
+ID: 64
+Field: lot_number
+Source: property_lot_description = 'Plan No 2009/K/30'
+New Value: Plan No 2009/K/30
+Timestamp: 2026-01-13T20:56:12.351527
+--------------------------------------------------------------------------------
+Type: PROPERTY
+ID: 10
+Field: lot_number
+Source: property_lot_description = 'Test Lot B'
+New Value: Test Lot B
+Timestamp: 2026-01-13T20:56:12.351654
+--------------------------------------------------------------------------------
+Type: PROPERTY
+ID: 42
+Field: lot_number
+Source: property_lot_description = 'Plan No 2009/K/30'
+New Value: Plan No 2009/K/30
+Timestamp: 2026-01-13T20:56:12.351769
+--------------------------------------------------------------------------------
+Type: PROPERTY
+ID: 44
+Field: lot_number
+Source: property_lot_description = 'Plan No 2009/K/30'
+New Value: Plan No 2009/K/30
+Timestamp: 2026-01-13T20:56:12.351876
+--------------------------------------------------------------------------------
+Type: PROPERTY
+ID: 50
+Field: lot_number
+Source: property_lot_description = 'Plan No 2009/K/30'
+New Value: Plan No 2009/K/30
+Timestamp: 2026-01-13T20:56:12.351981
+--------------------------------------------------------------------------------
+Type: PROPERTY
+ID: 56
+Field: lot_number
+Source: property_lot_description = 'Plan No 2009/K/30'
+New Value: Plan No 2009/K/30
+Timestamp: 2026-01-13T20:56:12.352103
+--------------------------------------------------------------------------------
+Type: PROPERTY
+ID: 48
+Field: lot_number
+Source: property_lot_description = 'Plan No 2009/K/30'
+New Value: Plan No 2009/K/30
+Timestamp: 2026-01-13T20:56:12.352253
+--------------------------------------------------------------------------------
+Type: PROPERTY
+ID: 52
+Field: lot_number
+Source: property_lot_description = 'Plan No 2009/K/30'
+New Value: Plan No 2009/K/30
+Timestamp: 2026-01-13T20:56:12.352378
+--------------------------------------------------------------------------------
+Type: PROPERTY
+ID: 60
+Field: lot_number
+Source: property_lot_description = 'Plan No 2009/K/30'
+New Value: Plan No 2009/K/30
+Timestamp: 2026-01-13T20:56:12.352483
+--------------------------------------------------------------------------------
+Type: PROPERTY
+ID: 62
+Field: lot_number
+Source: property_lot_description = 'Plan No 2009/K/30'
+New Value: Plan No 2009/K/30
+Timestamp: 2026-01-13T20:56:12.352585
+--------------------------------------------------------------------------------
+Type: PROPERTY
+ID: 22
+Field: lot_number
+Source: property_lot_description = 'B-456'
+New Value: B-456
+Timestamp: 2026-01-13T20:56:12.352695
+--------------------------------------------------------------------------------
+Type: PROPERTY
+ID: 23
+Field: lot_number
+Source: property_lot_description = 'C-789'
+New Value: C-789
+Timestamp: 2026-01-13T20:56:12.352801
+--------------------------------------------------------------------------------
+Type: PROPERTY
+ID: 24
+Field: lot_number
+Source: property_lot_description = 'A-123'
+New Value: A-123
+Timestamp: 2026-01-13T20:56:12.352905
+--------------------------------------------------------------------------------
+Type: PROPERTY
+ID: 25
+Field: lot_number
+Source: property_lot_description = 'B-456'
+New Value: B-456
+Timestamp: 2026-01-13T20:56:12.353009
+--------------------------------------------------------------------------------
+Type: PROPERTY
+ID: 26
+Field: lot_number
+Source: property_lot_description = 'C-789'
+New Value: C-789
+Timestamp: 2026-01-13T20:56:12.353127
+--------------------------------------------------------------------------------
+Type: PROPERTY
+ID: 9
+Field: lot_number
+Source: property_lot_description = 'Template Property'
+New Value: Template Property
+Timestamp: 2026-01-13T20:56:12.353259
+--------------------------------------------------------------------------------
+Type: PROPERTY
+ID: 8
+Field: lot_number
+Source: property_lot_description = 'Test Lot A'
+New Value: Test Lot A
+Timestamp: 2026-01-13T20:56:12.353368
+--------------------------------------------------------------------------------
+Type: PROPERTY
+ID: 12
+Field: lot_number
+Source: property_lot_description = 'A-123'
+New Value: A-123
+Timestamp: 2026-01-13T20:56:12.353477
+--------------------------------------------------------------------------------
+Type: PROPERTY
+ID: 13
+Field: lot_number
+Source: property_lot_description = 'B-456'
+New Value: B-456
+Timestamp: 2026-01-13T20:56:12.353572
+--------------------------------------------------------------------------------
+Type: PROPERTY
+ID: 14
+Field: lot_number
+Source: property_lot_description = 'C-789'
+New Value: C-789
+Timestamp: 2026-01-13T20:56:12.353665
+--------------------------------------------------------------------------------
+Type: PROPERTY
+ID: 15
+Field: lot_number
+Source: property_lot_description = 'A-123'
+New Value: A-123
+Timestamp: 2026-01-13T20:56:12.353755
+--------------------------------------------------------------------------------
+Type: PROPERTY
+ID: 16
+Field: lot_number
+Source: property_lot_description = 'B-456'
+New Value: B-456
+Timestamp: 2026-01-13T20:56:12.353847
+--------------------------------------------------------------------------------
+Type: PROPERTY
+ID: 17
+Field: lot_number
+Source: property_lot_description = 'C-789'
+New Value: C-789
+Timestamp: 2026-01-13T20:56:12.353938
+--------------------------------------------------------------------------------
+Type: PROPERTY
+ID: 18
+Field: lot_number
+Source: property_lot_description = 'A-123'
+New Value: A-123
+Timestamp: 2026-01-13T20:56:12.354028
+--------------------------------------------------------------------------------
+Type: PROPERTY
+ID: 19
+Field: lot_number
+Source: property_lot_description = 'B-456'
+New Value: B-456
+Timestamp: 2026-01-13T20:56:12.354132
+--------------------------------------------------------------------------------
+Type: PROPERTY
+ID: 20
+Field: lot_number
+Source: property_lot_description = 'C-789'
+New Value: C-789
+Timestamp: 2026-01-13T20:56:12.354240
+--------------------------------------------------------------------------------
+Type: PROPERTY
+ID: 21
+Field: lot_number
+Source: property_lot_description = 'A-123'
+New Value: A-123
+Timestamp: 2026-01-13T20:56:12.354341
+--------------------------------------------------------------------------------
+Type: PROPERTY
+ID: 32
+Field: lot_number
+Source: property_lot_description = 'Plan No 2009/K/30'
+New Value: Plan No 2009/K/30
+Timestamp: 2026-01-13T20:56:12.354451
+--------------------------------------------------------------------------------
+Type: PROPERTY
+ID: 35
+Field: lot_number
+Source: property_lot_description = 'Plan No 2009/K/30'
+New Value: Plan No 2009/K/30
+Timestamp: 2026-01-13T20:56:12.354559
+--------------------------------------------------------------------------------

@@ -1,26 +1,46 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
     Plus, FileText, User, Settings, LogOut, Search, Bell,
     Filter, MoreVertical, Calendar, TrendingUp, Award,
     ChevronDown, Menu, X, Home, BarChart3, Users,
-    Shield, Zap, Clock, Download, Copy, AlertCircle, CheckCircle, Trash2, Edit
+    Shield, Zap, Clock, Download, Copy, AlertCircle, CheckCircle, Trash2, Edit, MapPin,
+    Car, Library
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { reportApi } from '../services/api';
 import { Report } from '../types';
 import { Button } from '../components/Button';
 import { DeleteConfirmDialog } from '../components/DeleteConfirmDialog';
+import { ReportsPagination } from '../components/ReportsPagination';
+import { ReportsFilterPanel } from '../components/ReportsFilterPanel';
+import { useReportsPagination } from '../hooks/useReportsPagination';
 import toast from 'react-hot-toast';
 
 const DashboardPage: React.FC = () => {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
-    const [reports, setReports] = useState<Report[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
+
+    // Use the pagination hook for reports management
+    const {
+        reports,
+        stats,
+        currentPage,
+        totalPages,
+        total,
+        filters,
+        isFiltersVisible,
+        isLoading,
+        goToNextPage,
+        goToPreviousPage,
+        setFilters,
+        clearFilters,
+        toggleFiltersVisibility,
+        resetAndRefresh,
+    } = useReportsPagination();
+
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
-    const [searchQuery, setSearchQuery] = useState('');
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [reportToDelete, setReportToDelete] = useState<Report | null>(null);
 
@@ -47,21 +67,6 @@ const DashboardPage: React.FC = () => {
 
     const profileComplete = isProfileComplete();
 
-    useEffect(() => {
-        const fetchReports = async () => {
-            try {
-                const userReports = await reportApi.getReports();
-                setReports(userReports);
-            } catch (error) {
-                console.error('Failed to fetch reports:', error);
-            } finally {
-                setIsLoading(false);
-            }
-        };
-
-        fetchReports();
-    }, []);
-
     const handleLogout = () => {
         logout();
         navigate('/');
@@ -78,8 +83,8 @@ const DashboardPage: React.FC = () => {
 
         try {
             await reportApi.deleteReport(reportToDelete.id);
-            setReports(reports.filter(r => r.id !== reportToDelete.id));
             setReportToDelete(null);
+            resetAndRefresh();
         } catch (error) {
             console.error('Failed to delete report:', error);
         }
@@ -89,8 +94,8 @@ const DashboardPage: React.FC = () => {
         e.stopPropagation();
 
         try {
-            const newReport = await reportApi.duplicateReport(report.id);
-            setReports(prev => [newReport, ...prev]);
+            await reportApi.duplicateReport(report.id);
+            resetAndRefresh();
             toast.success('Report duplicated successfully');
         } catch (error) {
             console.error('Failed to duplicate report:', error);
@@ -99,15 +104,15 @@ const DashboardPage: React.FC = () => {
     };
 
     const quickStats = [
-        { label: 'Total Reports', value: reports.length, icon: FileText, color: 'from-blue-500 to-indigo-600' },
-        { label: 'This Month', value: reports.filter(r => new Date(r.created_at).getMonth() === new Date().getMonth()).length, icon: TrendingUp, color: 'from-emerald-500 to-green-600' },
-        { label: 'Completed', value: reports.filter(r => r.status === 'completed').length, icon: Award, color: 'from-violet-500 to-purple-600' },
-        { label: 'Draft', value: reports.filter(r => r.status === 'draft').length, icon: Clock, color: 'from-orange-500 to-red-500' },
+        { label: 'Total Reports', value: stats.total_count, icon: FileText, color: 'from-blue-500 to-indigo-600' },
+        { label: 'This Month', value: stats.this_month_count, icon: TrendingUp, color: 'from-emerald-500 to-green-600' },
+        { label: 'Completed', value: stats.completed_count, icon: Award, color: 'from-violet-500 to-purple-600' },
+        { label: 'Draft', value: stats.draft_count, icon: Clock, color: 'from-orange-500 to-red-500' },
     ];
 
     const sidebarItems = [
         { icon: Home, label: 'Dashboard', active: true },
-        { icon: FileText, label: 'Reports', count: reports.length },
+        { icon: FileText, label: 'Reports', count: stats.total_count },
         { icon: BarChart3, label: 'Analytics' },
         { icon: Users, label: 'Clients' },
         { icon: Settings, label: 'Settings' },
@@ -147,9 +152,9 @@ const DashboardPage: React.FC = () => {
                                 </div>
                                 <input
                                     type="text"
-                                    placeholder="Search reports..."
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    placeholder="Search by applicant name..."
+                                    value={filters.applicant_name || ''}
+                                    onChange={(e) => setFilters({ applicant_name: e.target.value })}
                                     className="w-full pl-10 pr-4 py-2 bg-gray-100/50 border border-gray-200/50 rounded-2xl focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-violet-500 transition-all duration-200"
                                 />
                             </div>
@@ -225,6 +230,14 @@ const DashboardPage: React.FC = () => {
                                 <Plus className="h-5 w-5 mr-2 group-hover:rotate-90 transition-transform duration-200" />
                                 Create Report
                             </Button>
+                            <Button
+                                onClick={() => navigate('/vehicle-library')}
+                                variant="outline"
+                                className="w-full border-cyan-200 text-cyan-700 hover:bg-cyan-50 font-medium py-3 px-4 rounded-2xl transition-all duration-200 group"
+                            >
+                                <Library className="h-5 w-5 mr-2 text-cyan-500" />
+                                Vehicle Library
+                            </Button>
                         </div>
 
                         {/* Navigation */}
@@ -257,12 +270,12 @@ const DashboardPage: React.FC = () => {
                             <div className="space-y-2">
                                 <div className="flex justify-between items-center">
                                     <span className="text-xs text-gray-600">Total Reports</span>
-                                    <span className="text-sm font-bold text-violet-600">{reports.length}</span>
+                                    <span className="text-sm font-bold text-violet-600">{stats.total_count}</span>
                                 </div>
                                 <div className="flex justify-between items-center">
-                                    <span className="text-xs text-gray-600">This Week</span>
+                                    <span className="text-xs text-gray-600">This Month</span>
                                     <span className="text-sm font-bold text-green-600">
-                                        {reports.filter(r => new Date(r.created_at).getTime() > Date.now() - 7 * 24 * 60 * 60 * 1000).length}
+                                        {stats.this_month_count}
                                     </span>
                                 </div>
                             </div>
@@ -358,9 +371,24 @@ const DashboardPage: React.FC = () => {
                         <div className="bg-white/60 backdrop-blur-sm rounded-3xl border border-white/20 shadow-xl">
                             <div className="p-6 border-b border-gray-200/50">
                                 <div className="flex items-center justify-between">
-                                    <h2 className="text-xl font-bold text-gray-900">Recent Reports</h2>
+                                    <div className="flex items-center gap-3">
+                                        <h2 className="text-xl font-bold text-gray-900">Reports</h2>
+                                        {total > 0 && (
+                                            <span className="text-sm text-gray-500">
+                                                ({total} {total === 1 ? 'report' : 'reports'})
+                                            </span>
+                                        )}
+                                    </div>
                                     <div className="flex space-x-3">
-                                        <button className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-xl transition-all duration-200">
+                                        <button
+                                            onClick={toggleFiltersVisibility}
+                                            className={`p-2 rounded-xl transition-all duration-200 ${
+                                                isFiltersVisible
+                                                    ? 'text-violet-600 bg-violet-100'
+                                                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-100'
+                                            }`}
+                                            title="Toggle filters"
+                                        >
                                             <Filter className="h-5 w-5" />
                                         </button>
                                         <button className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-xl transition-all duration-200">
@@ -371,6 +399,15 @@ const DashboardPage: React.FC = () => {
                             </div>
 
                             <div className="p-6">
+                                {/* Filter Panel */}
+                                <ReportsFilterPanel
+                                    isVisible={isFiltersVisible}
+                                    filters={filters}
+                                    onFilterChange={setFilters}
+                                    onClearFilters={clearFilters}
+                                    isLoading={isLoading}
+                                />
+
                                 {isLoading ? (
                                     <div className="space-y-4">
                                         {[1, 2, 3].map((i) => (
@@ -382,19 +419,36 @@ const DashboardPage: React.FC = () => {
                                         <div className="w-24 h-24 bg-gradient-to-br from-violet-100 to-purple-200 rounded-3xl flex items-center justify-center mx-auto mb-4">
                                             <FileText className="h-12 w-12 text-violet-600" />
                                         </div>
-                                        <h3 className="text-lg font-semibold text-gray-900 mb-2">No reports yet</h3>
-                                        <p className="text-gray-600 mb-6">Create your first report to get started!</p>
-                                        <Button
-                                            onClick={() => navigate('/reports/new')}
-                                            className="bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white px-6 py-3 rounded-2xl font-semibold"
-                                        >
-                                            <Plus className="h-5 w-5 mr-2" />
-                                            Create Your First Report
-                                        </Button>
+                                        <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                                            {(filters.reference || filters.applicant_name || filters.village || filters.report_date)
+                                                ? 'No matching reports'
+                                                : 'No reports yet'}
+                                        </h3>
+                                        <p className="text-gray-600 mb-6">
+                                            {(filters.reference || filters.applicant_name || filters.village || filters.report_date)
+                                                ? 'Try adjusting your filters or clear them to see all reports.'
+                                                : 'Create your first report to get started!'}
+                                        </p>
+                                        {(filters.reference || filters.applicant_name || filters.village || filters.report_date) ? (
+                                            <Button
+                                                onClick={clearFilters}
+                                                className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-6 py-3 rounded-2xl font-semibold"
+                                            >
+                                                Clear Filters
+                                            </Button>
+                                        ) : (
+                                            <Button
+                                                onClick={() => navigate('/reports/new')}
+                                                className="bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white px-6 py-3 rounded-2xl font-semibold"
+                                            >
+                                                <Plus className="h-5 w-5 mr-2" />
+                                                Create Your First Report
+                                            </Button>
+                                        )}
                                     </div>
                                 ) : (
                                     <div className="space-y-3">
-                                        {[...reports].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 5).map((report, index) => (
+                                        {reports.map((report) => (
                                             <div
                                                 key={report.id}
                                                 className="flex items-center justify-between p-4 bg-gray-50/50 rounded-2xl border border-gray-100 hover:bg-gray-100/50 hover:border-gray-200 transition-all duration-200 cursor-pointer group"
@@ -421,6 +475,12 @@ const DashboardPage: React.FC = () => {
                                                                 <span className="flex items-center">
                                                                     <User className="h-3.5 w-3.5 mr-1" />
                                                                     {report.applicant_full_name}
+                                                                </span>
+                                                            )}
+                                                            {report.property_village && (
+                                                                <span className="flex items-center">
+                                                                    <MapPin className="h-3.5 w-3.5 mr-1" />
+                                                                    {report.property_village}
                                                                 </span>
                                                             )}
                                                             <span className="flex items-center">
@@ -483,13 +543,15 @@ const DashboardPage: React.FC = () => {
                                             </div>
                                         ))}
 
-                                        {reports.length > 5 && (
-                                            <div className="pt-4 text-center">
-                                                <button className="text-violet-600 hover:text-violet-700 font-medium transition-colors duration-200">
-                                                    View all reports ({reports.length})
-                                                </button>
-                                            </div>
-                                        )}
+                                        {/* Pagination */}
+                                        <ReportsPagination
+                                            currentPage={currentPage}
+                                            totalPages={totalPages}
+                                            total={total}
+                                            onPreviousPage={goToPreviousPage}
+                                            onNextPage={goToNextPage}
+                                            isLoading={isLoading}
+                                        />
                                     </div>
                                 )}
                             </div>

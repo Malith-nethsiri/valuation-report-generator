@@ -382,7 +382,6 @@ type FormData = z.infer<typeof completeFormSchema> & {
     notary_location?: string;
     // Location & Access fields (not validated by Zod)
     use_property_address_as_applicant?: boolean; // Reversed: applicant uses property address
-    property_name?: string;
     assessment_number?: string;
     property_village?: string;
     property_divisional_secretariat?: string;
@@ -2171,7 +2170,6 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
             pradeshiya_sabha: undefined,
             ward_number: undefined,
             is_municipal_limit: undefined,
-            property_name: undefined,
             assessment_number: undefined,
             property_road_position: undefined,
             location_direction: undefined,

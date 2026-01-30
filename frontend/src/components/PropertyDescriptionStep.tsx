@@ -357,6 +357,42 @@ export const PropertyDescriptionStep: React.FC<PropertyDescriptionStepProps> = (
     }
   }, []);
 
+  // Auto-fill occupier info from applicant name when step loads
+  useEffect(() => {
+    const applicantFullName = watch('applicant_full_name');
+    const currentOccupierName = watch('occupier_name');
+
+    // Only auto-fill if occupier_name is empty and applicant name exists
+    if (!currentOccupierName && applicantFullName) {
+      setValue('occupier_name', applicantFullName);
+      setValue('occupier_relationship', 'owner');
+    }
+
+    // Also auto-fill for all existing buildings
+    const currentBuildings = watch('buildings') || [];
+    if (currentBuildings.length > 0 && applicantFullName) {
+      const updatedBuildings = currentBuildings.map((building: Building) => {
+        if (!building.occupier_name) {
+          return {
+            ...building,
+            occupier_name: applicantFullName,
+            occupier_relationship: 'owner'
+          };
+        }
+        return building;
+      });
+
+      // Only update if changes were made
+      const hasChanges = updatedBuildings.some((b: Building, i: number) =>
+        b.occupier_name !== currentBuildings[i].occupier_name
+      );
+      if (hasChanges) {
+        setValue('buildings', updatedBuildings);
+        setBuildings(updatedBuildings);
+      }
+    }
+  }, []); // Run once on mount (when step is reached)
+
   // Watch form values for auto-generation
   const landShape = watch('land_shape');
   const landType = watch('land_type');
@@ -463,6 +499,9 @@ export const PropertyDescriptionStep: React.FC<PropertyDescriptionStepProps> = (
 
   // Add new building
   const addBuilding = () => {
+    // Auto-fill occupier info from applicant name for new buildings
+    const applicantFullName = watch('applicant_full_name') || '';
+
     const newBuilding: Building = {
       id: `building_${Date.now()}`,
       building_name: '',
@@ -470,8 +509,8 @@ export const PropertyDescriptionStep: React.FC<PropertyDescriptionStepProps> = (
       stories: 1,
       building_age: 0,
       condition: 'fair',
-      occupier_name: '',
-      occupier_relationship: '',
+      occupier_name: applicantFullName,
+      occupier_relationship: applicantFullName ? 'owner' : '',
       roof_types: [],
       roof_description: '',
       wall_types: [],
@@ -743,6 +782,18 @@ export const PropertyDescriptionStep: React.FC<PropertyDescriptionStepProps> = (
     });
     setBuildings(updated);
     setValue('buildings', updated);
+
+    // Auto-scroll to newly added room after render
+    setTimeout(() => {
+      const building = updated.find(b => b.id === buildingId);
+      if (building?.rooms?.length) {
+        const roomIndex = building.rooms.length - 1;
+        const roomElement = document.querySelector(
+          `[data-room-id="${buildingId}-${roomIndex}"]`
+        );
+        roomElement?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 100);
   };
 
   // NEW: Update room in building
@@ -2444,19 +2495,10 @@ export const PropertyDescriptionStep: React.FC<PropertyDescriptionStepProps> = (
 
                           {/* NEW: Building-Level Room Details Section */}
                           <div className="border-2 border-green-200 rounded-xl p-5 mb-4 bg-green-50">
-                            <div className="flex items-center justify-between mb-4">
+                            <div className="mb-4">
                               <h4 className="text-lg font-semibold text-green-900">
                                 Room Details (Building-wide)
                               </h4>
-                              <Button
-                                type="button"
-                                size="sm"
-                                onClick={() => addRoomToBuilding(building.id)}
-                                className="bg-green-600 hover:bg-green-700"
-                              >
-                                <Plus className="h-4 w-4 mr-1" />
-                                Add Room
-                              </Button>
                             </div>
 
                             {/* Live Accommodation Summary Badges */}
@@ -2528,7 +2570,7 @@ export const PropertyDescriptionStep: React.FC<PropertyDescriptionStepProps> = (
                             ) : (
                               <div className="space-y-3">
                                 {(building.rooms || []).map((room, roomIdx) => (
-                                  <div key={roomIdx} className="bg-white border border-green-200 rounded-lg p-3">
+                                  <div key={roomIdx} data-room-id={`${building.id}-${roomIdx}`} className="bg-white border border-green-200 rounded-lg p-3">
                                     <div className="grid grid-cols-12 gap-3 items-end">
                                       <div className="col-span-6">
                                         <Label className="text-xs">Room Type</Label>
@@ -2583,6 +2625,19 @@ export const PropertyDescriptionStep: React.FC<PropertyDescriptionStepProps> = (
                                 ))}
                               </div>
                             )}
+
+                            {/* Add Room Button - Bottom Right */}
+                            <div className="flex justify-end mt-3">
+                              <Button
+                                type="button"
+                                size="sm"
+                                onClick={() => addRoomToBuilding(building.id)}
+                                className="bg-green-600 hover:bg-green-700"
+                              >
+                                <Plus className="h-4 w-4 mr-1" />
+                                Add Room
+                              </Button>
+                            </div>
                           </div>
                         </div>
 

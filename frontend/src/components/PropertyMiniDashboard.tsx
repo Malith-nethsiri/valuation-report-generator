@@ -27,14 +27,15 @@ import {
     Building,
     Sprout,
     MapPin,
-    Plus
+    Plus,
+    Car
 } from 'lucide-react';
 import { AddPropertyDialog } from './AddPropertyDialog';
 import toast from 'react-hot-toast';
 
 export interface PropertyInReport {
     id: string | number; // temp ID or DB ID
-    type: 'residential' | 'bare_land';
+    type: 'residential' | 'bare_land' | 'vehicle';
     order: number;
     status: 'draft' | 'completed';
     data: {
@@ -43,6 +44,11 @@ export interface PropertyInReport {
         lot_number?: string;
         property_lot_description?: string;  // deprecated
         plan_number?: string;
+        // Vehicle-specific fields
+        registration_number?: string;
+        make?: string;
+        model?: string;
+        market_value?: number;
         [key: string]: any;
     };
 }
@@ -54,7 +60,7 @@ interface PropertyMiniDashboardProps {
     onMoveUp: (propertyId: string | number) => void;
     onMoveDown: (propertyId: string | number) => void;
     onDuplicate: (propertyId: string | number) => void;
-    onAddBatch: (type: 'residential' | 'bare_land', count: number) => void;
+    onAddBatch: (type: 'residential' | 'bare_land' | 'vehicle', count: number) => void;
 }
 
 export const PropertyMiniDashboard: React.FC<PropertyMiniDashboardProps> = ({
@@ -67,17 +73,18 @@ export const PropertyMiniDashboard: React.FC<PropertyMiniDashboardProps> = ({
     onAddBatch
 }) => {
     const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-    const [selectedPropertyType, setSelectedPropertyType] = useState<'residential' | 'bare_land' | null>(null);
+    const [selectedPropertyType, setSelectedPropertyType] = useState<'residential' | 'bare_land' | 'vehicle' | null>(null);
 
     // Sort properties by order
     const sortedProperties = [...properties].sort((a, b) => a.order - b.order);
 
-    // Count residential and bare land properties
+    // Count residential, bare land, and vehicle properties
     const residentialCount = properties.filter(p => p.type === 'residential').length;
     const bareLandCount = properties.filter(p => p.type === 'bare_land').length;
+    const vehicleCount = properties.filter(p => p.type === 'vehicle').length;
 
     // Handle type card click
-    const handleTypeCardClick = (type: 'residential' | 'bare_land') => {
+    const handleTypeCardClick = (type: 'residential' | 'bare_land' | 'vehicle') => {
         const totalCount = properties.length;
         if (totalCount >= 20) {
             toast.error('Maximum 20 properties reached');
@@ -105,8 +112,21 @@ export const PropertyMiniDashboard: React.FC<PropertyMiniDashboardProps> = ({
         return propertiesOfSameType.findIndex(p => p.id === property.id) + 1;
     };
 
-    // Get property display address
+    // Get property display address (or vehicle info)
     const getPropertyAddress = (property: PropertyInReport) => {
+        // Handle vehicle type differently
+        if (property.type === 'vehicle') {
+            const { registration_number, make, model } = property.data;
+            if (make || model) {
+                return `${make || ''} ${model || ''}${registration_number ? ' (' + registration_number + ')' : ''}`.trim();
+            }
+            if (registration_number) {
+                return registration_number;
+            }
+            return 'No vehicle details entered yet';
+        }
+
+        // Handle property types
         const { property_village, property_district, lot_number, property_lot_description, plan_number } = property.data;
 
         if (property_village || property_district) {
@@ -134,7 +154,7 @@ export const PropertyMiniDashboard: React.FC<PropertyMiniDashboardProps> = ({
             </div>
 
             {/* Property Type Selector Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* Residential/Commercial Card */}
                 <button
                     onClick={() => handleTypeCardClick('residential')}
@@ -200,20 +220,63 @@ export const PropertyMiniDashboard: React.FC<PropertyMiniDashboardProps> = ({
                         <p className="text-xs text-red-600 mt-2">Maximum limit reached</p>
                     )}
                 </button>
+
+                {/* Vehicle Card */}
+                <button
+                    onClick={() => handleTypeCardClick('vehicle')}
+                    disabled={properties.length >= 20}
+                    className={`bg-white/60 backdrop-blur-sm rounded-3xl p-6 border-2 transition-all duration-300 text-left group ${
+                        properties.length >= 20
+                            ? 'border-gray-200 opacity-50 cursor-not-allowed'
+                            : 'border-cyan-200 hover:border-cyan-400 hover:shadow-xl cursor-pointer transform hover:scale-[1.02]'
+                    }`}
+                >
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                            <div className="p-3 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-2xl shadow-lg">
+                                <Car className="h-8 w-8 text-white" />
+                            </div>
+                            <div>
+                                <h3 className="text-lg font-bold text-gray-900">Vehicle</h3>
+                                <p className="text-sm text-gray-600">Cars, motorcycles, trucks</p>
+                            </div>
+                        </div>
+                        <div className={`p-3 rounded-full ${properties.length >= 20 ? 'bg-gray-100' : 'bg-cyan-100 group-hover:bg-cyan-200'} transition-colors duration-200`}>
+                            <Plus className={`h-6 w-6 ${properties.length >= 20 ? 'text-gray-400' : 'text-cyan-600'}`} />
+                        </div>
+                    </div>
+                    <div className="flex items-baseline gap-2">
+                        <span className="text-3xl font-bold text-cyan-600">{vehicleCount}</span>
+                        <span className="text-sm text-gray-600">{vehicleCount === 1 ? 'vehicle' : 'vehicles'}</span>
+                    </div>
+                    {properties.length >= 20 && (
+                        <p className="text-xs text-red-600 mt-2">Maximum limit reached</p>
+                    )}
+                </button>
             </div>
 
             {/* Total Summary */}
             <div className="bg-gradient-to-br from-violet-50 to-purple-50 rounded-2xl p-4 border border-violet-200">
                 <div className="flex items-center justify-between">
                     <div>
-                        <p className="text-sm text-gray-600">Total Properties</p>
+                        <p className="text-sm text-gray-600">Total Assets</p>
                         <p className="text-2xl font-bold text-gray-900">{properties.length} / 20</p>
                     </div>
-                    <div className="text-right">
-                        <p className="text-sm text-gray-600">Completed</p>
-                        <p className="text-2xl font-bold text-green-600">
-                            {properties.filter(p => p.status === 'completed').length}
-                        </p>
+                    <div className="flex gap-6">
+                        <div className="text-center">
+                            <p className="text-xs text-gray-500">Properties</p>
+                            <p className="text-lg font-bold text-blue-600">{residentialCount + bareLandCount}</p>
+                        </div>
+                        <div className="text-center">
+                            <p className="text-xs text-gray-500">Vehicles</p>
+                            <p className="text-lg font-bold text-cyan-600">{vehicleCount}</p>
+                        </div>
+                        <div className="text-center">
+                            <p className="text-xs text-gray-500">Completed</p>
+                            <p className="text-lg font-bold text-green-600">
+                                {properties.filter(p => p.status === 'completed').length}
+                            </p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -232,32 +295,54 @@ export const PropertyMiniDashboard: React.FC<PropertyMiniDashboardProps> = ({
                         const isLast = index === sortedProperties.length - 1;
                         const propertyNumber = getPropertyNumber(property);
                         const isResidential = property.type === 'residential';
+                        const isVehicle = property.type === 'vehicle';
+
+                        // Determine colors and icons based on type
+                        const getTypeConfig = () => {
+                            if (isVehicle) {
+                                return {
+                                    hoverBorder: 'hover:border-cyan-300',
+                                    bgGradient: 'bg-gradient-to-br from-cyan-500 to-blue-600',
+                                    icon: <Car className="h-6 w-6 text-white" />,
+                                    label: 'Vehicle',
+                                    editColor: 'text-cyan-600 hover:bg-cyan-50'
+                                };
+                            } else if (isResidential) {
+                                return {
+                                    hoverBorder: 'hover:border-blue-300',
+                                    bgGradient: 'bg-gradient-to-br from-blue-500 to-indigo-600',
+                                    icon: <Building className="h-6 w-6 text-white" />,
+                                    label: 'Residential',
+                                    editColor: 'text-blue-600 hover:bg-blue-50'
+                                };
+                            } else {
+                                return {
+                                    hoverBorder: 'hover:border-green-300',
+                                    bgGradient: 'bg-gradient-to-br from-green-500 to-emerald-600',
+                                    icon: <Sprout className="h-6 w-6 text-white" />,
+                                    label: 'Bare Land',
+                                    editColor: 'text-green-600 hover:bg-green-50'
+                                };
+                            }
+                        };
+
+                        const typeConfig = getTypeConfig();
 
                         return (
                             <div
                                 key={property.id}
-                                className={`flex items-center gap-4 p-4 bg-gray-50/50 rounded-2xl border border-gray-100 hover:bg-gray-100/50 hover:border-gray-200 transition-all duration-200 ${
-                                    isResidential ? 'hover:border-blue-300' : 'hover:border-green-300'
-                                }`}
+                                className={`flex items-center gap-4 p-4 bg-gray-50/50 rounded-2xl border border-gray-100 hover:bg-gray-100/50 hover:border-gray-200 transition-all duration-200 ${typeConfig.hoverBorder}`}
                             >
                                 {/* Property Icon Badge */}
-                                <div className={`flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center ${
-                                    isResidential
-                                        ? 'bg-gradient-to-br from-blue-500 to-indigo-600'
-                                        : 'bg-gradient-to-br from-green-500 to-emerald-600'
-                                }`}>
-                                    {isResidential ? (
-                                        <Building className="h-6 w-6 text-white" />
-                                    ) : (
-                                        <Sprout className="h-6 w-6 text-white" />
-                                    )}
+                                <div className={`flex-shrink-0 w-12 h-12 rounded-xl flex items-center justify-center ${typeConfig.bgGradient}`}>
+                                    {typeConfig.icon}
                                 </div>
 
                                 {/* Property Info */}
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2 mb-1">
                                         <h3 className="font-semibold text-gray-900">
-                                            {isResidential ? 'Residential' : 'Bare Land'} Property {propertyNumber}
+                                            {typeConfig.label} {isVehicle ? '' : 'Property '}{propertyNumber}
                                         </h3>
                                         <span className={`px-2 py-1 rounded-full text-xs font-bold ${
                                             property.status === 'completed'
@@ -279,12 +364,8 @@ export const PropertyMiniDashboard: React.FC<PropertyMiniDashboardProps> = ({
                                     {/* Edit Button */}
                                     <button
                                         onClick={() => onEdit(property.id)}
-                                        className={`p-2 rounded-xl transition-all duration-200 ${
-                                            isResidential
-                                                ? 'text-blue-600 hover:bg-blue-50'
-                                                : 'text-green-600 hover:bg-green-50'
-                                        }`}
-                                        title="Edit Property"
+                                        className={`p-2 rounded-xl transition-all duration-200 ${typeConfig.editColor}`}
+                                        title={isVehicle ? "Edit Vehicle" : "Edit Property"}
                                     >
                                         <Edit className="h-5 w-5" />
                                     </button>
@@ -338,11 +419,12 @@ export const PropertyMiniDashboard: React.FC<PropertyMiniDashboardProps> = ({
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
                 <h4 className="font-semibold text-blue-900 mb-2">Quick Tips</h4>
                 <ul className="text-sm text-blue-800 space-y-1">
-                    <li>• Click a property type card above to add new properties</li>
-                    <li>• Click "Edit" to fill in property details and mark as completed</li>
-                    <li>• Use "Move Up/Down" to reorder properties (affects final report order)</li>
-                    <li>• Click "Copy" to duplicate a property with all its data (max 20 total)</li>
-                    <li>• At least 1 completed property is required to generate the report</li>
+                    <li>• Click a card above to add properties or vehicles</li>
+                    <li>• Click "Edit" to fill in details and mark as completed</li>
+                    <li>• Use "Move Up/Down" to reorder items (affects final report order)</li>
+                    <li>• Click "Copy" to duplicate with all data (max 20 total)</li>
+                    <li>• At least 1 completed item is required to generate the report</li>
+                    <li>• Vehicles and properties can be mixed in the same report</li>
                 </ul>
             </div>
 

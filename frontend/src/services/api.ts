@@ -11,7 +11,16 @@ import type {
   Report,
   ReportCreate,
   TemplateMetadata,
-  TemplateListResponse
+  TemplateListResponse,
+  PaginatedReportResponse,
+  ReportFilters,
+  AdjacentDateResponse,
+  Vehicle,
+  VehicleCreate,
+  VehicleUpdate,
+  VehicleTemplate,
+  ReportVehicle,
+  VehicleValuationSuggestion
 } from '../types';
 import { authTokenStorage } from '../utils/secureStorage';
 import { API_URL } from '../config';
@@ -359,9 +368,40 @@ export const letterheadApi = {
 
 // Report API
 export const reportApi = {
-  getReports: async (): Promise<Report[]> => {
-    const response = await api.get<Report[]>('/api/reports');
+  getReports: async (
+    page: number = 1,
+    pageSize: number = 8,
+    filters?: ReportFilters
+  ): Promise<PaginatedReportResponse> => {
+    const params = new URLSearchParams();
+    params.append('page', page.toString());
+    params.append('page_size', pageSize.toString());
+
+    if (filters?.reference) {
+      params.append('reference', filters.reference);
+    }
+    if (filters?.applicant_name) {
+      params.append('applicant_name', filters.applicant_name);
+    }
+    if (filters?.village) {
+      params.append('village', filters.village);
+    }
+    if (filters?.report_date) {
+      params.append('report_date', filters.report_date);
+    }
+
+    const response = await api.get<PaginatedReportResponse>(`/api/reports?${params.toString()}`);
     return response.data;
+  },
+
+  getAdjacentReportDate: async (
+    currentDate: string,
+    direction: 'next' | 'previous'
+  ): Promise<string | null> => {
+    const response = await api.get<AdjacentDateResponse>(
+      `/api/reports/adjacent-date?current_date=${currentDate}&direction=${direction}`
+    );
+    return response.data.adjacent_date;
   },
 
   getReport: async (id: number): Promise<Report> => {
@@ -498,6 +538,104 @@ export const jobApi = {
       params.append('status_filter', statusFilter);
     }
     const response = await api.get<Job[]>(`/api/jobs?${params.toString()}`);
+    return response.data;
+  },
+};
+
+// Vehicle API
+export const vehicleApi = {
+  // Get all vehicles for the authenticated user
+  getVehicles: async (skip: number = 0, limit: number = 100): Promise<Vehicle[]> => {
+    const response = await api.get<Vehicle[]>(`/api/vehicles?skip=${skip}&limit=${limit}`);
+    return response.data;
+  },
+
+  // Get vehicle templates (Vehicle Library)
+  getTemplates: async (): Promise<VehicleTemplate[]> => {
+    const response = await api.get<VehicleTemplate[]>('/api/vehicles/templates');
+    return response.data;
+  },
+
+  // Get a specific vehicle by ID
+  getVehicle: async (id: number): Promise<Vehicle> => {
+    const response = await api.get<Vehicle>(`/api/vehicles/${id}`);
+    return response.data;
+  },
+
+  // Create a new vehicle
+  createVehicle: async (vehicleData: VehicleCreate): Promise<Vehicle> => {
+    const response = await api.post<Vehicle>('/api/vehicles', vehicleData);
+    return response.data;
+  },
+
+  // Update a vehicle
+  updateVehicle: async (id: number, vehicleData: VehicleUpdate): Promise<Vehicle> => {
+    const response = await api.put<Vehicle>(`/api/vehicles/${id}`, vehicleData);
+    return response.data;
+  },
+
+  // Delete a vehicle (soft delete by default)
+  deleteVehicle: async (id: number, hardDelete: boolean = false): Promise<void> => {
+    await api.delete(`/api/vehicles/${id}?hard_delete=${hardDelete}`);
+  },
+
+  // Duplicate a vehicle
+  duplicateVehicle: async (id: number): Promise<Vehicle> => {
+    const response = await api.post<Vehicle>(`/api/vehicles/${id}/duplicate`);
+    return response.data;
+  },
+
+  // Get AI valuation suggestion
+  getValuationSuggestion: async (id: number): Promise<VehicleValuationSuggestion> => {
+    const response = await api.post<VehicleValuationSuggestion>(`/api/vehicles/${id}/suggest-valuation`);
+    return response.data;
+  },
+
+  // Add vehicle to a report
+  addToReport: async (reportId: number, vehicleId: number, vehicleOrder?: number): Promise<ReportVehicle> => {
+    const params = vehicleOrder ? `?vehicle_order=${vehicleOrder}` : '';
+    const response = await api.post<ReportVehicle>(`/api/reports/${reportId}/vehicles/${vehicleId}${params}`);
+    return response.data;
+  },
+
+  // Remove vehicle from a report
+  removeFromReport: async (reportId: number, vehicleId: number): Promise<void> => {
+    await api.delete(`/api/reports/${reportId}/vehicles/${vehicleId}`);
+  },
+
+  // Get all vehicles for a report
+  getReportVehicles: async (reportId: number): Promise<ReportVehicle[]> => {
+    const response = await api.get<ReportVehicle[]>(`/api/reports/${reportId}/vehicles`);
+    return response.data;
+  },
+
+  // Update a vehicle within a report
+  updateReportVehicle: async (reportId: number, vehicleId: number, vehicleData: VehicleUpdate): Promise<Vehicle> => {
+    const response = await api.put<Vehicle>(`/api/reports/${reportId}/vehicles/${vehicleId}`, vehicleData);
+    return response.data;
+  },
+
+  // Reorder vehicles in a report
+  reorderReportVehicles: async (reportId: number, vehicleOrderMap: Record<number, number>): Promise<void> => {
+    await api.put(`/api/reports/${reportId}/vehicles/reorder`, vehicleOrderMap);
+  },
+};
+
+// OCR API
+export const ocrApi = {
+  // Extract data from documents (supports vehicle_book type)
+  extractData: async (files: File[], documentType?: string): Promise<any> => {
+    const formData = new FormData();
+    files.forEach(file => formData.append('files', file));
+    if (documentType) {
+      formData.append('document_type', documentType);
+    }
+
+    const response = await api.post('/api/ocr/extract', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
     return response.data;
   },
 };

@@ -232,19 +232,6 @@ export function PropertyLocationSection({ formData, updateFormData }: Props) {
           />
         </div>
 
-        {/* Property Name (optional) */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Property Name <span className="text-gray-400 text-xs">(if any)</span>
-          </label>
-          <input
-            type="text"
-            value={formData.property_name || ''}
-            onChange={(e) => updateFormData({ property_name: e.target.value })}
-            placeholder="e.g., Sea Rock, Green Villa"
-            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-          />
-        </div>
       </div>
 
       {/* Helper Text */}

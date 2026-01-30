@@ -13,7 +13,7 @@ from datetime import datetime
 import requests
 
 # Import AI parser for Claude AI integration
-from .ai_parser import parse_with_claude, merge_multi_document_results
+from .ai_parser import parse_with_claude, merge_multi_document_results, parse_vehicle_book_with_claude
 
 
 def detect_document_type(extracted_data: Dict) -> str:
@@ -505,8 +505,12 @@ async def extract_property_data_from_image(
             return {}, 0.0
 
         # Parse structured data using Claude AI
-        logger.info("[OCR] Parsing text with Claude AI...")
-        ai_result = parse_with_claude(extracted_text, document_hint)
+        # Use different parser for vehicle books vs property documents
+        logger.info(f"[OCR] Parsing text with Claude AI (document_hint: {document_hint})...")
+        if document_hint == 'vehicle_book':
+            ai_result = parse_vehicle_book_with_claude(extracted_text)
+        else:
+            ai_result = parse_with_claude(extracted_text, document_hint)
         logger.info(f"[OCR] AI parsing result type: {type(ai_result)}")
 
         # Defensive check: ensure ai_result is not None

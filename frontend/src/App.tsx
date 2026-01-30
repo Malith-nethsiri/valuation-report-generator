@@ -11,6 +11,8 @@ import ReportTypeSelection from './pages/ReportTypeSelection';
 import ResidentialPropertyForm from './pages/ResidentialPropertyForm';
 import MultiPropertyForm from './pages/MultiPropertyForm';
 import BareLandForm from './pages/BareLandForm';
+import VehicleReportPage from './pages/VehicleReportPage';
+import VehicleLibraryPage from './pages/VehicleLibraryPage';
 import ReportEditRouter from './components/ReportEditRouter';
 import { DataCollectionForm } from './components/DataCollectionForm';
 import TestComponents from './pages/TestComponents';
@@ -231,6 +233,30 @@ const AppRoutes: React.FC = () => {
                 element={
                     <ProtectedRoute>
                         <BareLandForm />
+                    </ProtectedRoute>
+                }
+            />
+            <Route
+                path="/reports/new/vehicle"
+                element={
+                    <ProtectedRoute>
+                        <VehicleReportPage />
+                    </ProtectedRoute>
+                }
+            />
+            <Route
+                path="/reports/vehicle/:reportId"
+                element={
+                    <ProtectedRoute>
+                        <VehicleReportPage />
+                    </ProtectedRoute>
+                }
+            />
+            <Route
+                path="/vehicle-library"
+                element={
+                    <ProtectedRoute>
+                        <VehicleLibraryPage />
                     </ProtectedRoute>
                 }
             />
