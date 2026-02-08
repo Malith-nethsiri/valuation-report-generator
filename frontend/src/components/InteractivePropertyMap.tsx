@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { MapPin, Navigation2, Route as RouteIcon, Loader2, MousePointer, Navigation, Info, AlertTriangle, RefreshCw } from 'lucide-react';
-import axios from 'axios';
 import toast from 'react-hot-toast';
 import * as Sentry from '@sentry/react';
 import type { RoadSegment, RoadCondition } from '../types';
 import { RoadConditionsSummary } from './RoadConditionsSummary';
 import { authTokenStorage } from '../utils/secureStorage';
 import { loadGoogleMapsScript } from '../utils/loadGoogleMaps';
-import { API_URL, GOOGLE_MAPS_API_KEY } from '../config';
+import { GOOGLE_MAPS_API_KEY } from '../config';
 import { ManualAddressInput, type ManualAddressData } from './ManualAddressInput';
+import { api } from '../services/api';
 
 interface Props {
   onPropertySelected: (data: {
@@ -606,7 +606,7 @@ export function InteractivePropertyMap({
       });
 
       // Call backend API
-      const transformResponse = await axios.post(`${API_URL}/api/maps/transform-access`, payload);
+      const transformResponse = await api.post('/api/maps/transform-access', payload);
 
       const professionalText = transformResponse.data.professional_text;
 
@@ -723,15 +723,10 @@ export function InteractivePropertyMap({
           }
 
           // Fetch facilities in background (don't await, don't block)
-          axios.post(`${API_URL}/api/locality/nearby-facilities`, {
+          api.post('/api/locality/nearby-facilities', {
             latitude: propertyPos.lat(),
             longitude: propertyPos.lng(),
             radius_meters: 5000, // Default 5km radius
-          }, {
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${authToken}`
-            }
           })
           .then(facilitiesResponse => {
             console.log('[InteractivePropertyMap] Facilities prefetched successfully:', facilitiesResponse.data);
@@ -779,7 +774,11 @@ export function InteractivePropertyMap({
 
           if (!polyline || typeof polyline !== 'string') {
             console.error('[InteractivePropertyMap] No valid polyline available from route. Route object:', route);
-            onRouteGenerated(routeInfo);
+            // Preserve existing mapImageUrl if available
+            onRouteGenerated({
+              ...routeInfo,
+              mapImageUrl: mapImageUrl || undefined,
+            });
             return;
           }
 
@@ -791,7 +790,7 @@ export function InteractivePropertyMap({
             polyline_length: polyline.length,
           });
 
-          const mapResponse = await axios.post(`${API_URL}/api/maps/static-map`, {
+          const mapResponse = await api.post('/api/maps/static-map', {
             origin_lat: startPos.lat(),
             origin_lng: startPos.lng(),
             dest_lat: propertyPos.lat(),
@@ -815,7 +814,11 @@ export function InteractivePropertyMap({
           console.error('[InteractivePropertyMap] Failed to generate static map:', error);
           console.error('[InteractivePropertyMap] Error response:', error.response?.data);
           // Still notify parent even if map generation fails
-          onRouteGenerated(routeInfo);
+          // IMPORTANT: Preserve existing mapImageUrl if available to avoid losing previous map data
+          onRouteGenerated({
+            ...routeInfo,
+            mapImageUrl: mapImageUrl || undefined,
+          });
         }
       } else {
         toast.error('Could not generate route: ' + status, {

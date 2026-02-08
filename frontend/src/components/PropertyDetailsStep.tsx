@@ -4,7 +4,7 @@ import { Home, MapPin, Ruler, FileText } from 'lucide-react';
 import { Input } from './Input';
 import { Label } from './Label';
 import { DatePicker } from './DatePicker';
-import { MultiPropertyFormData } from './MultiPropertyStepForm';
+import { MultiPropertyFormData } from '../types';
 
 interface PropertyDetailsStepProps {
   propertyIndex: number;

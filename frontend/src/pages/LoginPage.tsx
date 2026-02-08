@@ -8,6 +8,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/Button';
 import { Input } from '../components/Input';
 import { Label } from '../components/Label';
+import { GoogleLoginButton, AuthDivider } from '../components/GoogleLoginButton';
 
 // Validation schema
 const loginSchema = z.object({
@@ -97,6 +98,14 @@ const LoginPage: React.FC = () => {
                                 <p className="text-red-600 text-sm text-center font-medium">{error}</p>
                             </div>
                         )}
+
+                        {/* Google OAuth button */}
+                        <GoogleLoginButton
+                            mode="login"
+                            onError={(err) => setError(err)}
+                        />
+
+                        <AuthDivider />
 
                         {/* Login form */}
                         <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">

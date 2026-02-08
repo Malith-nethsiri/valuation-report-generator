@@ -2711,7 +2711,7 @@ def render_utilities_and_conveniences(doc, building: Dict) -> None:
             parts.append(", ".join(security_list))
 
     # Amenities
-    amenities = utilities.get('amenities', {})
+    amenities = utilities.get('amenities') or {}
     amenity_list = []
     if amenities.get('air_conditioning'):
         amenity_list.append('air conditioning')
@@ -3256,6 +3256,7 @@ def _generate_property_sections(doc, prop, report, user):
         if prop.location_map_image_data:
             try:
                 map_url = prop.location_map_image_data
+                logger.info(f"[DOCX-MULTI] Fetching map image for property {prop.id} (URL length={len(map_url)})")
                 response = requests.get(map_url, timeout=30)
                 if response.status_code == 200:
                     map_spacing_para = doc.add_paragraph()
@@ -3274,8 +3275,13 @@ def _generate_property_sections(doc, prop, report, user):
                         MAP_IMAGE_MAX_HEIGHT
                     )
                     map_para.add_run().add_picture(image_stream, **dimensions)
+                    logger.info(f"[DOCX-MULTI] Successfully added map image for property {prop.id}")
+                else:
+                    logger.warning(f"[DOCX-MULTI] Failed to fetch map image for property {prop.id}: HTTP {response.status_code}")
             except Exception as e:
-                logger.warning(f"Error adding map image for property: {str(e)}")
+                logger.warning(f"[DOCX-MULTI] Error adding map image for property {prop.id}: {str(e)}")
+        else:
+            logger.info(f"[DOCX-MULTI] No location_map_image_data for property {prop.id}")
 
     # ===== 3.0 IDENTIFICATION OF PROPERTY SECTION =====
     has_property_header_data = (
@@ -4182,19 +4188,12 @@ def _generate_property_sections(doc, prop, report, user):
     elif report.certification_valuer_name and report.certification_valuer_designation:
         # Auto-generate simplified certification using report-level data
         # Multi-property uses single unified certification
-        # Get lot_number
-        lot_num = report.lot_number
-
-        # Get plan_number, fallback to deprecated certificate_survey_plan_ref
-        plan_ref = report.plan_number or report.certificate_survey_plan_ref
-        plan_date = report.plan_date or report.certificate_survey_plan_date
-
         cert_text = generate_simplified_certification_text(
             valuer_name=report.certification_valuer_name,
             valuer_designation=report.certification_valuer_designation,
-            lot_number=lot_num,
-            plan_number=plan_ref,
-            plan_date=plan_date,
+            lot_number=report.lot_number,
+            plan_number=report.plan_number,
+            plan_date=report.plan_date,
             licensed_surveyor_name=report.licensed_surveyor_name,
             deeds=safe_get_json_field(report, 'deeds', []),
             property_identification_type=report.property_identification_type
@@ -5301,7 +5300,8 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                 try:
                     # Fetch the image from URL
                     map_url = report.location_map_image_data
-                    print(f"[DOCX] Fetching map image from: {map_url}")
+                    logger.info(f"[DOCX] Fetching map image from URL (length={len(map_url)})")
+                    logger.debug(f"[DOCX] Map URL: {map_url[:200]}...")  # Log first 200 chars for debugging
 
                     response = requests.get(map_url, timeout=30)
                     if response.status_code == 200:
@@ -5325,12 +5325,15 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                         )
                         map_para.add_run().add_picture(image_stream, **dimensions)
 
-                        print(f"[DOCX] Successfully added map image to document")
+                        logger.info(f"[DOCX] Successfully added map image to document (size={len(response.content)} bytes)")
                     else:
-                        print(f"[DOCX] Failed to fetch map image: HTTP {response.status_code}")
+                        logger.warning(f"[DOCX] Failed to fetch map image: HTTP {response.status_code}")
+                        logger.debug(f"[DOCX] Response body: {response.text[:500] if response.text else 'empty'}")
                 except Exception as e:
-                    print(f"[DOCX] Error adding map image: {str(e)}")
+                    logger.error(f"[DOCX] Error adding map image: {str(e)}")
                     # Continue without map if error occurs
+            else:
+                logger.info(f"[DOCX] No location_map_image_data available for report {report.id}")
 
         # NOTE: LOCALITY section moved to 6.0 (after PHOTOGRAPHS)
 
@@ -6542,19 +6545,12 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                 cert_text = report.certification_text.strip()
             elif report.certification_valuer_name and report.certification_valuer_designation:
                 # Auto-generate simplified certification
-                # Get lot_number
-                lot_num = report.lot_number
-
-                # Get plan_number, fallback to deprecated certificate_survey_plan_ref
-                plan_ref = report.plan_number or report.certificate_survey_plan_ref
-                plan_date = report.plan_date or report.certificate_survey_plan_date
-
                 cert_text = generate_simplified_certification_text(
                     valuer_name=report.certification_valuer_name,
                     valuer_designation=report.certification_valuer_designation,
-                    lot_number=lot_num,
-                    plan_number=plan_ref,
-                    plan_date=plan_date,
+                    lot_number=report.lot_number,
+                    plan_number=report.plan_number,
+                    plan_date=report.plan_date,
                     licensed_surveyor_name=report.licensed_surveyor_name,
                     deeds=safe_get_json_field(report, 'deeds', []),
                     property_identification_type=report.property_identification_type

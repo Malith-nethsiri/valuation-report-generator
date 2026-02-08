@@ -1,16 +1,18 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User } from '../types';
-import { authApi, setAuthToken, clearAuthToken } from '../services/api';
+import { authApi, setAuthToken, clearAuthToken, initializeCSRF } from '../services/api';
 import { authTokenStorage } from '../utils/secureStorage';
 
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  loginWithGoogle: (code: string, state: string) => Promise<void>;
   register: (email: string, password: string, fullName: string, phone?: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   updateUser: (userData: Partial<User>) => void;
   updateUserProfile: (userData: any) => Promise<void>;
+  sendVerificationEmail: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -34,6 +36,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   // Check for existing token on mount
   useEffect(() => {
     const checkAuth = async () => {
+      // Initialize CSRF token in background (don't block auth flow)
+      // CSRF cookie will be ready before any POST/PUT/DELETE requests
+      initializeCSRF();
+
       const token = authTokenStorage.getToken();
       if (token) {
         setAuthToken(token);
@@ -64,6 +70,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       authTokenStorage.setUserData(userData);
       setAuthToken(access_token);
       setUser(userData);
+
+      // Refresh CSRF token after login (non-blocking)
+      initializeCSRF();
     } catch (error: any) {
       throw new Error(error.response?.data?.detail || 'Login failed');
     }
@@ -84,6 +93,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       authTokenStorage.setUserData(userData);
       setAuthToken(access_token);
       setUser(userData);
+
+      // Refresh CSRF token after registration (non-blocking)
+      initializeCSRF();
     } catch (error: any) {
       if (error.response?.status === 400 && error.response?.data?.detail === 'Email already registered') {
         throw new Error('This email is already registered. Please try logging in instead.');
@@ -92,10 +104,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  const logout = (): void => {
-    authTokenStorage.clearAll();
-    clearAuthToken();
-    setUser(null);
+  const logout = async (): Promise<void> => {
+    try {
+      // Call backend to revoke the token
+      await authApi.logout();
+    } catch (error) {
+      // Log but don't block - token will expire eventually anyway
+      console.warn('Logout API call failed:', error);
+    } finally {
+      // Always clear local storage regardless of API success
+      authTokenStorage.clearAll();
+      clearAuthToken();
+      setUser(null);
+    }
   };
 
   const updateUser = (userData: Partial<User>): void => {
@@ -114,14 +135,42 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  const loginWithGoogle = async (code: string, state: string): Promise<void> => {
+    try {
+      const response = await authApi.googleCallback(code, state);
+      const { access_token, user: userData } = response;
+
+      // Store token and user data securely
+      authTokenStorage.setToken(access_token);
+      authTokenStorage.setUserData(userData);
+      setAuthToken(access_token);
+      setUser(userData);
+
+      // Refresh CSRF token after login (non-blocking)
+      initializeCSRF();
+    } catch (error: any) {
+      throw new Error(error.response?.data?.detail || 'Google login failed');
+    }
+  };
+
+  const sendVerificationEmail = async (): Promise<void> => {
+    try {
+      await authApi.sendVerificationEmail();
+    } catch (error: any) {
+      throw new Error(error.response?.data?.detail || 'Failed to send verification email');
+    }
+  };
+
   const value: AuthContextType = {
     user,
     isLoading,
     login,
+    loginWithGoogle,
     register,
     logout,
     updateUser,
     updateUserProfile,
+    sendVerificationEmail,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

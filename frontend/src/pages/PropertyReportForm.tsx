@@ -8,7 +8,82 @@ import toast from 'react-hot-toast';
 import { Report } from '../types';
 import { authTokenStorage } from '../utils/secureStorage';
 
-const BareLandForm: React.FC = () => {
+interface ReportTypeConfig {
+  reportType: 'bare_land' | 'residential_property';
+  label: string;
+  reportLabel: string;
+  draftKey: string;
+  stepKey: string;
+  color: {
+    primary: string;
+    gradient: string;
+    gradientHover: string;
+    bg: string;
+    border: string;
+    text: string;
+    shadow: string;
+    spinner: string;
+    editBadgeBg: string;
+    editBadgeText: string;
+    loadingBg: string;
+  };
+  nullBuildings: boolean;
+  cleanRoomDimensions: boolean;
+}
+
+const REPORT_CONFIGS: Record<string, ReportTypeConfig> = {
+  bare_land: {
+    reportType: 'bare_land',
+    label: 'bare land report',
+    reportLabel: 'Bare Land Valuation',
+    draftKey: 'bareLandFormDraft',
+    stepKey: 'bareLandFormStep',
+    color: {
+      primary: 'amber',
+      gradient: 'from-amber-500 to-orange-600',
+      gradientHover: 'from-amber-600 to-orange-700',
+      bg: 'from-amber-50 via-white to-orange-50',
+      border: 'from-amber-500/10 to-orange-500/10',
+      text: 'text-amber-600 hover:text-amber-700',
+      shadow: 'shadow-amber-500/25',
+      spinner: 'border-amber-600',
+      editBadgeBg: 'bg-amber-100',
+      editBadgeText: 'text-amber-800',
+      loadingBg: 'from-slate-50 via-white to-orange-50',
+    },
+    nullBuildings: true,
+    cleanRoomDimensions: false,
+  },
+  residential_property: {
+    reportType: 'residential_property',
+    label: 'residential property report',
+    reportLabel: 'Residential Property',
+    draftKey: 'residentialFormDraft',
+    stepKey: 'residentialFormStep',
+    color: {
+      primary: 'emerald',
+      gradient: 'from-emerald-500 to-green-600',
+      gradientHover: 'from-emerald-600 to-green-700',
+      bg: 'from-emerald-50 via-white to-blue-50',
+      border: 'from-emerald-500/10 to-green-500/10',
+      text: 'text-emerald-600 hover:text-emerald-700',
+      shadow: 'shadow-emerald-500/25',
+      spinner: 'border-violet-600',
+      editBadgeBg: 'bg-blue-100',
+      editBadgeText: 'text-blue-800',
+      loadingBg: 'from-slate-50 via-white to-indigo-50',
+    },
+    nullBuildings: false,
+    cleanRoomDimensions: true,
+  },
+};
+
+interface PropertyReportFormProps {
+  reportType: 'bare_land' | 'residential_property';
+}
+
+const PropertyReportForm: React.FC<PropertyReportFormProps> = ({ reportType }) => {
+  const config = REPORT_CONFIGS[reportType];
   const navigate = useNavigate();
   const { user } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -35,14 +110,29 @@ const BareLandForm: React.FC = () => {
       try {
         const report = await reportApi.getReport(parseInt(reportId));
 
-        // Ensure property_photos is always an array
         const cleanedReport = { ...report };
+
+        // Strip room length/width from loaded data (residential only)
+        if (config.cleanRoomDimensions && cleanedReport.buildings && Array.isArray(cleanedReport.buildings)) {
+          cleanedReport.buildings = cleanedReport.buildings.map((building: any) => ({
+            ...building,
+            floors: building.floors?.map((floor: any) => ({
+              ...floor,
+              rooms: floor.rooms?.map((room: any) => {
+                const { length, width, ...cleanRoom } = room;
+                return cleanRoom;
+              }) || []
+            })) || []
+          }));
+        }
+
+        // Ensure property_photos is always an array
         if (!cleanedReport.property_photos) {
           cleanedReport.property_photos = [];
         }
 
         setExistingReport(cleanedReport);
-        console.log('[BareLandForm] Loaded report for editing:', cleanedReport);
+        console.log(`[PropertyReportForm:${reportType}] Loaded report for editing:`, cleanedReport);
       } catch (error: any) {
         console.error('Failed to load report:', error);
         toast.error('Failed to load report for editing');
@@ -53,21 +143,21 @@ const BareLandForm: React.FC = () => {
     };
 
     loadReportForEdit();
-  }, [reportId, navigate]);
+  }, [reportId, navigate, reportType, config.cleanRoomDimensions]);
 
   const handleFormSubmit = async (
     data: ResidentialPropertyFormData,
     submissionType: 'draft' | 'complete' = 'complete'
   ) => {
     if (!user) {
-      console.error('[BareLandForm] No user found, redirecting to login');
+      console.error(`[PropertyReportForm:${reportType}] No user found, redirecting to login`);
       navigate('/login');
       return;
     }
 
     const token = authTokenStorage.getToken();
     if (!token) {
-      console.error('[BareLandForm] No auth token found');
+      console.error(`[PropertyReportForm:${reportType}] No auth token found`);
       toast.error('Your session has expired. Please log in again.');
       navigate('/login');
       return;
@@ -75,73 +165,87 @@ const BareLandForm: React.FC = () => {
 
     setIsSubmitting(true);
     try {
-      // Clean and migrate data
       const cleanedData = { ...data };
 
-      // Migrate utilities_services if present (though rare for bare land)
-      if (cleanedData.buildings && Array.isArray(cleanedData.buildings)) {
+      // Residential: clean buildings data (migrate utilities, strip room dimensions)
+      if (config.cleanRoomDimensions && cleanedData.buildings && Array.isArray(cleanedData.buildings)) {
         cleanedData.buildings = cleanedData.buildings.map((building: any) => {
+          // Migrate utilities_services string values to arrays
           let utilities = building.utilities_services || {};
           if (utilities) {
-            // Convert string to array for water_supply
             if (utilities.water_supply && typeof utilities.water_supply === 'string') {
               utilities.water_supply = [utilities.water_supply];
             }
-            // Convert string to array for electricity_supply
             if (utilities.electricity_supply && typeof utilities.electricity_supply === 'string') {
               utilities.electricity_supply = [utilities.electricity_supply];
             }
-            // Convert string to array for telephone_connection
             if (utilities.telephone_connection && typeof utilities.telephone_connection === 'string') {
               utilities.telephone_connection = [utilities.telephone_connection];
             }
+            if (!Array.isArray(utilities.water_supply)) utilities.water_supply = [];
+            if (!Array.isArray(utilities.electricity_supply)) utilities.electricity_supply = [];
+            if (!Array.isArray(utilities.telephone_connection)) utilities.telephone_connection = [];
           }
-          return { ...building, utilities_services: utilities };
+
+          return {
+            ...building,
+            utilities_services: utilities,
+            floors: building.floors?.map((floor: any) => ({
+              ...floor,
+              rooms: floor.rooms?.map((room: any) => {
+                const { length, width, ...cleanRoom } = room;
+                return cleanRoom;
+              }) || []
+            })) || []
+          };
         });
       }
 
-      const reportData = {
+      // Fields to filter out - these should only exist in the `deeds` array, not at root level
+      const fieldsToRemove = [
+        'deed_type', 'deed_number', 'deed_date', 'notary_name', 'notary_location',
+        'certificate_number', 'certificate_date', 'certificate_notary_name', 'certificate_notary_district',
+      ];
+      for (const field of fieldsToRemove) {
+        delete (cleanedData as any)[field];
+      }
+
+      const reportData: any = {
         ...cleanedData,
-        report_type: 'bare_land',
+        report_type: config.reportType,
         status: submissionType === 'complete' ? 'completed' : 'draft',
-        // Ensure property_photos is always an array, not null
         property_photos: cleanedData.property_photos || [],
-        // Clear building-related fields for bare land reports
-        buildings: null,
-        occupier_name: null,
-        occupier_relationship: null,
-        valuation_buildings_data: null,
-        valuation_total_buildings_value: null
       };
 
-      console.log('[BareLandForm] About to send to API:', reportData);
+      // Bare land: null out building-related fields
+      if (config.nullBuildings) {
+        reportData.buildings = null;
+        reportData.occupier_name = null;
+        reportData.occupier_relationship = null;
+        reportData.valuation_buildings_data = null;
+        reportData.valuation_total_buildings_value = null;
+      }
+
+      console.log(`[PropertyReportForm:${reportType}] About to send to API:`, reportData);
 
       let savedReport;
       if (isEditMode && reportId) {
-        // Update existing report
         savedReport = await reportApi.updateReport(parseInt(reportId), reportData);
 
         if (submissionType === 'complete') {
           setReportCreated(savedReport);
           toast.success('Report updated successfully!');
-        } else {
-          // Draft saved - toast is shown by MultiStepForm handlers
-          // Navigation is handled by MultiStepForm based on which button was clicked
-          // (Save and Continue = no navigation, Save & Exit = navigate to dashboard)
         }
       } else {
-        // Create new report
         savedReport = await reportApi.createReport(reportData);
 
         if (submissionType === 'complete') {
           setReportCreated(savedReport);
-        } else {
-          // Draft saved - toast and navigation handled by MultiStepForm
         }
       }
 
-      localStorage.removeItem('bareLandFormDraft');
-      localStorage.removeItem('bareLandFormStep');
+      localStorage.removeItem(config.draftKey);
+      localStorage.removeItem(config.stepKey);
 
     } catch (error: any) {
       console.error('Error saving report:', error);
@@ -161,7 +265,6 @@ const BareLandForm: React.FC = () => {
   const handleDownloadReport = async () => {
     if (!reportCreated) return;
 
-    // Verify user is still authenticated
     if (!user) {
       toast.error('Session expired. Please log in again.');
       navigate('/login');
@@ -179,7 +282,7 @@ const BareLandForm: React.FC = () => {
     try {
       const { generateReportDocx } = await import('../services/api');
       await generateReportDocx(reportCreated.id);
-      console.log('[BareLandForm] Report generated successfully');
+      console.log(`[PropertyReportForm:${reportType}] Report generated successfully`);
     } catch (error: any) {
       console.error('Error generating DOCX:', error);
 
@@ -197,9 +300,9 @@ const BareLandForm: React.FC = () => {
 
   if (isLoadingReport) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-white to-orange-50">
+      <div className={`min-h-screen flex items-center justify-center bg-gradient-to-br ${config.color.loadingBg}`}>
         <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-amber-600 mx-auto mb-4" />
+          <div className={`animate-spin rounded-full h-16 w-16 border-b-2 ${config.color.spinner} mx-auto mb-4`} />
           <p className="text-gray-600">Loading report...</p>
         </div>
       </div>
@@ -208,13 +311,13 @@ const BareLandForm: React.FC = () => {
 
   if (reportCreated) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-amber-50 via-white to-orange-50">
+      <div className={`min-h-screen bg-gradient-to-br ${config.color.bg}`}>
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
           {/* Header */}
           <div className="text-center mb-12">
             <Link
               to="/dashboard"
-              className="inline-flex items-center text-amber-600 hover:text-amber-700 mb-6 transition-colors duration-200"
+              className={`inline-flex items-center ${config.color.text} mb-6 transition-colors duration-200`}
             >
               <ArrowLeft className="h-5 w-5 mr-2" />
               Back to Dashboard
@@ -224,7 +327,7 @@ const BareLandForm: React.FC = () => {
           {/* Success Card */}
           <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/20 p-8 lg:p-12 text-center">
             {/* Success Icon */}
-            <div className="inline-flex p-6 bg-gradient-to-br from-amber-500 to-orange-600 rounded-3xl shadow-2xl shadow-amber-500/25 mb-8 animate-float">
+            <div className={`inline-flex p-6 bg-gradient-to-br ${config.color.gradient} rounded-3xl shadow-2xl ${config.color.shadow} mb-8 animate-float`}>
               <CheckCircle2 className="h-16 w-16 text-white" />
             </div>
 
@@ -233,11 +336,11 @@ const BareLandForm: React.FC = () => {
               {isEditMode ? 'Report Updated Successfully!' : 'Report Created Successfully!'}
             </h1>
             <p className="text-xl text-gray-600 mb-8">
-              Your bare land valuation report has been {isEditMode ? 'updated' : 'generated'} and is ready for download.
+              Your {config.label} has been {isEditMode ? 'updated' : 'generated'} and is ready for download.
             </p>
 
             {/* Report Details */}
-            <div className="bg-gradient-to-r from-amber-500/10 to-orange-500/10 rounded-2xl p-6 mb-8 text-left">
+            <div className={`bg-gradient-to-r ${config.color.border} rounded-2xl p-6 mb-8 text-left`}>
               <h3 className="text-lg font-bold text-gray-900 mb-4">Report Details</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                 <div>
@@ -246,7 +349,7 @@ const BareLandForm: React.FC = () => {
                 </div>
                 <div>
                   <span className="font-semibold text-gray-700">Report Type:</span>
-                  <span className="ml-2 text-gray-600">Bare Land Valuation</span>
+                  <span className="ml-2 text-gray-600">{config.reportLabel}</span>
                 </div>
                 <div>
                   <span className="font-semibold text-gray-700">Applicant:</span>
@@ -274,7 +377,7 @@ const BareLandForm: React.FC = () => {
               <button
                 onClick={handleDownloadReport}
                 disabled={isGeneratingDocx}
-                className="group inline-flex items-center justify-center px-8 py-4 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white text-lg font-bold rounded-2xl shadow-2xl shadow-amber-500/25 transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+                className={`group inline-flex items-center justify-center px-8 py-4 bg-gradient-to-r ${config.color.gradient} hover:${config.color.gradientHover} text-white text-lg font-bold rounded-2xl shadow-2xl ${config.color.shadow} transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed`}
               >
                 {isGeneratingDocx ? (
                   <>
@@ -302,7 +405,7 @@ const BareLandForm: React.FC = () => {
             <div className="mt-8 pt-6 border-t border-gray-200/50">
               <p className="text-sm text-gray-500">
                 Report saved to your dashboard •
-                <Link to="/dashboard" className="ml-1 text-amber-600 hover:text-amber-700 font-medium">
+                <Link to="/dashboard" className={`ml-1 ${config.color.text} font-medium`}>
                   View all reports
                 </Link>
               </p>
@@ -329,13 +432,15 @@ const BareLandForm: React.FC = () => {
               </Link>
 
               {isEditMode && (
-                <span className="px-3 py-1 bg-amber-100 text-amber-800 text-sm font-medium rounded-full">
+                <span className={`px-3 py-1 ${config.color.editBadgeBg} ${config.color.editBadgeText} text-sm font-medium rounded-full`}>
                   Editing Report #{reportId}
                 </span>
               )}
             </div>
             <div className="text-right">
-              <p className="text-sm text-gray-500">{isEditMode ? 'Editing bare land report as' : 'Creating bare land report as'}</p>
+              <p className="text-sm text-gray-500">
+                {isEditMode ? `Editing ${config.label} as` : `Creating ${config.label} as`}
+              </p>
               <p className="font-semibold text-gray-900">{user?.full_name}</p>
             </div>
           </div>
@@ -350,10 +455,10 @@ const BareLandForm: React.FC = () => {
         isEditMode={isEditMode}
         reportId={reportId ? parseInt(reportId) : undefined}
         initialData={existingReport || undefined}
-        reportType="bare_land"
+        reportType={config.nullBuildings ? "bare_land" : undefined}
       />
     </div>
   );
 };
 
-export default BareLandForm;
+export default PropertyReportForm;

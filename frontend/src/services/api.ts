@@ -28,14 +28,37 @@ import { downloadFromResponse } from '../utils/downloadHelper';
 
 const API_BASE_URL = API_URL;
 
+// ===== CSRF TOKEN HELPER =====
+const getCSRFToken = (): string | null => {
+  const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
+  return match ? decodeURIComponent(match[1]) : null;
+};
+
 // ===== ENHANCED API CLIENT WITH TIMEOUT AND RETRY =====
 const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 300000, // 5 minute timeout - extended for large file uploads and complex operations
+  withCredentials: true, // Send cookies with requests (required for CSRF)
   headers: {
     'Content-Type': 'application/json',
   },
 });
+
+// ===== CSRF REQUEST INTERCEPTOR =====
+api.interceptors.request.use(
+  (config) => {
+    // Add CSRF token to state-changing requests
+    const unsafeMethods = ['POST', 'PUT', 'DELETE', 'PATCH'];
+    if (config.method && unsafeMethods.includes(config.method.toUpperCase())) {
+      const csrfToken = getCSRFToken();
+      if (csrfToken) {
+        config.headers['X-CSRF-Token'] = csrfToken;
+      }
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
 
 // ===== RETRY CONFIGURATION =====
 const MAX_RETRIES = 3;
@@ -82,9 +105,24 @@ export const clearAuthToken = () => {
   delete api.defaults.headers.common['Authorization'];
 };
 
+// Initialize CSRF token by making a GET request to set the cookie
+export const initializeCSRF = async (): Promise<void> => {
+  try {
+    await api.get('/api/csrf-token');
+  } catch (error) {
+    console.warn('Failed to initialize CSRF token:', error);
+  }
+};
+
 // ===== ENHANCED RESPONSE INTERCEPTOR =====
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Log CSRF token rotation for debugging (removed in production builds)
+    if (response.headers['x-csrf-token-rotated'] === 'true') {
+      console.debug('CSRF token rotated by server');
+    }
+    return response;
+  },
   async (error: AxiosError) => {
     const originalRequest = error.config as AxiosRequestConfig & { _retry?: boolean; _retryCount?: number };
 
@@ -119,6 +157,15 @@ api.interceptors.response.use(
     // Handle specific HTTP error codes
     switch (status) {
       case 401: // Unauthorized
+        // Skip redirect for auth endpoints - let them handle their own errors
+        const requestUrl = originalRequest.url || '';
+        const isAuthEndpoint = requestUrl.includes('/api/auth/login') || requestUrl.includes('/api/auth/register');
+
+        if (isAuthEndpoint) {
+          // Let the login/register components handle 401 errors
+          throw new Error(responseData?.detail || 'Authentication failed');
+        }
+
         if (!originalRequest._retry) {
           originalRequest._retry = true;
 
@@ -137,6 +184,14 @@ api.interceptors.response.use(
         break;
 
       case 403: // Forbidden
+        // Check if this is a CSRF error - retry once after token refresh
+        const errorDetail = responseData?.detail || '';
+        if (errorDetail.includes('CSRF') && !originalRequest._retry) {
+          originalRequest._retry = true;
+          // Wait briefly for cookie to update, then retry with fresh token
+          await sleep(100);
+          return api.request(originalRequest);
+        }
         throw new Error(
           responseData?.message ||
           'Access forbidden. You do not have permission to perform this action.'
@@ -301,6 +356,44 @@ export const authApi = {
     const response = await api.put<User>('/api/profile', userData);
     return response.data;
   },
+
+  logout: async (): Promise<void> => {
+    // Call backend to revoke the token
+    // This ensures the token can't be reused even if it hasn't expired
+    await api.post('/api/auth/logout');
+  },
+
+  // Google OAuth
+  getGoogleAuthUrl: async (): Promise<{ authorization_url: string; state: string }> => {
+    const response = await api.get<{ authorization_url: string; state: string }>(
+      '/api/auth/google/authorize'
+    );
+    return response.data;
+  },
+
+  googleCallback: async (code: string, state: string): Promise<AuthResponse> => {
+    const response = await api.post<AuthResponse>('/api/auth/google/callback', {
+      code,
+      state,
+    });
+    return response.data;
+  },
+
+  // Email Verification
+  sendVerificationEmail: async (): Promise<{ success: boolean; message: string }> => {
+    const response = await api.post<{ success: boolean; message: string; email_verified: boolean }>(
+      '/api/auth/send-verification'
+    );
+    return response.data;
+  },
+
+  verifyEmail: async (email: string, token: string): Promise<{ success: boolean; message: string; email_verified: boolean }> => {
+    const response = await api.post<{ success: boolean; message: string; email_verified: boolean }>(
+      '/api/auth/verify-email',
+      { email, token }
+    );
+    return response.data;
+  },
 };
 
 // Bank Account Management API
@@ -331,6 +424,28 @@ export const letterheadApi = {
     const response = await api.get<TemplateListResponse>('/api/letterhead-templates');
     return response.data.templates;
   },
+};
+
+// ===== FIELD FILTERING FOR REPORT API =====
+// These fields should only exist in their structured array formats (deeds array, etc.)
+// not as individual root-level fields. The backend rejects extra fields.
+const FIELDS_TO_FILTER_FROM_REPORT = [
+  // Deed fields - should be in `deeds` array only
+  'deed_type', 'deed_number', 'deed_date', 'notary_name', 'notary_location',
+  // Certificate fields - transformed to deed format
+  'certificate_number', 'certificate_date', 'certificate_notary_name', 'certificate_notary_district',
+];
+
+/**
+ * Filter out extra fields that backend doesn't accept
+ * These fields exist in form state but should only be sent in structured arrays
+ */
+const filterReportData = <T extends Record<string, any>>(data: T): Partial<T> => {
+  const filtered = { ...data };
+  for (const field of FIELDS_TO_FILTER_FROM_REPORT) {
+    delete filtered[field];
+  }
+  return filtered;
 };
 
 // Report API
@@ -377,12 +492,27 @@ export const reportApi = {
   },
 
   createReport: async (reportData: ReportCreate): Promise<Report> => {
-    const response = await api.post<Report>('/api/reports', reportData);
+    // Filter out extra fields that should only exist in structured arrays
+    const filteredData = filterReportData(reportData);
+    const response = await api.post<Report>('/api/reports', filteredData);
     return response.data;
   },
 
   updateReport: async (id: number, reportData: Partial<ReportCreate>): Promise<Report> => {
-    const response = await api.put<Report>(`/api/reports/${id}`, reportData);
+    // Strip out server-generated/read-only fields that backend doesn't accept
+    const {
+      id: _id,
+      user_id,
+      created_at,
+      updated_at,
+      total_valuation_amount,
+      ...cleanedData
+    } = reportData as any;
+
+    // Filter out extra fields that should only exist in structured arrays
+    const filteredData = filterReportData(cleanedData);
+
+    const response = await api.put<Report>(`/api/reports/${id}`, filteredData);
     return response.data;
   },
 

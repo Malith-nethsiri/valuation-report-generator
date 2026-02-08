@@ -379,28 +379,28 @@ class GoogleMapsService:
                                polyline: str,
                                width: int = 800, height: int = 600) -> str:
         """
-        Generate Static Map API URL with route and markers
+        Generate Static Map API URL with route and markers.
+
+        Note: The polyline is URL-encoded to handle special characters properly.
+        Google's encoded polyline format can contain characters that need escaping.
         """
+        from urllib.parse import quote
+
         if not GOOGLE_MAPS_API_KEY:
             raise ValueError("Google Maps API key not configured")
 
-        params = {
-            "size": f"{width}x{height}",
-            "maptype": "roadmap",
-            "markers": f"color:red|label:A|{origin_lat},{origin_lng}",
-            "markers": f"color:green|label:B|{dest_lat},{dest_lng}",
-            "path": f"enc:{polyline}",
-            "key": GOOGLE_MAPS_API_KEY
-        }
+        # URL-encode the polyline to handle special characters
+        # The encoded polyline format can contain characters like |, \, ~, etc.
+        encoded_polyline = quote(polyline, safe='')
 
         # Build URL manually to handle multiple markers
         base_url = f"{GoogleMapsService.BASE_URL}/staticmap"
         url_parts = [
             f"size={width}x{height}",
             "maptype=roadmap",
-            f"markers=color:red|label:A|{origin_lat},{origin_lng}",
-            f"markers=color:green|label:B|{dest_lat},{dest_lng}",
-            f"path=enc:{polyline}",
+            f"markers=color:red%7Clabel:A%7C{origin_lat},{origin_lng}",
+            f"markers=color:green%7Clabel:B%7C{dest_lat},{dest_lng}",
+            f"path=enc:{encoded_polyline}",
             f"key={GOOGLE_MAPS_API_KEY}"
         ]
 

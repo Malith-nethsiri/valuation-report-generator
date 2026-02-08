@@ -11,6 +11,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/Button';
 import { Input } from '../components/Input';
 import { Label } from '../components/Label';
+import { GoogleLoginButton, AuthDivider } from '../components/GoogleLoginButton';
 
 // Password strength checker
 const getPasswordStrength = (password: string) => {
@@ -124,10 +125,7 @@ const RegisterPage: React.FC = () => {
           const allCriteriaMet = Object.values(strength.checks).every(Boolean);
 
           if (!allCriteriaMet) {
-            toast.error('Please ensure your password meets all requirements', {
-              duration: 4000,
-              icon: '🔒'
-            });
+            setError('Please ensure your password meets all requirements');
             return; // Prevent advancement
           }
         }
@@ -191,6 +189,17 @@ const RegisterPage: React.FC = () => {
               <div className="mb-6 p-4 rounded-2xl bg-red-50 border border-red-100 animate-fadeIn">
                 <p className="text-red-600 text-sm text-center font-medium">{error}</p>
               </div>
+            )}
+
+            {/* Google OAuth button - only show on first step */}
+            {currentStep === 1 && (
+              <>
+                <GoogleLoginButton
+                  mode="register"
+                  onError={(err) => setError(err)}
+                />
+                <AuthDivider />
+              </>
             )}
 
             {/* Registration form */}

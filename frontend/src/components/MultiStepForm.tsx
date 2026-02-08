@@ -10,7 +10,11 @@ import { useNavigationBlocker } from '../hooks/useNavigationBlocker';
 import NavigationConfirmModal from './NavigationConfirmModal';
 import { ErrorSummaryPanel } from './ErrorSummaryPanel';
 import { transformZodErrors, ValidationErrorSummary } from '../utils/validationErrorTransformer';
-import { API_URL } from '../config';
+// Helper to get CSRF token from cookies (set by backend)
+const getCSRFToken = (): string | null => {
+  const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
+  return match ? decodeURIComponent(match[1]) : null;
+};
 
 import {
     ArrowRight,
@@ -54,545 +58,31 @@ import { DatePicker } from './DatePicker';
 import { LoadingOverlay } from './LoadingOverlay';
 import { validateSriLankanNIC, validatePassport, useFieldValidation } from '../utils/validators';
 import { PREDEFINED_VALUATION_PURPOSES } from '../constants/valuationPurposes';
+import { COMMON_DEED_TYPES, FORM_STEPS } from '../constants/multiStepFormConstants';
 import { toTitleCase } from '../utils/textFormatter';
 
-// Common deed types in Sri Lanka
-const COMMON_DEED_TYPES = [
-  'Transfer Deed',
-  'Deed of Gift',
-  'Mortgage Deed',
-  'Lease Deed',
-  'Partition Deed',
-  'Exchange Deed',
-  'Deed of Sale',
-  'Deed of Donation',
-  'Release Deed',
-  'Reconveyance Deed',
-  'Deed of Assignment',
-  'Usufructuary Mortgage Deed',
-  'Power of Attorney Deed',
-  'Certificate of Sale',
-];
+// Import schemas from centralized file
+import {
+    propertyPlanSchema,
+    baseApplicantPurposeSchema,
+    applicantPurposeSchema,
+    baseAdditionalDetailsSchema,
+    additionalDetailsSchema,
+    extentBoundariesSchema,
+    propertySearchSchema,
+    propertyDetailsSchema,
+    propertyDescriptionSchema,
+    basePropertyPlanSchema,
+    baseCertificationSchema,
+    completeFormSchema,
+    propertyOnlySchema,
+} from '../schemas/multiStepFormSchemas';
 
-// Validation schemas for each step
-const propertyPlanSchema = z.object({
-    property_identification_type: z.enum(['plan', 'deed', 'plan_and_deed', 'certificate_of_sale'], {
-        required_error: 'Please select what information you have'
-    }),
-    // All fields as optional initially
-    lot_number: z.string().optional(),
-    plan_number: z.string().optional(),
-    plan_date: z.string().optional(),
-    licensed_surveyor_name: z.string().optional(),
-    deed_type: z.string().optional(),
-    deed_number: z.string().optional(),
-    deed_date: z.string().optional(),
-    notary_name: z.string().optional(),
-    notary_location: z.string().optional(),
-    certificate_number: z.string().optional(),
-    certificate_date: z.string().optional(),
-    certificate_notary_name: z.string().optional(),
-    certificate_notary_district: z.string().optional(),
-}).superRefine((data, ctx) => {
-    // Dynamic validation based on selection
-    if (data.property_identification_type === 'plan') {
-        if (!data.plan_number) {
-            ctx.addIssue({
-                code: z.ZodIssueCode.custom,
-                message: 'Plan number is required',
-                path: ['plan_number']
-            });
-        }
-        if (!data.plan_date) {
-            ctx.addIssue({
-                code: z.ZodIssueCode.custom,
-                message: 'Plan date is required',
-                path: ['plan_date']
-            });
-        }
-    } else if (data.property_identification_type === 'deed') {
-        if (!data.deed_number) {
-            ctx.addIssue({
-                code: z.ZodIssueCode.custom,
-                message: 'Deed number is required',
-                path: ['deed_number']
-            });
-        }
-        if (!data.deed_date) {
-            ctx.addIssue({
-                code: z.ZodIssueCode.custom,
-                message: 'Deed date is required',
-                path: ['deed_date']
-            });
-        }
-    } else if (data.property_identification_type === 'plan_and_deed') {
-        // HYBRID MODE: Require BOTH plan and deed fields
-        if (!data.plan_number) {
-            ctx.addIssue({
-                code: z.ZodIssueCode.custom,
-                message: 'Plan number is required for hybrid mode',
-                path: ['plan_number']
-            });
-        }
-        if (!data.plan_date) {
-            ctx.addIssue({
-                code: z.ZodIssueCode.custom,
-                message: 'Plan date is required for hybrid mode',
-                path: ['plan_date']
-            });
-        }
-        if (!data.deed_number) {
-            ctx.addIssue({
-                code: z.ZodIssueCode.custom,
-                message: 'Deed number is required for hybrid mode',
-                path: ['deed_number']
-            });
-        }
-        if (!data.deed_date) {
-            ctx.addIssue({
-                code: z.ZodIssueCode.custom,
-                message: 'Deed date is required for hybrid mode',
-                path: ['deed_date']
-            });
-        }
-    } else if (data.property_identification_type === 'certificate_of_sale') {
-        if (!data.certificate_number) {
-            ctx.addIssue({
-                code: z.ZodIssueCode.custom,
-                message: 'Certificate number is required',
-                path: ['certificate_number']
-            });
-        }
-        if (!data.certificate_date) {
-            ctx.addIssue({
-                code: z.ZodIssueCode.custom,
-                message: 'Certificate date is required',
-                path: ['certificate_date']
-            });
-        }
-    }
-});
+// Import types from centralized file
+import type { FormData, StepComponentProps, MultiStepFormProps, DataQualityWarning } from '../types/multiStepForm';
 
-// Base schema without refinement (for merging)
-const baseApplicantPurposeSchema = z.object({
-    applicant_title: z.string().min(1, 'Please select a title'),
-    applicant_full_name: z.string().min(2, 'Please enter the applicant full name'),
-    applicant_id_type: z.string().optional(), // Optional - no checkbox needed
-    applicant_id_number: z.string().optional(), // Optional - no checkbox needed
-    applicant_address_line1: z.string().min(5, 'Please enter address line 1'),
-    applicant_address_line2: z.string().optional(),
-    applicant_district: z.string().min(2, 'Please enter the district'),
-    applicant_province: z.string().min(2, 'Please enter the province'),
-    applicant_country: z.string().min(2, 'Please enter the country').default('Sri Lanka'),
-    applicant_contact_number: z.string().nullable().optional(), // Optional contact number
-    valuation_type: z.string().min(1, 'Please enter the valuation type'),
-    valuation_purpose: z.string().min(1, 'Purpose of valuation is required'),
-    property_type_valued: z.string().min(1, 'Please enter the property type'),
-    has_additional_owner: z.string().optional(),
-    additional_owner_names: z.string().nullable().optional(),
-});
-
-// Schema with ID format validation (for step validation)
-const applicantPurposeSchema = baseApplicantPurposeSchema
-    .refine(
-        (data) => {
-            // Optional fields - only validate if user provides data
-            if (!data.applicant_id_type || !data.applicant_id_number) {
-                return true; // Empty is valid (optional)
-            }
-
-            const idType = data.applicant_id_type;
-            const idNumber = data.applicant_id_number;
-
-            // Validate based on ID type
-            if (idType === 'NIC') {
-                const result = validateSriLankanNIC(idNumber);
-                return result.isValid;
-            } else if (idType === 'Passport') {
-                const result = validatePassport(idNumber);
-                return result.isValid;
-            } else if (idType === 'Other') {
-                // For "Other", just check minimum length
-                return idNumber.length >= 3;
-            }
-
-            return true;
-        },
-        (data) => {
-            // Dynamic error message based on ID type
-            const idType = data.applicant_id_type;
-            const idNumber = data.applicant_id_number;
-
-            if (idType === 'NIC') {
-                const result = validateSriLankanNIC(idNumber);
-                return {
-                    message: result.error || 'Invalid NIC format. Use old format (9 digits + V/X) or new format (12 digits)',
-                    path: ['applicant_id_number'],
-                };
-            } else if (idType === 'Passport') {
-                const result = validatePassport(idNumber);
-                return {
-                    message: result.error || 'Passport must be 6-12 alphanumeric characters',
-                    path: ['applicant_id_number'],
-                };
-            } else if (idType === 'Other') {
-                return {
-                    message: 'ID number must be at least 3 characters long',
-                    path: ['applicant_id_number'],
-                };
-            }
-
-            return {
-                message: 'Invalid ID number',
-                path: ['applicant_id_number'],
-            };
-        }
-    )
-    .refine(
-        (data) => {
-            // Validate additional owner names only if "yes" is selected
-            if (data.has_additional_owner === 'yes') {
-                return data.additional_owner_names && data.additional_owner_names.trim().length > 0;
-            }
-            return true; // No validation needed if "no" or not selected
-        },
-        {
-            message: 'Please enter the additional owner names',
-            path: ['additional_owner_names'],
-        }
-    );
-
-// Base schema without refinement (for merging)
-const baseAdditionalDetailsSchema = z.object({
-    submission_recipient_position: z.string().optional(),
-    submission_organization: z.string().optional(),
-    submission_address: z.string().optional(),
-    request_type: z.enum(['client_request', 'organization_request'], {
-        required_error: 'Please select whether this is a client or organization request'
-    }),
-    inspection_date: z.string().min(1, 'Please enter the inspection date (DD-MM-YYYY)'),
-    has_special_note: z.string().optional(),
-    special_note_text: z.string().nullish(),
-    report_reference: z.string().min(1, 'Please enter a reference number'),
-    report_date: z.string().min(1, 'Please enter the report date'),
-});
-
-// Schema with refinement (for step validation)
-const additionalDetailsSchema = baseAdditionalDetailsSchema.superRefine((data, ctx) => {
-    // Validate special note text is required when has_special_note is "yes"
-    if (data.has_special_note === 'yes' && !data.special_note_text) {
-        ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: 'Special note text is required when you select "Yes"',
-            path: ['special_note_text']
-        });
-    }
-});
-
-// Step 2 - Extent & Boundaries validation
-const extentBoundariesSchema = z.object({
-    land_extent_acres: z.number().min(0, 'Acres cannot be negative').optional(),
-    land_extent_roods: z.number().min(0, 'Roods cannot be negative').max(3, 'Roods must be between 0 and 3').optional(),
-    land_extent_perches: z.number().min(0, 'Perches cannot be negative').max(39.99, 'Perches must be less than 40').optional(),
-});
-
-// Step 3: Property Search validation (location required)
-const propertySearchSchema = z.object({
-    property_latitude: z.number().optional(),
-    property_longitude: z.number().optional(),
-}).refine(
-    (data) => {
-        // Coordinates should be provided
-        return data.property_latitude && data.property_longitude;
-    },
-    {
-        message: "Please select a property location on the map",
-        path: ["property_latitude"],
-    }
-);
-
-// Step 4: Property Details validation
-const propertyDetailsSchema = z.object({
-    property_village: z.string().min(2, 'Village/Town is required'),
-    property_district: z.string().min(2, 'District is required'),
-    grama_niladari_division: z.string().nullish(),
-});
-
-// Step 6 - Property Description validation
-const propertyDescriptionSchema = z.object({
-    buildings: z.array(z.object({
-        building_type: z.string().min(1, 'Building type is required').max(100, 'Building type name is too long').optional(),
-        building_photos: z.array(z.object({
-            id: z.string(),
-            image_data: z.string().refine(val => val.startsWith('data:image/'), 'Invalid image format'),
-            order: z.number().min(0),
-        })).max(5, 'Maximum 5 photos per building'),
-        floors: z.array(z.object({
-            floor_name: z.string().min(1, 'Floor name is required'),
-            floor_area: z.number().min(0, 'Floor area must be positive').optional(),
-        })),
-        rooms: z.array(z.object({
-            room_type: z.string().min(1, 'Room type is required'),
-            count: z.number().min(1, 'Count must be at least 1'),
-            has_attached_bathroom: z.boolean().optional(),
-        })).optional(),
-    })).optional(),
-    property_photos: z.array(z.any()).max(20, 'Maximum 20 property photos').optional(),
-});
-
-// Combined schema for the entire form (without refined schema)
-const basePropertyPlanSchema = z.object({
-    property_identification_type: z.enum(['plan', 'deed', 'plan_and_deed', 'certificate_of_sale'], {
-        required_error: 'Please select what information you have'
-    }),
-    lot_number: z.string().optional(),
-    plan_number: z.string().optional(),
-    plan_date: z.string().optional(),
-    licensed_surveyor_name: z.string().optional(),
-    deed_type: z.string().optional(),
-    deed_number: z.string().optional(),
-    deed_date: z.string().optional(),
-    notary_name: z.string().optional(),
-    notary_location: z.string().optional(),
-    certificate_number: z.string().optional(),
-    certificate_date: z.string().optional(),
-    certificate_notary_name: z.string().optional(),
-    certificate_notary_district: z.string().optional(),
-});
-
-// Certification schema (for final submission validation)
-// Note: certificate_identity_confirmed validation removed - Certificate of Identity is now optional
-const baseCertificationSchema = z.object({});
-
-const completeFormSchema = basePropertyPlanSchema
-    .merge(baseApplicantPurposeSchema)
-    .merge(baseAdditionalDetailsSchema)
-    .merge(baseCertificationSchema);
-
-// Property-only schema for embedded multi-property mode (excludes applicant & additional details)
-const propertyOnlySchema = basePropertyPlanSchema
-    .merge(baseCertificationSchema);
-
-type FormData = z.infer<typeof completeFormSchema> & {
-    // Single deed fields (like plan info)
-    deed_type?: string;
-    deed_number?: string;
-    deed_date?: string;
-    notary_name?: string;
-    notary_location?: string;
-    // Location & Access fields (not validated by Zod)
-    use_property_address_as_applicant?: boolean; // Reversed: applicant uses property address
-    assessment_number?: string;
-    property_village?: string;
-    property_divisional_secretariat?: string;
-    property_district?: string;
-    property_province?: string;
-    property_latitude?: number;
-    property_longitude?: number;
-    access_starting_point_name?: string;
-    access_starting_point_latitude?: number;
-    access_starting_point_longitude?: number;
-    access_route_data?: any;
-    access_directions_text?: string;
-    access_distance_km?: number;
-    access_duration_minutes?: number;
-    access_road_type?: string;
-    property_road_position?: string;
-    location_map_image_data?: string;
-    access_road_conditions?: any[];  // Simple mode: RoadCondition[]
-    access_road_segments?: any[];     // Advanced mode: RoadSegment[]
-    access_entry_mode?: 'simple' | 'advanced';  // Dual-mode state
-    // New administrative fields
-    property_number?: string;
-    grama_niladari_division?: string;
-    korale?: string;
-    pradeshiya_sabha?: string;
-    ward_number?: string;
-    is_municipal_limit?: boolean;
-    location_direction?: string;
-    // Property Header Fields (Extent, Boundaries, Physical Features)
-    land_extent_acres?: number;
-    land_extent_roods?: number;
-    land_extent_perches?: number;
-    land_extent_hectares?: number;
-    land_extent_square_meters?: number;
-    land_extent_formatted?: string;
-    land_traditional_name?: string;
-    boundaries?: any; // JSON object for N/S/E/W boundaries
-    physical_boundaries_types?: string[];
-    physical_boundaries_description?: string;
-    survey_plan_scale?: string;
-    plan_reference_notes?: string;
-    // Property Description fields
-    land_shape?: string;
-    land_type?: string;
-    land_frontage_type?: string;
-    land_frontage_width?: number;
-    land_frontage_description?: string;
-    land_level?: string;
-    land_level_difference?: number;
-    soil_type?: string;
-    water_table_depth?: number;
-    flood_risk?: string;
-    inundation_risk?: string;
-    earth_slip_risk?: string;
-    land_condition?: string;
-    land_condition_description?: string;
-    land_description_text?: string;
-    ongoing_construction_notes?: string;  // Development feasibility/construction status for bare land
-    buildings?: any[];
-    occupier_name?: string;
-    occupier_relationship?: string;
-    property_photos?: any[];
-    // Locality Information fields
-    distance_to_major_town_km?: number;
-    major_town_name?: string;
-    nearby_facilities?: any[];
-    has_electricity?: boolean;
-    water_supply_type?: string;
-    telecommunication_types?: string[];
-    internet_types?: string[];
-    has_public_transport?: boolean;
-    public_transport_routes?: string;
-    public_transport_frequency?: string;
-    nearest_bus_stop_distance_km?: number;
-    nearest_bus_stop_name?: string;
-    nearest_railway_station?: string;
-    nearest_railway_distance_km?: number;
-    area_type?: string;
-    development_level?: string;
-    predominant_building_type?: string;
-    is_tourist_area?: boolean;
-    tourist_attractions_nearby?: string;
-    locality_description_text?: string;
-};
-
-interface StepComponentProps {
-    register: any;
-    errors: any;
-    watch: any;
-    setValue?: any;
-}
-
-const steps = [
-    // Step 1: Applicant & Purpose (moved from position 9 to match report order)
-    {
-        id: 9,
-        title: 'Applicant & Purpose',
-        subtitle: 'Applicant details and valuation purpose',
-        icon: User,
-        color: 'from-emerald-500 to-green-600',
-        bgColor: 'from-emerald-50 to-green-100',
-    },
-    // Step 2: Additional Details (moved from position 10 to match report order)
-    {
-        id: 10,
-        title: 'Additional Details',
-        subtitle: 'Submission, inspection, and report info',
-        icon: FileText,
-        color: 'from-purple-500 to-violet-600',
-        bgColor: 'from-purple-50 to-violet-100',
-    },
-    // Step 3: Property & Plan (was step 1)
-    {
-        id: 1,
-        title: 'Property & Plan',
-        subtitle: 'Property and plan information',
-        icon: Home,
-        color: 'from-blue-500 to-indigo-600',
-        bgColor: 'from-blue-50 to-indigo-100',
-    },
-    // Step 4: Extent & Boundaries (was step 2)
-    {
-        id: 2,
-        title: 'Extent & Boundaries',
-        subtitle: 'Land extent, boundaries, and physical features',
-        icon: Compass,
-        color: 'from-green-500 to-emerald-600',
-        bgColor: 'from-green-50 to-emerald-100',
-    },
-    // Step 5: Property Search (was step 3)
-    {
-        id: 3,
-        title: 'Property Search',
-        subtitle: 'Find property on Google Maps',
-        icon: MapPin,
-        color: 'from-orange-500 to-red-600',
-        bgColor: 'from-orange-50 to-red-100',
-    },
-    // Step 6: Property Details (was step 4)
-    {
-        id: 4,
-        title: 'Property Details',
-        subtitle: 'Verify location and administrative info',
-        icon: Building,
-        color: 'from-cyan-500 to-blue-600',
-        bgColor: 'from-cyan-50 to-blue-100',
-    },
-    // Step 7: Locality Information (was step 5)
-    {
-        id: 5,
-        title: 'Locality Information',
-        subtitle: 'Nearby facilities, infrastructure, and area',
-        icon: MapPin,
-        color: 'from-pink-500 to-rose-600',
-        bgColor: 'from-pink-50 to-rose-100',
-    },
-    // Step 8: Property Description (was step 6)
-    {
-        id: 6,
-        title: 'Property Description',
-        subtitle: 'Land, building details and photos',
-        icon: ClipboardList,
-        color: 'from-amber-500 to-orange-600',
-        bgColor: 'from-amber-50 to-orange-100',
-    },
-    // Step 9: Legal Aspects (was step 7)
-    {
-        id: 7,
-        title: 'Legal Aspects',
-        subtitle: 'Ownership and legal status',
-        icon: Gavel,
-        color: 'from-purple-500 to-violet-600',
-        bgColor: 'from-purple-50 to-violet-100',
-    },
-    // Step 10: Land Values (was step 8)
-    {
-        id: 8,
-        title: 'Land Values',
-        subtitle: 'Comparable properties',
-        icon: TrendingUp,
-        color: 'from-green-500 to-teal-600',
-        bgColor: 'from-green-50 to-teal-100',
-    },
-    // Step 11: Valuation (unchanged)
-    {
-        id: 11,
-        title: 'Valuation',
-        subtitle: 'Property valuation breakdown',
-        icon: Scale,
-        color: 'from-indigo-500 to-blue-600',
-        bgColor: 'from-indigo-50 to-blue-100',
-    },
-    // Step 12: Invoice (unchanged)
-    {
-        id: 12,
-        title: 'Invoice',
-        subtitle: 'Professional fees',
-        icon: Receipt,
-        color: 'from-amber-500 to-orange-600',
-        bgColor: 'from-amber-50 to-orange-100',
-    },
-    // Step 13: Certification (unchanged)
-    {
-        id: 13,
-        title: 'Certification',
-        subtitle: 'Valuer certification',
-        icon: Award,
-        color: 'from-amber-500 to-yellow-600',
-        bgColor: 'from-amber-50 to-yellow-100',
-    },
-];
+// Steps configuration imported from constants
+const steps = FORM_STEPS;
 
 // Step 1: Property & Plan Information
 const PropertyPlanStep: React.FC<StepComponentProps> = ({ register, errors, setValue, watch }) => {
@@ -1994,54 +1484,7 @@ const AdditionalDetailsStep: React.FC<StepComponentProps> = ({
     );
 };
 
-interface MultiStepFormProps {
-    onSubmit: (data: FormData, submissionType: 'draft' | 'complete') => Promise<void>;
-    isSubmitting?: boolean;
-    user?: any;
-    isEditMode?: boolean;
-    reportId?: number;
-    initialData?: Partial<FormData>;
-    reportType?: 'residential_property' | 'bare_land' | 'multi_property';  // Report type
-
-    // Multi-property context props
-    isEmbeddedInMultiProperty?: boolean;
-    commonData?: {
-        // Applicant & Purpose (Step 9)
-        applicant_title?: string;
-        applicant_full_name?: string;
-        applicant_id_type?: string;
-        applicant_id_number?: string;
-        applicant_address_line1?: string;
-        applicant_address_line2?: string;
-        applicant_district?: string;
-        applicant_province?: string;
-        applicant_country?: string;
-        valuation_type?: string;
-        valuation_purpose?: string;
-        property_type_valued?: string;
-        has_additional_owner?: string;
-        additional_owner_names?: string;
-        // Additional Details (Step 10)
-        submission_recipient_position?: string;
-        submission_organization?: string;
-        submission_address?: string;
-        inspection_date?: string;
-        has_special_note?: string;
-        special_note_text?: string;
-        report_reference?: string;
-        report_date?: string;
-    };
-    onSaveProperty?: (data: FormData) => Promise<void>;
-    onFinishProperty?: (data: FormData) => Promise<void>;
-    onCancelProperty?: () => void;
-    hideCertification?: boolean;
-}
-
-interface DataQualityWarning {
-    field: string;
-    message: string;
-    severity: 'warning' | 'info';
-}
+// Types imported from '../types/multiStepForm'
 
 /**
  * Transform individual deed form fields into backend array format
@@ -2693,11 +2136,20 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
                 const reportData = { ...formData, status: 'draft', report_type: 'residential_property' };
 
                 const token = localStorage.getItem('authToken');
+                const csrfToken = getCSRFToken();
 
-                navigator.sendBeacon(
-                    `${API_URL}/api/reports`,
-                    new Blob([JSON.stringify(reportData)], { type: 'application/json' })
-                );
+                // Use fetch with keepalive instead of sendBeacon to allow custom headers (CSRF token)
+                // keepalive: true allows the request to complete even during page unload
+                fetch('/api/reports', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...(token && { Authorization: `Bearer ${token}` }),
+                        ...(csrfToken && { 'X-CSRF-Token': csrfToken }),
+                    },
+                    body: JSON.stringify(reportData),
+                    keepalive: true,
+                });
             }
         };
 
@@ -2790,6 +2242,12 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
             transformedComparableProperties = validComparableProps.length > 0 ? validComparableProps : undefined;
         }
 
+        // Fields to filter out - these should only exist in the `deeds` array, not at root level
+        const fieldsToRemove = [
+            'deed_type', 'deed_number', 'deed_date', 'notary_name', 'notary_location',
+            'certificate_number', 'certificate_date', 'certificate_notary_name', 'certificate_notary_district',
+        ];
+
         // Merge validated data with ALL form data to ensure nothing is lost
         const submissionData = {
             ...validatedData,  // Fields validated by Zod schema
@@ -2799,6 +2257,11 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
             has_deed_info: deedData ? 'yes' : 'no',
             comparable_properties: transformedComparableProperties,  // Use transformed data
         };
+
+        // Remove extra deed fields that should only be in the deeds array
+        for (const field of fieldsToRemove) {
+            delete (submissionData as any)[field];
+        }
 
         if (import.meta.env.DEV) {
             console.log('[MultiStepForm] Final submission data:', submissionData);

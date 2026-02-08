@@ -2,8 +2,9 @@
 AI-powered narrative generation for land descriptions in valuation reports.
 Uses Claude API to generate professional, contextual land descriptions.
 """
-from typing import Optional
+from typing import Optional, Dict, Any
 from .anthropic_client import get_anthropic_client, is_anthropic_configured
+from .base_narrative import BaseNarrativeService
 
 
 def format_land_value(value: str) -> str:
@@ -86,138 +87,110 @@ def format_land_value(value: str) -> str:
     return value_map.get(value, value.replace('_', ' ').title())
 
 
-async def generate_land_narrative(
-    # Basic characteristics
-    land_shape: Optional[str] = None,
-    land_type: Optional[str] = None,
-    land_level: Optional[str] = None,
-    land_level_difference: Optional[float] = None,
-
-    # Frontage
-    land_frontage_type: Optional[str] = None,
-    land_frontage_width: Optional[float] = None,
-    land_frontage_description: Optional[str] = None,
-
-    # Soil & Water
-    soil_type: Optional[str] = None,
-    water_table_depth: Optional[float] = None,
-
-    # Risks & Conditions
-    flood_risk: Optional[str] = None,
-    land_condition: Optional[str] = None,
-
-    # Topographical features
-    elevation_changes: Optional[str] = None,
-    drainage_pattern: Optional[str] = None,
-    vegetation_type: Optional[str] = None,
-    natural_features: Optional[str] = None
-) -> Optional[str]:
+class LandNarrativeService(BaseNarrativeService):
     """
-    Generate a professional land description narrative using Claude AI.
-
-    The narrative length adapts to the amount of data provided:
-    - Minimal data (1-3 fields): 30-50 words
-    - Moderate data (4-6 fields): 60-90 words
-    - Rich data (7+ fields): 100-140 words
-
-    Args:
-        All land-related data fields (all optional)
-
-    Returns:
-        Generated narrative text or None if generation fails
+    Service for generating professional land descriptions for Sri Lankan valuation reports.
+    Extends BaseNarrativeService with land-specific prompt engineering and adaptive length.
     """
-    if not is_anthropic_configured():
-        print("[LAND_NARRATIVE] Warning: ANTHROPIC_API_KEY not set")
-        return None
 
-    try:
-        client = get_anthropic_client()
+    def get_service_name(self) -> str:
+        return "LAND_NARRATIVE"
 
-        # Build the context for AI
+    def get_max_tokens(self) -> int:
+        return 400
+
+    def _calculate_richness(self, data: Dict[str, Any]) -> tuple:
+        """Calculate data richness level and return (level, word_range, sentence_guide, count)."""
+        countable_fields = [
+            'land_shape', 'land_type', 'land_level', 'land_frontage_type',
+            'soil_type', 'flood_risk', 'elevation_changes', 'drainage_pattern',
+            'vegetation_type', 'natural_features'
+        ]
+        data_count = sum(1 for field in countable_fields if data.get(field))
+
+        if data_count <= 3:
+            return ("minimal", "30-50 words", "1-2 sentences", data_count)
+        elif data_count <= 6:
+            return ("moderate", "60-90 words", "3-4 sentences", data_count)
+        else:
+            return ("rich", "100-140 words", "4-6 sentences", data_count)
+
+    def build_prompt(self, data: Dict[str, Any]) -> str:
+        """Build the land narrative prompt from input data."""
         context_parts = []
 
-        # Count non-null fields to determine data richness
-        data_count = 0
-
         # Basic characteristics
+        land_shape = data.get('land_shape')
         if land_shape:
             context_parts.append(f"Land Shape: {format_land_value(land_shape)}")
-            data_count += 1
 
+        land_type = data.get('land_type')
         if land_type:
             context_parts.append(f"Land Type: {format_land_value(land_type)}")
-            data_count += 1
 
+        land_level = data.get('land_level')
         if land_level:
             level_text = f"Land Level: {format_land_value(land_level)}"
+            land_level_difference = data.get('land_level_difference')
             if land_level_difference:
                 level_text += f" (difference: {land_level_difference} feet)"
             context_parts.append(level_text)
-            data_count += 1
 
         # Frontage
+        land_frontage_type = data.get('land_frontage_type')
         if land_frontage_type:
             frontage_text = f"Road Frontage: {format_land_value(land_frontage_type)}"
+            land_frontage_width = data.get('land_frontage_width')
             if land_frontage_width:
                 frontage_text += f" ({land_frontage_width} meters wide)"
             context_parts.append(frontage_text)
-            data_count += 1
 
+        land_frontage_description = data.get('land_frontage_description')
         if land_frontage_description:
             context_parts.append(f"Frontage Details: {land_frontage_description}")
 
         # Soil & Water
+        soil_type = data.get('soil_type')
         if soil_type:
             context_parts.append(f"Soil Type: {format_land_value(soil_type)}")
-            data_count += 1
 
+        water_table_depth = data.get('water_table_depth')
         if water_table_depth:
             context_parts.append(f"Water Table Depth: {water_table_depth} feet below ground level")
 
         # Risks & Conditions
+        flood_risk = data.get('flood_risk')
         if flood_risk:
             context_parts.append(f"Flood Risk: {format_land_value(flood_risk)}")
-            data_count += 1
 
+        land_condition = data.get('land_condition')
         if land_condition:
             context_parts.append(f"Land Condition: {format_land_value(land_condition)}")
 
         # Topographical features
+        elevation_changes = data.get('elevation_changes')
         if elevation_changes:
             context_parts.append(f"Elevation: {format_land_value(elevation_changes)}")
-            data_count += 1
 
+        drainage_pattern = data.get('drainage_pattern')
         if drainage_pattern:
             context_parts.append(f"Drainage: {format_land_value(drainage_pattern)}")
-            data_count += 1
 
+        vegetation_type = data.get('vegetation_type')
         if vegetation_type:
             context_parts.append(f"Vegetation: {format_land_value(vegetation_type)}")
-            data_count += 1
 
+        natural_features = data.get('natural_features')
         if natural_features:
             context_parts.append(f"Natural Features: {natural_features}")
-            data_count += 1
 
         # Determine data richness level
-        if data_count <= 3:
-            richness_level = "minimal"
-            word_range = "30-50 words"
-            sentence_guide = "1-2 sentences"
-        elif data_count <= 6:
-            richness_level = "moderate"
-            word_range = "60-90 words"
-            sentence_guide = "3-4 sentences"
-        else:
-            richness_level = "rich"
-            word_range = "100-140 words"
-            sentence_guide = "4-6 sentences"
+        richness_level, word_range, sentence_guide, data_count = self._calculate_richness(data)
 
         # Create the full context
         full_context = "\n".join(context_parts) if context_parts else "No data provided"
 
-        # Construct the prompt
-        prompt = f"""You are a professional property valuer in Sri Lanka writing the LAND DESCRIPTION section of a formal valuation report.
+        return f"""You are a professional property valuer in Sri Lanka writing the LAND DESCRIPTION section of a formal valuation report.
 
 AVAILABLE DATA:
 {full_context}
@@ -274,29 +247,64 @@ Rich data (all fields including natural features):
 
 Now generate the land description following the {word_range} guideline:"""
 
-        # Call Claude API
-        message = client.messages.create(
-            model="claude-3-5-haiku-20241022",  # Same model as other narrative services
-            max_tokens=400,
-            temperature=0.7,
-            messages=[
-                {"role": "user", "content": prompt}
-            ]
-        )
 
-        # Extract the generated text
-        if message.content and len(message.content) > 0:
-            narrative = message.content[0].text.strip()
-            word_count = len(narrative.split())
-            print(f"[LAND_NARRATIVE] Successfully generated narrative ({word_count} words, {len(narrative)} chars)")
-            print(f"[LAND_NARRATIVE] Data richness: {richness_level} ({data_count} fields provided)")
-            return narrative
-        else:
-            print("[LAND_NARRATIVE] No content in Claude response")
-            return None
+# Singleton instance for the service
+_land_narrative_service = LandNarrativeService()
 
-    except Exception as e:
-        print(f"[LAND_NARRATIVE] Error generating narrative: {str(e)}")
-        import traceback
-        print(traceback.format_exc())
-        return None
+
+async def generate_land_narrative(
+    # Basic characteristics
+    land_shape: Optional[str] = None,
+    land_type: Optional[str] = None,
+    land_level: Optional[str] = None,
+    land_level_difference: Optional[float] = None,
+
+    # Frontage
+    land_frontage_type: Optional[str] = None,
+    land_frontage_width: Optional[float] = None,
+    land_frontage_description: Optional[str] = None,
+
+    # Soil & Water
+    soil_type: Optional[str] = None,
+    water_table_depth: Optional[float] = None,
+
+    # Risks & Conditions
+    flood_risk: Optional[str] = None,
+    land_condition: Optional[str] = None,
+
+    # Topographical features
+    elevation_changes: Optional[str] = None,
+    drainage_pattern: Optional[str] = None,
+    vegetation_type: Optional[str] = None,
+    natural_features: Optional[str] = None
+) -> Optional[str]:
+    """
+    Generate a professional land description narrative using Claude AI.
+
+    The narrative length adapts to the amount of data provided:
+    - Minimal data (1-3 fields): 30-50 words
+    - Moderate data (4-6 fields): 60-90 words
+    - Rich data (7+ fields): 100-140 words
+
+    This function maintains backward compatibility while using the new BaseNarrativeService.
+    """
+    # Package parameters into data dict for the service
+    data = {
+        'land_shape': land_shape,
+        'land_type': land_type,
+        'land_level': land_level,
+        'land_level_difference': land_level_difference,
+        'land_frontage_type': land_frontage_type,
+        'land_frontage_width': land_frontage_width,
+        'land_frontage_description': land_frontage_description,
+        'soil_type': soil_type,
+        'water_table_depth': water_table_depth,
+        'flood_risk': flood_risk,
+        'land_condition': land_condition,
+        'elevation_changes': elevation_changes,
+        'drainage_pattern': drainage_pattern,
+        'vegetation_type': vegetation_type,
+        'natural_features': natural_features
+    }
+
+    return await _land_narrative_service.generate(data)

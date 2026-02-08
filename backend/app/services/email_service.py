@@ -272,6 +272,120 @@ class EmailService:
 
         return EmailService.send_email(email, subject, html_content)
 
+    @staticmethod
+    def send_verification_email(email: str, token: str, full_name: str) -> bool:
+        """
+        Send email verification email.
+
+        Args:
+            email: User's email address
+            token: Email verification token (24-hour expiry)
+            full_name: User's full name
+
+        Returns:
+            True if sent successfully, False otherwise
+        """
+        verify_url = f"{FRONTEND_URL}/verify-email?email={email}&token={token}"
+
+        subject = "Verify Your Email - Property Valuation Platform"
+
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {{
+                    font-family: Arial, sans-serif;
+                    line-height: 1.6;
+                    color: #333;
+                }}
+                .container {{
+                    max-width: 600px;
+                    margin: 0 auto;
+                    padding: 20px;
+                }}
+                .header {{
+                    background-color: #2563eb;
+                    color: white;
+                    padding: 20px;
+                    text-align: center;
+                }}
+                .content {{
+                    padding: 20px;
+                    background-color: #f9fafb;
+                }}
+                .button {{
+                    display: inline-block;
+                    background-color: #10b981;
+                    color: white;
+                    padding: 12px 24px;
+                    text-decoration: none;
+                    border-radius: 6px;
+                    margin: 20px 0;
+                }}
+                .footer {{
+                    padding: 20px;
+                    text-align: center;
+                    font-size: 12px;
+                    color: #666;
+                }}
+                .info {{
+                    background-color: #dbeafe;
+                    border: 1px solid #3b82f6;
+                    padding: 10px;
+                    border-radius: 4px;
+                    margin-top: 20px;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h1>Verify Your Email</h1>
+                </div>
+                <div class="content">
+                    <p>Hello {full_name},</p>
+                    <p>Thank you for registering with the Property Valuation Platform. Please verify your email address to complete your account setup.</p>
+                    <p>Click the button below to verify your email:</p>
+                    <p style="text-align: center;">
+                        <a href="{verify_url}" class="button">Verify Email</a>
+                    </p>
+                    <p>Or copy and paste this link into your browser:</p>
+                    <p style="word-break: break-all; font-size: 14px; color: #666;">
+                        {verify_url}
+                    </p>
+                    <div class="info">
+                        <strong>Note:</strong> This link will expire in 24 hours. If you did not create an account, you can safely ignore this email.
+                    </div>
+                </div>
+                <div class="footer">
+                    <p>This is an automated message from Property Valuation Platform.</p>
+                    <p>Please do not reply to this email.</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+
+        plain_content = f"""
+        Verify Your Email
+
+        Hello {full_name},
+
+        Thank you for registering with the Property Valuation Platform. Please verify your email address.
+
+        Click here to verify your email: {verify_url}
+
+        This link will expire in 24 hours.
+
+        If you did not create an account, you can safely ignore this email.
+
+        ---
+        Property Valuation Platform
+        """
+
+        return EmailService.send_email(email, subject, html_content, plain_content)
+
 
 # Export
 __all__ = ['EmailService']

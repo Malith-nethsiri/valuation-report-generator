@@ -55,6 +55,8 @@ const FIELD_LABELS: Record<string, string> = {
   floor_area: "Floor Area",
   rooms: "Rooms",
   room_type: "Room Type",
+  has_attached_bathroom: "Has Attached Bathroom",
+  count: "Room Count",
   property_photos: "Property Photos",
 
   // Step 7: Legal Aspects

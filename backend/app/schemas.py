@@ -2,9 +2,32 @@ from pydantic import BaseModel, EmailStr, Field, field_validator, field_serializ
 from datetime import datetime
 from typing import Optional, List, Dict
 import re
-from .utils.json_validators import validate_boundaries, validate_buildings, validate_comparable_properties
+from .utils.json_validators import (
+    validate_boundaries,
+    validate_buildings,
+    validate_comparable_properties,
+    validate_deeds,
+    validate_nearby_facilities,
+    validate_property_photos,
+    validate_access_road_conditions
+)
 
 # ===== VALIDATION HELPER FUNCTIONS =====
+
+def _validate_password_common(password: str) -> str:
+    """Common password validation logic for all password fields.
+
+    Validates password strength requirements using auth module validator.
+    Raises ValueError if password doesn't meet requirements.
+    Returns the validated password.
+    """
+    from .auth import validate_password_strength
+
+    is_valid, error_msg = validate_password_strength(password)
+    if not is_valid:
+        raise ValueError(error_msg)
+    return password
+
 
 def sanitize_dangerous_characters(value: str) -> str:
     """Remove dangerous characters that could be used for injection attacks"""
@@ -42,6 +65,109 @@ def validate_passport(value: str) -> bool:
     # - Canada: 2 letters + 6 digits (e.g., AB123456)
     pattern = r'^[A-Z0-9]{6,12}$'
     return bool(re.match(pattern, value.upper()))
+
+
+def validate_date_format(value: str) -> bool:
+    """
+    Validate date format DD-MM-YYYY.
+    Returns True if valid or empty, False otherwise.
+    This ensures consistency between frontend collection and database storage.
+    """
+    if not value:
+        return True  # Optional field
+
+    value = value.strip()
+
+    # DD-MM-YYYY format pattern
+    pattern = r'^(\d{2})-(\d{2})-(\d{4})$'
+    match = re.match(pattern, value)
+
+    if not match:
+        return False
+
+    day, month, year = int(match.group(1)), int(match.group(2)), int(match.group(3))
+
+    # Basic range validation
+    if month < 1 or month > 12:
+        return False
+    if day < 1 or day > 31:
+        return False
+    if year < 1900 or year > 2100:
+        return False
+
+    # Days in month validation
+    days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+
+    # Leap year check for February
+    if year % 4 == 0 and (year % 100 != 0 or year % 400 == 0):
+        days_in_month[1] = 29
+
+    if day > days_in_month[month - 1]:
+        return False
+
+    return True
+
+
+def normalize_date_format(value: str) -> str:
+    """
+    Normalize date to DD-MM-YYYY format.
+    Handles common input formats: DD/MM/YYYY, DD.MM.YYYY, YYYY-MM-DD
+    Returns normalized date or original if already correct/unrecognized.
+    """
+    if not value:
+        return value
+
+    value = value.strip()
+
+    # Already in DD-MM-YYYY format
+    if re.match(r'^\d{2}-\d{2}-\d{4}$', value):
+        return value
+
+    # DD/MM/YYYY format
+    match = re.match(r'^(\d{2})/(\d{2})/(\d{4})$', value)
+    if match:
+        return f"{match.group(1)}-{match.group(2)}-{match.group(3)}"
+
+    # DD.MM.YYYY format
+    match = re.match(r'^(\d{2})\.(\d{2})\.(\d{4})$', value)
+    if match:
+        return f"{match.group(1)}-{match.group(2)}-{match.group(3)}"
+
+    # YYYY-MM-DD format (ISO)
+    match = re.match(r'^(\d{4})-(\d{2})-(\d{2})$', value)
+    if match:
+        return f"{match.group(3)}-{match.group(2)}-{match.group(1)}"
+
+    return value
+
+
+def validate_id_number(id_type: str, id_number: str) -> tuple[bool, str]:
+    """
+    Validate ID number based on ID type.
+    Returns (is_valid, error_message).
+    Ensures consistency between frontend validation and backend storage.
+    """
+    if not id_number:
+        return True, ""  # Optional field
+
+    if not id_type:
+        return True, ""  # No type specified, allow any
+
+    id_number = id_number.strip()
+    id_type_upper = id_type.upper()
+
+    if id_type_upper == 'NIC':
+        if not validate_sri_lankan_nic(id_number):
+            return False, "Invalid NIC format. Use old format (9 digits + V/X) or new format (12 digits)"
+    elif id_type_upper == 'PASSPORT':
+        if not validate_passport(id_number):
+            return False, "Invalid passport format. Must be 6-12 alphanumeric characters"
+    elif id_type_upper == 'OTHER':
+        if len(id_number) < 3:
+            return False, "ID number must be at least 3 characters"
+
+    return True, ""
+
 
 # Authentication Schemas
 class UserBase(BaseModel):
@@ -81,12 +207,7 @@ class UserCreate(UserBase):
     @classmethod
     def validate_password_strength(cls, v):
         """Validate password strength requirements"""
-        from .auth import validate_password_strength
-
-        is_valid, error_msg = validate_password_strength(v)
-        if not is_valid:
-            raise ValueError(error_msg)
-        return v
+        return _validate_password_common(v)
 
 class UserLogin(BaseModel):
     email: EmailStr = Field(..., description="Email address")
@@ -95,6 +216,7 @@ class UserLogin(BaseModel):
 class UserResponse(UserBase):
     id: int
     role: str = Field(default="user", description="User role: 'user' or 'admin'")
+    email_verified: bool = Field(default=False, description="Whether email has been verified")
     created_at: datetime
     updated_at: Optional[datetime] = None
     bank_accounts: Optional[List["BankAccount"]] = None
@@ -147,8 +269,9 @@ class RefreshTokenRequest(BaseModel):
 
 
 class RefreshTokenResponse(BaseModel):
-    """Response schema for token refresh."""
+    """Response schema for token refresh with token rotation."""
     access_token: str
+    refresh_token: Optional[str] = None  # New refresh token for rotation (body-based clients)
     token_type: str = "bearer"
 
 
@@ -176,6 +299,17 @@ class DeedInfo(BaseModel):
     deed_date: str = Field(..., description="Deed date (DD-MM-YYYY)")
     notary_name: Optional[str] = Field(None, description="Notary name")
     notary_location: Optional[str] = Field(None, description="Notary location")
+
+    @field_validator('deed_date')
+    @classmethod
+    def validate_deed_date(cls, v):
+        """Validate and normalize deed date to DD-MM-YYYY format."""
+        if not v:
+            raise ValueError("Deed date is required")
+        normalized = normalize_date_format(v)
+        if not validate_date_format(normalized):
+            raise ValueError(f'Invalid deed date format: "{v}". Use DD-MM-YYYY format')
+        return normalized
 
 # Access and Road Condition Schemas
 class RoadCondition(BaseModel):
@@ -320,6 +454,205 @@ class Building(BaseModel):
     building_photos: List[BuildingPhoto] = Field(default_factory=list, max_items=5, description="Building photos (max 5)")
     additional_structures_description: Optional[str] = Field(None, max_length=2000, description="Description of additional/separate structures (store rooms, garages, outbuildings)")
 
+# ===== REPORT FIELD GROUP MIXINS =====
+# These mixins organize ReportBase's 150+ fields into logical groups.
+# Used by per-type schemas (BareLandReportCreate, ResidentialReportCreate)
+# to validate only the relevant fields for each report type.
+
+
+class IdentificationFields(BaseModel):
+    """Property identification and plan details."""
+    lot_number: Optional[str] = Field(None, max_length=200)
+    plan_number: Optional[str] = Field(None, max_length=100)
+    plan_date: Optional[str] = Field(None, max_length=50)
+    licensed_surveyor_name: Optional[str] = Field(None, max_length=255)
+    property_identification_type: Optional[str] = Field(None, max_length=50)
+    property_identification_documents: Optional[dict] = Field(None)
+    has_deed_info: Optional[str] = Field(None, max_length=10)
+    deeds: Optional[List[DeedInfo]] = Field(None)
+    has_multiple_lots: Optional[bool] = Field(None)
+    lots_data: Optional[List[dict]] = Field(None)
+    uploaded_documents: Optional[List[dict]] = Field(None)
+    field_sources: Optional[dict] = Field(None)
+    survey_plan_scale: Optional[str] = Field(None, max_length=50)
+    plan_reference_notes: Optional[str] = Field(None)
+    land_traditional_name: Optional[str] = Field(None, max_length=300)
+
+
+class ApplicantFields(BaseModel):
+    """Applicant and request information."""
+    applicant_title: Optional[str] = Field(None, max_length=20)
+    applicant_full_name: Optional[str] = Field(None, max_length=500)
+    applicant_id_type: Optional[str] = Field(None, max_length=50)
+    applicant_id_number: Optional[str] = Field(None, max_length=100)
+    applicant_address_line1: Optional[str] = Field(None, max_length=500)
+    applicant_address_line2: Optional[str] = Field(None, max_length=500)
+    applicant_district: Optional[str] = Field(None, max_length=100)
+    applicant_province: Optional[str] = Field(None, max_length=100)
+    applicant_country: Optional[str] = Field(default="Sri Lanka", max_length=100)
+    applicant_contact_number: Optional[str] = Field(None, max_length=50)
+    request_type: Optional[str] = Field(None, max_length=50)
+    has_additional_owner: Optional[str] = Field(None, max_length=10)
+    additional_owner_names: Optional[str] = Field(None)
+    submission_organization: Optional[str] = Field(None)
+    submission_address: Optional[str] = Field(None)
+    submission_recipient_position: Optional[str] = Field(None, max_length=200)
+
+
+class LocationFields(BaseModel):
+    """Property location, access, and GPS fields."""
+    use_applicant_address_as_property: Optional[bool] = Field(None)
+    assessment_number: Optional[str] = Field(None, max_length=100)
+    property_village: Optional[str] = Field(None, max_length=200)
+    property_divisional_secretariat: Optional[str] = Field(None, max_length=200)
+    property_district: Optional[str] = Field(None, max_length=100)
+    property_province: Optional[str] = Field(None, max_length=100)
+    property_latitude: Optional[float] = Field(None)
+    property_longitude: Optional[float] = Field(None)
+    property_number: Optional[str] = Field(None, max_length=50)
+    grama_niladari_division: Optional[str] = Field(None, max_length=200)
+    hathpaththuwa: Optional[str] = Field(None, max_length=300)
+    korale: Optional[str] = Field(None, max_length=300)
+    pradeshiya_sabha: Optional[str] = Field(None, max_length=200)
+    ward_number: Optional[str] = Field(None, max_length=20)
+    is_municipal_limit: Optional[bool] = Field(None)
+    location_direction: Optional[str] = Field(None, max_length=50)
+    access_starting_point_name: Optional[str] = Field(None)
+    access_starting_point_latitude: Optional[float] = Field(None)
+    access_starting_point_longitude: Optional[float] = Field(None)
+    access_route_data: Optional[dict] = Field(None)
+    access_directions_text: Optional[str] = Field(None)
+    access_distance_km: Optional[float] = Field(None)
+    access_duration_minutes: Optional[int] = Field(None)
+    access_road_type: Optional[str] = Field(None, max_length=200)
+    property_road_position: Optional[str] = Field(None, max_length=100)
+    location_map_image_data: Optional[str] = Field(None)
+    access_road_conditions: Optional[List[RoadCondition]] = Field(None)
+    access_entry_mode: Optional[str] = Field('simple', max_length=20)
+    access_road_classes_detected: Optional[dict] = Field(None)
+
+
+class LandFields(BaseModel):
+    """Land extent, boundaries, and physical characteristics."""
+    land_extent_acres: Optional[float] = Field(None, ge=0, le=99999.99)
+    land_extent_roods: Optional[int] = Field(None, ge=0, le=3)
+    land_extent_perches: Optional[float] = Field(None, ge=0, lt=40)
+    land_extent_hectares: Optional[float] = Field(None, ge=0)
+    land_extent_square_meters: Optional[float] = Field(None, ge=0)
+    land_extent_formatted: Optional[str] = Field(None, max_length=50)
+    boundaries: Optional[dict] = Field(None)
+    physical_boundaries_types: Optional[List[str]] = Field(None)
+    physical_boundaries_description: Optional[str] = Field(None)
+    boundary_types_per_direction: Optional[dict] = Field(None)
+    entrance_type: Optional[str] = Field(None, max_length=100)
+    boundaries_summary_text: Optional[str] = Field(None)
+    land_shape: Optional[str] = Field(None, max_length=50)
+    land_type: Optional[str] = Field(None, max_length=50)
+    land_frontage_type: Optional[str] = Field(None, max_length=100)
+    land_frontage_width: Optional[float] = Field(None)
+    land_frontage_description: Optional[str] = Field(None)
+    land_level: Optional[str] = Field(None, max_length=50)
+    land_level_difference: Optional[float] = Field(None)
+    soil_type: Optional[str] = Field(None, max_length=50)
+    water_table_depth: Optional[float] = Field(None)
+    flood_risk: Optional[str] = Field(None, max_length=50)
+    inundation_risk: Optional[str] = Field(None, max_length=50)
+    earth_slip_risk: Optional[str] = Field(None, max_length=50)
+    land_condition: Optional[str] = Field(None, max_length=50)
+    land_condition_description: Optional[str] = Field(None)
+    land_description_text: Optional[str] = Field(None)
+    ongoing_construction_notes: Optional[str] = Field(None)
+    elevation_changes: Optional[str] = Field(None, max_length=50)
+    drainage_pattern: Optional[str] = Field(None, max_length=50)
+    vegetation_type: Optional[str] = Field(None, max_length=50)
+    natural_features: Optional[str] = Field(None)
+
+
+class BuildingFields(BaseModel):
+    """Building details and occupier information."""
+    buildings: Optional[List[Building]] = Field(None)
+    occupier_name: Optional[str] = Field(None, max_length=300)
+    occupier_relationship: Optional[str] = Field(None, max_length=50)
+    property_photos: Optional[List[BuildingPhoto]] = Field(None, max_items=20)
+
+
+class LocalityFields(BaseModel):
+    """Locality and infrastructure information."""
+    distance_to_major_town_km: Optional[float] = Field(None)
+    major_town_name: Optional[str] = Field(None, max_length=200)
+    nearby_facilities: Optional[List[dict]] = Field(None)
+    has_electricity: Optional[bool] = Field(None)
+    water_supply_type: Optional[List[str]] = Field(None)
+    telecommunication_types: Optional[List[str]] = Field(None)
+    internet_types: Optional[List[str]] = Field(None)
+    has_public_transport: Optional[bool] = Field(None)
+    public_transport_routes: Optional[str] = Field(None)
+    public_transport_frequency: Optional[str] = Field(None, max_length=200)
+    nearest_bus_stop_distance_km: Optional[float] = Field(None)
+    nearest_bus_stop_name: Optional[str] = Field(None, max_length=200)
+    nearest_railway_station: Optional[str] = Field(None, max_length=200)
+    nearest_railway_distance_km: Optional[float] = Field(None)
+    area_type: Optional[str] = Field(None, max_length=50)
+    development_level: Optional[str] = Field(None, max_length=50)
+    predominant_building_type: Optional[List[str]] = Field(None)
+    is_tourist_area: Optional[bool] = Field(None)
+    tourist_attractions_nearby: Optional[str] = Field(None)
+    locality_description_text: Optional[str] = Field(None)
+
+
+class LegalFields(BaseModel):
+    """Legal aspects and title information."""
+    ownership_type: Optional[str] = Field(None, max_length=200)
+    street_lines_status: Optional[str] = Field(None, max_length=200)
+    building_limits_status: Optional[str] = Field(None, max_length=200)
+    local_authority_data: Optional[str] = Field(None)
+    rent_act_effectiveness: Optional[str] = Field(None, max_length=200)
+    title_search_conducted: Optional[str] = Field(None, max_length=3)
+    pedigree_search_conducted: Optional[str] = Field(None, max_length=3)
+    valuation_basis_note: Optional[str] = Field(None)
+    property_encumbered: Optional[str] = Field(None, max_length=3)
+    encumbrance_type: Optional[str] = Field(None, max_length=100)
+    encumbrance_details: Optional[str] = Field(None)
+    street_lines_gazette_ref: Optional[str] = Field(None, max_length=100)
+    street_lines_gazette_date: Optional[str] = Field(None, max_length=20)
+    street_lines_impact_description: Optional[str] = Field(None)
+    building_distance_from_road: Optional[str] = Field(None, max_length=50)
+    building_plan_approved: Optional[str] = Field(None, max_length=20)
+    building_plan_reference: Optional[str] = Field(None, max_length=200)
+    building_approval_authority: Optional[str] = Field(None, max_length=200)
+    building_within_limits: Optional[str] = Field(None, max_length=3)
+    local_authority_rated: Optional[str] = Field(None, max_length=3)
+    local_authority_tax_levy: Optional[str] = Field(None)
+
+
+class ValuationFields(BaseModel):
+    """Valuation calculations and comparable properties."""
+    comparable_properties: Optional[List[dict]] = Field(None)
+    land_market_analysis: Optional[str] = Field(None)
+    valuation_land_extent: Optional[float] = Field(None, ge=0)
+    valuation_rate_per_perch: Optional[float] = Field(None, ge=0)
+    valuation_total_land_value: Optional[float] = Field(None, ge=0)
+    valuation_buildings_data: Optional[List[dict]] = Field(None)
+    valuation_total_buildings_value: Optional[float] = Field(None, ge=0)
+    valuation_addons: Optional[List[dict]] = Field(None)
+    valuation_total_addons_value: Optional[float] = Field(None, ge=0)
+    valuation_market_value: Optional[float] = Field(None, ge=0)
+    valuation_forced_sale_percentage: Optional[float] = Field(None, ge=0, le=100)
+    valuation_forced_sale_value: Optional[float] = Field(None, ge=0)
+    valuation_insurance_value: Optional[float] = Field(None, ge=0)
+    valuation_manual_overrides: Optional[dict] = Field(None)
+
+
+class CertificationFields(BaseModel):
+    """Certification and invoice data."""
+    certification_text: Optional[str] = Field(None)
+    certificate_identity_confirmed: Optional[bool] = Field(None)
+    certification_valuer_name: Optional[str] = Field(None, max_length=255)
+    certification_valuer_designation: Optional[str] = Field(None, max_length=200)
+    certification_date: Optional[str] = Field(None, max_length=50)
+    invoice_data: Optional['InvoiceData'] = Field(None)
+
+
 # Report Schemas
 class ReportBase(BaseModel):
     report_type: str = Field(default="residential_property", description="Type of report")
@@ -337,7 +670,6 @@ class ReportBase(BaseModel):
     inspection_place: Optional[str] = Field(None, description="Inspection place (free text)")
 
     # Property & Plan Information
-    property_lot_description: Optional[str] = Field(None, max_length=200, description="DEPRECATED: Use lot_number instead")
     lot_number: Optional[str] = Field(None, max_length=200, description="Lot number (e.g., Lot 15, Lots 1 & 2)")
     plan_number: Optional[str] = Field(None, max_length=100, description="Plan number")
     plan_date: Optional[str] = Field(None, max_length=50, description="Plan date (DD-MM-YYYY)")
@@ -449,7 +781,6 @@ class ReportBase(BaseModel):
     access_road_type: Optional[str] = Field(None, max_length=200, description="Road type description")
     property_road_position: Optional[str] = Field(None, max_length=100, description="Position relative to road")
     location_map_image_data: Optional[str] = Field(None, description="Static map image URL or base64 data")
-    access_road_segments: Optional[dict] = Field(None, description="DEPRECATED: Detailed road segment information (kept for backward compatibility)")
     access_road_conditions: Optional[List[RoadCondition]] = Field(None, description="Road conditions array with road type, condition, optional distance, and notes")
     access_entry_mode: Optional[str] = Field('simple', max_length=20, description="Entry mode for road conditions: 'simple' or 'advanced'")
     access_road_classes_detected: Optional[dict] = Field(None, description="Auto-detected road classifications for analytics (backend only, not shown in output)")
@@ -615,11 +946,7 @@ class ReportBase(BaseModel):
 
     # ===== CERTIFICATION =====
     certification_text: Optional[str] = Field(None, description="Certification statement text")
-
-    # DEPRECATED: Use plan_number and plan_date instead (kept for backward compatibility after migration)
-    certificate_survey_plan_ref: Optional[str] = Field(None, max_length=200, description="DEPRECATED: Use plan_number instead. Survey plan reference for certificate of identity")
-    certificate_survey_plan_date: Optional[str] = Field(None, max_length=50, description="DEPRECATED: Use plan_date instead. Survey plan date for certificate of identity")
-    certificate_identity_confirmed: Optional[bool] = Field(None, description="DEPRECATED: Certificate of identity is now optional")
+    certificate_identity_confirmed: Optional[bool] = Field(None, description="Certificate of identity confirmation")
 
     certification_valuer_name: Optional[str] = Field(None, max_length=255, description="Valuer name for certification (auto-filled from user profile)")
     certification_valuer_designation: Optional[str] = Field(None, max_length=200, description="Professional designation for certification")
@@ -740,6 +1067,51 @@ class ReportBase(BaseModel):
             return "yes" if v else "no"
         return v
 
+    # ===== DATE FORMAT VALIDATORS =====
+    # These ensure consistency between frontend data collection (DD-MM-YYYY)
+    # and database storage (String fields expecting DD-MM-YYYY format)
+
+    @field_validator('plan_date', 'inspection_date', 'report_date', 'certification_date')
+    @classmethod
+    def validate_and_normalize_date(cls, v):
+        """
+        Validate and normalize date fields to DD-MM-YYYY format.
+        Handles common input formats and ensures database consistency.
+        """
+        if v is None:
+            return v
+
+        # Normalize the date format first
+        normalized = normalize_date_format(v)
+
+        # Validate the normalized date
+        if not validate_date_format(normalized):
+            raise ValueError(
+                f'Invalid date format: "{v}". Use DD-MM-YYYY format (e.g., 25-12-2023)'
+            )
+
+        return normalized
+
+    @field_validator('applicant_id_number')
+    @classmethod
+    def validate_applicant_id(cls, v, info):
+        """
+        Validate applicant ID number based on ID type.
+        Ensures consistency with frontend validation rules.
+        """
+        if v is None:
+            return v
+
+        # Get the ID type from the data being validated
+        id_type = info.data.get('applicant_id_type') if info.data else None
+
+        if id_type:
+            is_valid, error_msg = validate_id_number(id_type, v)
+            if not is_valid:
+                raise ValueError(error_msg)
+
+        return v.strip() if v else v
+
     # ===== JSON FIELD VALIDATORS =====
 
     @field_validator('boundaries')
@@ -786,6 +1158,48 @@ class ReportBase(BaseModel):
         """Validate comparable properties JSON structure"""
         if v is not None:
             is_valid, error_msg = validate_comparable_properties(v)
+            if not is_valid:
+                raise ValueError(error_msg)
+        return v
+
+    @field_validator('deeds')
+    @classmethod
+    def validate_deeds_json(cls, v):
+        """Validate deeds JSON structure"""
+        if v is not None:
+            is_valid, error_msg = validate_deeds(v)
+            if not is_valid:
+                raise ValueError(error_msg)
+        return v
+
+    @field_validator('nearby_facilities')
+    @classmethod
+    def validate_nearby_facilities_json(cls, v):
+        """Validate nearby facilities JSON structure"""
+        if v is not None:
+            is_valid, error_msg = validate_nearby_facilities(v)
+            if not is_valid:
+                raise ValueError(error_msg)
+        return v
+
+    @field_validator('property_photos')
+    @classmethod
+    def validate_property_photos_json(cls, v):
+        """Validate property photos JSON structure"""
+        if v is not None:
+            is_valid, error_msg = validate_property_photos(v)
+            if not is_valid:
+                raise ValueError(error_msg)
+        return v
+
+    @field_validator('access_road_conditions')
+    @classmethod
+    def validate_access_road_conditions_json(cls, v):
+        """Validate access road conditions JSON structure"""
+        if v is not None:
+            # Convert Pydantic models to dicts for JSON schema validation
+            v_dicts = [item.model_dump() if hasattr(item, 'model_dump') else item for item in v]
+            is_valid, error_msg = validate_access_road_conditions(v_dicts)
             if not is_valid:
                 raise ValueError(error_msg)
         return v
@@ -852,6 +1266,50 @@ class ReportUpdate(ReportBase):
     pass
 
 
+# ===== PER-TYPE REPORT SCHEMAS =====
+# These provide stricter validation by only accepting fields relevant to each report type.
+# Use with discriminated unions at API endpoints for type-safe validation.
+
+class BareLandReportCreate(
+    IdentificationFields, ApplicantFields, LocationFields, LandFields,
+    LocalityFields, LegalFields, ValuationFields, CertificationFields,
+    BaseModel
+):
+    """Schema for bare land reports - no building fields."""
+    report_type: str = Field(default='bare_land')
+    status: str = Field(default='draft')
+    # Bare land has property photos directly (not through buildings)
+    property_photos: Optional[List[BuildingPhoto]] = Field(None, max_items=20)
+    # Report metadata
+    inspection_date: Optional[str] = Field(None, max_length=50)
+    has_special_note: Optional[str] = Field(None, max_length=10)
+    special_note_text: Optional[str] = Field(None)
+    report_reference: Optional[str] = Field(None, max_length=100)
+    report_date: Optional[str] = Field(None, max_length=50)
+    valuation_type: Optional[str] = Field(None, max_length=100)
+    property_type_valued: Optional[str] = Field(None, max_length=200)
+    valuation_purpose: Optional[str] = Field(None, max_length=200)
+
+
+class ResidentialReportCreate(
+    IdentificationFields, ApplicantFields, LocationFields, LandFields,
+    BuildingFields, LocalityFields, LegalFields, ValuationFields,
+    CertificationFields, BaseModel
+):
+    """Schema for residential property reports - includes building fields."""
+    report_type: str = Field(default='residential_property')
+    status: str = Field(default='draft')
+    # Report metadata
+    inspection_date: Optional[str] = Field(None, max_length=50)
+    has_special_note: Optional[str] = Field(None, max_length=10)
+    special_note_text: Optional[str] = Field(None)
+    report_reference: Optional[str] = Field(None, max_length=100)
+    report_date: Optional[str] = Field(None, max_length=50)
+    valuation_type: Optional[str] = Field(None, max_length=100)
+    property_type_valued: Optional[str] = Field(None, max_length=200)
+    valuation_purpose: Optional[str] = Field(None, max_length=200)
+
+
 class ReportUpdateRequest(ReportBase):
     """
     Schema for report update requests with explicit field whitelisting.
@@ -891,7 +1349,6 @@ class ReportResponse(BaseModel):
     folio_number: Optional[str] = None
     inspection_place: Optional[str] = None
 
-    property_lot_description: Optional[str] = None  # DEPRECATED
     lot_number: Optional[str] = None
     plan_number: Optional[str] = None
     plan_date: Optional[str] = None
@@ -947,7 +1404,6 @@ class ReportResponse(BaseModel):
     access_road_type: Optional[str] = None
     property_road_position: Optional[str] = None
     location_map_image_data: Optional[str] = None
-    access_road_segments: Optional[List[dict]] = None
     access_road_conditions: Optional[List[RoadCondition]] = None
     access_entry_mode: Optional[str] = None
     access_road_classes_detected: Optional[dict] = None
@@ -1050,10 +1506,6 @@ class ReportResponse(BaseModel):
     valuation_insurance_value: Optional[float] = None
     valuation_manual_overrides: Optional[dict] = None
     certification_text: Optional[str] = None
-
-    # DEPRECATED: Use plan_number and plan_date instead (kept for backward compatibility)
-    certificate_survey_plan_ref: Optional[str] = None
-    certificate_survey_plan_date: Optional[str] = None
     certificate_identity_confirmed: Optional[bool] = None
 
     certification_valuer_name: Optional[str] = None
@@ -1137,7 +1589,6 @@ class PropertyBase(BaseModel):
     property_type: Optional[str] = Field("residential", max_length=50, description="Property type: 'residential' or 'bare_land'")
 
     # Property Identification
-    property_lot_description: Optional[str] = Field(None, max_length=200, description="DEPRECATED: Use lot_number instead")
     lot_number: Optional[str] = Field(None, max_length=200, description="Lot number (e.g., Lot 15, Lots 1 & 2)")
     plan_number: Optional[str] = Field(None, max_length=100)
     plan_date: Optional[str] = Field(None, max_length=50)
@@ -1177,7 +1628,6 @@ class PropertyBase(BaseModel):
     access_road_type: Optional[str] = Field(None, max_length=200)
     property_road_position: Optional[str] = Field(None, max_length=100)
     location_map_image_data: Optional[str] = None
-    access_road_segments: Optional[List[dict]] = None
     access_road_conditions: Optional[List[dict]] = None
     access_entry_mode: Optional[str] = Field(None, max_length=20)
     access_road_classes_detected: Optional[dict] = None
@@ -1327,6 +1777,32 @@ class PropertyBase(BaseModel):
         if v is not None and (v < -180 or v > 180):
             raise ValueError('Longitude must be between -180 and 180')
         return v
+
+    # Date format validators for Property
+    @field_validator('plan_date', 'inspection_date', 'last_valued_date', 'street_lines_gazette_date')
+    @classmethod
+    def validate_property_dates(cls, v):
+        """Validate and normalize date fields to DD-MM-YYYY format."""
+        if v is None:
+            return v
+        normalized = normalize_date_format(v)
+        if not validate_date_format(normalized):
+            raise ValueError(f'Invalid date format: "{v}". Use DD-MM-YYYY format')
+        return normalized
+
+    # ID validation for property owner
+    @field_validator('property_owner_id_number')
+    @classmethod
+    def validate_property_owner_id(cls, v, info):
+        """Validate property owner ID number based on ID type."""
+        if v is None:
+            return v
+        id_type = info.data.get('property_owner_id_type') if info.data else None
+        if id_type:
+            is_valid, error_msg = validate_id_number(id_type, v)
+            if not is_valid:
+                raise ValueError(error_msg)
+        return v.strip() if v else v
 
     @field_validator('water_supply_type')
     @classmethod
@@ -1595,6 +2071,7 @@ class ForgotPasswordRequest(BaseModel):
 
 class ResetPasswordRequest(BaseModel):
     """Request schema for resetting password with token."""
+    email: EmailStr = Field(..., description="Email address associated with the account")
     token: str = Field(..., min_length=20, description="Password reset token from email")
     new_password: str = Field(..., min_length=8, description="New password")
 
@@ -1602,18 +2079,33 @@ class ResetPasswordRequest(BaseModel):
     @classmethod
     def validate_password_strength(cls, v):
         """Validate password strength requirements"""
-        from .auth import validate_password_strength
-
-        is_valid, error_msg = validate_password_strength(v)
-        if not is_valid:
-            raise ValueError(error_msg)
-        return v
+        return _validate_password_common(v)
 
 
 class PasswordResetResponse(BaseModel):
     """Response for password reset operations."""
     success: bool
     message: str
+
+
+# ===== EMAIL VERIFICATION SCHEMAS =====
+
+class SendVerificationRequest(BaseModel):
+    """Request to send/resend verification email. Uses authenticated user's email."""
+    pass
+
+
+class VerifyEmailRequest(BaseModel):
+    """Request to verify email with token from email link."""
+    email: EmailStr = Field(..., description="Email address to verify")
+    token: str = Field(..., min_length=20, description="Verification token from email")
+
+
+class EmailVerificationResponse(BaseModel):
+    """Response for email verification operations."""
+    success: bool
+    message: str
+    email_verified: bool = Field(..., description="Whether the email is now verified")
 
 
 # ===== VEHICLE SCHEMAS =====
@@ -1792,6 +2284,27 @@ class VehicleBase(BaseModel):
     # ===== PHOTOS =====
     vehicle_photos: Optional[List[VehiclePhoto]] = Field(None, max_items=5, description="Vehicle photos (max 5)")
     book_images: Optional[List[VehiclePhoto]] = Field(None, max_items=5, description="Vehicle book images for OCR (max 5)")
+
+    # ===== VALIDATORS =====
+    @field_validator('date_of_first_registration')
+    @classmethod
+    def validate_vehicle_date(cls, v):
+        """Validate and normalize date of first registration to DD-MM-YYYY or DD/MM/YYYY format."""
+        if v is None:
+            return v
+        # Normalize common formats
+        normalized = normalize_date_format(v)
+        if not validate_date_format(normalized):
+            raise ValueError(f'Invalid date format: "{v}". Use DD-MM-YYYY format')
+        return normalized
+
+    @field_validator('registration_number')
+    @classmethod
+    def normalize_registration_number(cls, v):
+        """Normalize vehicle registration number - uppercase and strip whitespace."""
+        if v is None:
+            return v
+        return v.strip().upper()
 
 
 class VehicleCreate(VehicleBase):

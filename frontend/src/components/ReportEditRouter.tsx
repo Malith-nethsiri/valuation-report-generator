@@ -3,8 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { reportApi } from '../services/api';
 import { Report } from '../types';
 import toast from 'react-hot-toast';
-import ResidentialPropertyForm from '../pages/ResidentialPropertyForm';
-import BareLandForm from '../pages/BareLandForm';
+import PropertyReportForm from '../pages/PropertyReportForm';
 import { AlertCircle } from 'lucide-react';
 
 const ReportEditRouter: React.FC = () => {
@@ -81,10 +80,10 @@ const ReportEditRouter: React.FC = () => {
   // Route to the appropriate form based on report type
   switch (reportData.report_type) {
     case 'residential_property':
-      return <ResidentialPropertyForm />;
+      return <PropertyReportForm reportType="residential_property" />;
 
     case 'bare_land':
-      return <BareLandForm />;
+      return <PropertyReportForm reportType="bare_land" />;
 
     case 'multi_property':
       // Navigation handled in useEffect above to avoid setState during render

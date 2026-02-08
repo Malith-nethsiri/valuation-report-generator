@@ -1,7 +1,7 @@
 import React from 'react';
 import { UseFormReturn } from 'react-hook-form';
 import { Home, MapPin, Ruler, DollarSign, Edit, CheckCircle2 } from 'lucide-react';
-import { MultiPropertyFormData } from './MultiPropertyStepForm';
+import { MultiPropertyFormData } from '../types';
 
 interface PropertyComparisonStepProps {
   formMethods: UseFormReturn<MultiPropertyFormData>;

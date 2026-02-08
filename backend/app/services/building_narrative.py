@@ -2,9 +2,11 @@
 AI-powered narrative generation for building descriptions in valuation reports.
 Uses Claude API (same as locality descriptions).
 """
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from ..docx_generator import format_list_with_grammar
 from .anthropic_client import get_anthropic_client, is_anthropic_configured
+from .base_narrative import BaseNarrativeService
+from .narrative_constants import format_water_supply
 
 
 def format_floors(floors: Optional[List[Dict]]) -> str:
@@ -260,29 +262,9 @@ def format_utilities(utilities: Optional[Dict]) -> str:
     parts = []
 
     if utilities.get('water_supply'):
-        water_supply = utilities['water_supply']
-        water_map = {
-            'Pipe-borne (NWSDB)': 'pipe-borne water (NWSDB)',
-            'Well': 'well water',
-            'Bore/Tube Well': 'bore/tube well water',
-            'Rainwater Harvesting': 'rainwater harvesting',
-            # Old values for backward compatibility
-            'pipe_borne': 'pipe-borne water (NWSDB)',
-            'well': 'well water',
-            'tube_well': 'tube well'
-        }
-
-        # Handle both string (legacy) and array (new) formats
-        if isinstance(water_supply, str):
-            # Legacy single value
-            parts.append(water_map.get(water_supply, water_supply))
-        elif isinstance(water_supply, list):
-            # New multi-select array
-            mapped_values = [
-                water_map.get(ws, ws.lower())
-                for ws in water_supply
-            ]
-            parts.append(format_list_with_grammar(mapped_values))
+        formatted = format_water_supply(utilities['water_supply'])
+        if formatted:
+            parts.append(formatted)
 
     elec = utilities.get('electricity', {})
     if elec.get('source'):
@@ -341,47 +323,40 @@ def format_utilities(utilities: Optional[Dict]) -> str:
     return "\n".join(parts) if parts else "Basic utilities"
 
 
-async def generate_building_narrative(
-    building_name: str,
-    building_type: str,
-    stories: int,
-    floors: Optional[List[Dict]] = None,
-    construction_materials: Optional[Dict] = None,
-    utilities_services: Optional[Dict] = None,
-    total_floor_area: Optional[float] = None,
-    building_age: Optional[int] = None,
-    condition: Optional[str] = None,
-    roof_types: Optional[List[str]] = None,
-    wall_types: Optional[List[str]] = None,
-    floor_types: Optional[List[str]] = None
-) -> Optional[str]:
+class BuildingNarrativeService(BaseNarrativeService):
     """
-    Generate professional building description for Sri Lankan valuation reports.
-    Returns condensed one-paragraph description matching industry standards.
+    Service for generating professional building descriptions for Sri Lankan valuation reports.
+    Extends BaseNarrativeService with building-specific prompt engineering.
     """
-    if not is_anthropic_configured():
-        print("[BUILDING_NARRATIVE] Warning: ANTHROPIC_API_KEY not set")
-        return None
 
-    try:
-        client = get_anthropic_client()
+    def get_service_name(self) -> str:
+        return "BUILDING_NARRATIVE"
 
+    def get_max_tokens(self) -> int:
+        return 300
+
+    def build_prompt(self, data: Dict[str, Any]) -> str:
+        """Build the building narrative prompt from input data."""
         # Build context from all building data
         context_parts = []
-        context_parts.append(f"Building Name: {building_name}")
-        context_parts.append(f"Type: {building_type}")
-        context_parts.append(f"Stories: {stories}")
+        context_parts.append(f"Building Name: {data.get('building_name', 'Unknown')}")
+        context_parts.append(f"Type: {data.get('building_type', 'Unknown')}")
+        context_parts.append(f"Stories: {data.get('stories', 1)}")
 
+        total_floor_area = data.get('total_floor_area')
         if total_floor_area:
             context_parts.append(f"Total Area: {total_floor_area} sq ft")
 
+        building_age = data.get('building_age')
         if building_age is not None and building_age > 0:
             year_word = "year" if building_age == 1 else "years"
             context_parts.append(f"Age: {building_age} {year_word}")
 
+        condition = data.get('condition')
         if condition:
             context_parts.append(f"Condition: {condition}")
 
+        roof_types = data.get('roof_types')
         if roof_types:
             roof_labels = {
                 'asbestos_sheets': 'asbestos sheets',
@@ -394,6 +369,7 @@ async def generate_building_narrative(
             roof_text = ', '.join([roof_labels.get(r, r) for r in roof_types])
             context_parts.append(f"Roof: {roof_text}")
 
+        wall_types = data.get('wall_types')
         if wall_types:
             wall_labels = {
                 'brick': 'brick masonry',
@@ -405,6 +381,7 @@ async def generate_building_narrative(
             wall_text = ', '.join([wall_labels.get(w, w) for w in wall_types])
             context_parts.append(f"Walls: {wall_text}")
 
+        floor_types = data.get('floor_types')
         if floor_types:
             floor_labels = {
                 'cement': 'cement',
@@ -416,19 +393,21 @@ async def generate_building_narrative(
             floor_text = ', '.join([floor_labels.get(f, f) for f in floor_types])
             context_parts.append(f"Floors: {floor_text}")
 
+        floors = data.get('floors')
         if floors:
             context_parts.append(f"\nFloor Details:\n{format_floors(floors)}")
 
+        construction_materials = data.get('construction_materials')
         if construction_materials:
             context_parts.append(f"\nConstruction Details:\n{format_materials(construction_materials)}")
 
+        utilities_services = data.get('utilities_services')
         if utilities_services:
             context_parts.append(f"\nUtilities & Services:\n{format_utilities(utilities_services)}")
 
         context = "\n".join(context_parts)
 
-        # Prompt engineering for Sri Lankan valuation style
-        prompt = f"""You are a professional property valuer in Sri Lanka writing a building description for a formal valuation report.
+        return f"""You are a professional property valuer in Sri Lanka writing a building description for a formal valuation report.
 
 BUILDING DATA:
 {context}
@@ -451,17 +430,45 @@ NOTE: When the Floor Details section shows room counts (e.g., "Ground Floor (1,2
 
 Generate now:"""
 
-        message = client.messages.create(
-            model="claude-3-5-haiku-20241022",  # Same model as locality
-            max_tokens=300,
-            temperature=0.7,
-            messages=[{"role": "user", "content": prompt}]
-        )
 
-        narrative = message.content[0].text.strip()
-        print(f"[BUILDING_NARRATIVE] Generated {len(narrative)} chars")
-        return narrative
+# Singleton instance for the service
+_building_narrative_service = BuildingNarrativeService()
 
-    except Exception as e:
-        print(f"[BUILDING_NARRATIVE] Error: {str(e)}")
-        return None
+
+async def generate_building_narrative(
+    building_name: str,
+    building_type: str,
+    stories: int,
+    floors: Optional[List[Dict]] = None,
+    construction_materials: Optional[Dict] = None,
+    utilities_services: Optional[Dict] = None,
+    total_floor_area: Optional[float] = None,
+    building_age: Optional[int] = None,
+    condition: Optional[str] = None,
+    roof_types: Optional[List[str]] = None,
+    wall_types: Optional[List[str]] = None,
+    floor_types: Optional[List[str]] = None
+) -> Optional[str]:
+    """
+    Generate professional building description for Sri Lankan valuation reports.
+    Returns condensed one-paragraph description matching industry standards.
+
+    This function maintains backward compatibility while using the new BaseNarrativeService.
+    """
+    # Package parameters into data dict for the service
+    data = {
+        'building_name': building_name,
+        'building_type': building_type,
+        'stories': stories,
+        'floors': floors,
+        'construction_materials': construction_materials,
+        'utilities_services': utilities_services,
+        'total_floor_area': total_floor_area,
+        'building_age': building_age,
+        'condition': condition,
+        'roof_types': roof_types,
+        'wall_types': wall_types,
+        'floor_types': floor_types
+    }
+
+    return await _building_narrative_service.generate(data)

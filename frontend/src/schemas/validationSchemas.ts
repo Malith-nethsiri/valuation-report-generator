@@ -2,10 +2,14 @@
  * Shared validation schemas for form components.
  * Consolidates common validation patterns across MultiStepForm,
  * MultiPropertyRedesignedStepForm, and ApplicantAndPurposeStep.
+ *
+ * IMPORTANT: These schemas ensure consistency between frontend data collection
+ * and backend database storage. Changes here should be mirrored in
+ * backend/app/schemas.py to prevent data collisions.
  */
 
 import { z } from 'zod';
-import { validateSriLankanNIC, validatePassport } from '../utils/validators';
+import { validateSriLankanNIC, validatePassport, validateDate } from '../utils/validators';
 
 // ===== BASE SCHEMAS (without refinements, for merging) =====
 
@@ -116,6 +120,7 @@ export function validateAdditionalOwner(data: { has_additional_owner?: string; a
 
 /**
  * Complete applicant and purpose schema with ID and additional owner validation.
+ * Used by MultiStepForm.tsx for single property reports.
  */
 export const applicantPurposeSchema = baseApplicantPurposeSchema
   .refine(validateIdFormat, getIdValidationError)
@@ -138,10 +143,53 @@ export const valuationPurposeSchema = z
   });
 
 /**
+ * Step 1 schema for multi-property flow (Applicant & Purpose).
+ * Includes stricter valuation_purpose validation with whitespace and length checks.
+ * Used by MultiPropertyRedesignedStepForm.tsx.
+ */
+export const step1ApplicantPurposeSchema = z.object({
+  applicant_title: z.string().min(1, 'Please select a title'),
+  applicant_full_name: z.string().min(2, 'Please enter the applicant full name'),
+  applicant_id_type: z.string().optional(),
+  applicant_id_number: z.string().optional(),
+  applicant_address_line1: z.string().min(5, 'Please enter address line 1'),
+  applicant_address_line2: z.string().optional(),
+  applicant_district: z.string().min(2, 'Please enter the district'),
+  applicant_province: z.string().min(2, 'Please enter the province'),
+  applicant_country: z.string().min(2, 'Please enter the country').default('Sri Lanka'),
+  applicant_contact_number: z.string().nullable().optional(),
+  valuation_type: z.string().min(1, 'Please enter the valuation type'),
+  valuation_purpose: z
+    .string()
+    .min(1, 'Purpose of valuation is required')
+    .refine((val) => val.trim().length > 0, {
+      message: 'Purpose cannot be only whitespace'
+    })
+    .refine((val) => val.length <= 200, {
+      message: 'Purpose must be 200 characters or less'
+    }),
+  property_type_valued: z.string().min(1, 'Please enter the property type'),
+  has_additional_owner: z.string().optional(),
+  additional_owner_names: z.string().nullable().optional(),
+}).refine(validateAdditionalOwner, {
+  message: 'Please enter the additional owner names',
+  path: ['additional_owner_names'],
+}).refine(validateIdFormat, getIdValidationError);
+
+/**
  * Step 2 schema for multi-property flow (additional details).
+ * Includes date format validation for inspection_date.
  */
 export const step2AdditionalDetailsSchema = baseAdditionalDetailsSchema.extend({
-  inspection_date: z.string().min(1, 'Please enter the inspection date (DD-MM-YYYY)'),
+  inspection_date: z
+    .string()
+    .min(1, 'Please enter the inspection date (DD-MM-YYYY)')
+    .refine(
+      (val) => validateDate(val).isValid,
+      (val) => ({
+        message: validateDate(val).error || 'Invalid date format. Use DD-MM-YYYY (e.g., 25-12-2023)',
+      })
+    ),
 });
 
 // ===== BUILDING SCHEMAS =====
@@ -169,6 +217,7 @@ export const floorSchema = z.object({
 export const roomSchema = z.object({
   room_type: z.string().optional(),
   count: z.number().optional(),
+  has_attached_bathroom: z.boolean().nullish(),
 });
 
 /**
@@ -194,3 +243,53 @@ export const propertyDescriptionSchema = z.object({
  * Empty schema for steps without validation requirements.
  */
 export const emptySchema = z.object({});
+
+// ===== DATE VALIDATION SCHEMA =====
+
+/**
+ * Validates date format DD-MM-YYYY.
+ * Ensures consistency with backend storage format.
+ */
+export const dateSchema = z
+  .string()
+  .optional()
+  .refine(
+    (val) => {
+      if (!val) return true; // Optional
+      return validateDate(val).isValid;
+    },
+    (val) => ({
+      message: validateDate(val || '').error || 'Invalid date format. Use DD-MM-YYYY',
+    })
+  );
+
+/**
+ * Required date schema - validates DD-MM-YYYY format.
+ */
+export const requiredDateSchema = z
+  .string()
+  .min(1, 'Date is required')
+  .refine(
+    (val) => validateDate(val).isValid,
+    (val) => ({
+      message: validateDate(val).error || 'Invalid date format. Use DD-MM-YYYY',
+    })
+  );
+
+// ===== DATA TYPE MAPPING REFERENCE =====
+/**
+ * Frontend Collection → Backend Storage Type Mapping
+ *
+ * This ensures no collisions occur when collecting and storing data:
+ *
+ * | Frontend Field Type | Backend DB Type | Notes |
+ * |---------------------|-----------------|-------|
+ * | string (date)       | String(50)      | DD-MM-YYYY format enforced |
+ * | boolean             | String(10)      | Converted to "yes"/"no" by backend |
+ * | string (NIC)        | String(100)     | Validated: 9+V/X or 12 digits |
+ * | string (Passport)   | String(100)     | Validated: 6-12 alphanumeric |
+ * | number (lat)        | Numeric(10,8)   | Range: -90 to 90 |
+ * | number (lng)        | Numeric(11,8)   | Range: -180 to 180 |
+ * | string[]            | JSON            | Max 5 items for multi-select |
+ * | object              | JSON            | Structure validated by backend |
+ */

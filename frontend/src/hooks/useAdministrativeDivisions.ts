@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
-import axios from 'axios';
 import type { AdministrativeDivisionsData, AdministrativeDivision } from '../types';
-import { API_URL } from '../config';
+import { api } from '../services/api';
 
 /**
  * Hook to fetch all administrative divisions (districts and DS divisions)
@@ -16,7 +15,7 @@ export function useAdministrativeDivisions() {
     async function loadDivisions() {
       try {
         setLoading(true);
-        const response = await axios.get(`${API_URL}/api/administrative-divisions`);
+        const response = await api.get('/api/administrative-divisions');
         setDivisions(response.data.data);
         setError(null);
       } catch (err: any) {
@@ -55,7 +54,7 @@ export function useDSDivisions(district: string | undefined) {
     async function loadDSDivisions() {
       try {
         setLoading(true);
-        const response = await axios.get(`${API_URL}/api/administrative-divisions/${encodeURIComponent(district)}`);
+        const response = await api.get(`/api/administrative-divisions/${encodeURIComponent(district)}`);
         setDSDivisions(response.data.ds_divisions);
         setError(null);
       } catch (err: any) {

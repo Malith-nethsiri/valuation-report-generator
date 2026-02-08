@@ -38,10 +38,13 @@ import { PropertyInReport } from '../types';
 import MultiStepForm from './MultiStepForm';
 import { VehicleStepForm } from './VehicleStepForm';
 import InvoiceDataStep from './InvoiceDataStep';
-import { validateSriLankanNIC, validatePassport } from '../utils/validators';
 import { reportApi, api } from '../services/api';
 import SaveProgressModal from './SaveProgressModal';
 import { useNavigate } from 'react-router-dom';
+import {
+    step1ApplicantPurposeSchema,
+    step2AdditionalDetailsSchema
+} from '../schemas/validationSchemas';
 
 interface MultiPropertyRedesignedStepFormProps {
     onSubmit: (data: any) => Promise<void>;
@@ -89,110 +92,11 @@ const steps = [
     },
 ];
 
-// Validation schema for Step 1 (Applicant & Purpose)
-const step1Schema = z.object({
-    applicant_title: z.string().min(1, 'Please select a title'),
-    applicant_full_name: z.string().min(2, 'Please enter the applicant full name'),
-    applicant_id_type: z.string().optional(),
-    applicant_id_number: z.string().optional(),
-    applicant_address_line1: z.string().min(5, 'Please enter address line 1'),
-    applicant_address_line2: z.string().optional(),
-    applicant_district: z.string().min(2, 'Please enter the district'),
-    applicant_province: z.string().min(2, 'Please enter the province'),
-    applicant_country: z.string().min(2, 'Please enter the country').default('Sri Lanka'),
-    applicant_contact_number: z.string().nullable().optional(), // Optional contact number
-    valuation_type: z.string().min(1, 'Please enter the valuation type'),
-    valuation_purpose: z
-        .string()
-        .min(1, 'Purpose of valuation is required')
-        .refine((val) => val.trim().length > 0, {
-            message: 'Purpose cannot be only whitespace'
-        })
-        .refine((val) => val.length <= 200, {
-            message: 'Purpose must be 200 characters or less'
-        }),
-    property_type_valued: z.string().min(1, 'Please enter the property type'),
-    has_additional_owner: z.string().optional(),
-    additional_owner_names: z.string().nullable().optional(),
-}).refine(
-    (data) => {
-        // Validate additional owner names only if "yes" is selected
-        if (data.has_additional_owner === 'yes') {
-            return data.additional_owner_names && data.additional_owner_names.trim().length > 0;
-        }
-        return true; // No validation needed if "no" or not selected
-    },
-    {
-        message: 'Please enter the additional owner names',
-        path: ['additional_owner_names'],
-    }
-).refine(
-    (data) => {
-        // Validate ID format only if user provides data
-        if (!data.applicant_id_type || !data.applicant_id_number) {
-            return true; // Empty is valid (optional)
-        }
-
-        const idType = data.applicant_id_type;
-        const idNumber = data.applicant_id_number;
-
-        // Validate based on ID type
-        if (idType === 'NIC') {
-            const result = validateSriLankanNIC(idNumber);
-            return result.isValid;
-        } else if (idType === 'Passport') {
-            const result = validatePassport(idNumber);
-            return result.isValid;
-        } else if (idType === 'Other') {
-            // For "Other", just check minimum length
-            return idNumber.length >= 3;
-        }
-
-        return true;
-    },
-    (data) => {
-        // Dynamic error message based on ID type
-        const idType = data.applicant_id_type;
-        const idNumber = data.applicant_id_number;
-
-        if (idType === 'NIC') {
-            const result = validateSriLankanNIC(idNumber);
-            return {
-                message: result.error || 'Invalid NIC format. Use old format (9 digits + V/X) or new format (12 digits)',
-                path: ['applicant_id_number'],
-            };
-        } else if (idType === 'Passport') {
-            const result = validatePassport(idNumber);
-            return {
-                message: result.error || 'Passport must be 6-12 alphanumeric characters',
-                path: ['applicant_id_number'],
-            };
-        } else if (idType === 'Other') {
-            return {
-                message: 'ID number must be at least 3 characters long',
-                path: ['applicant_id_number'],
-            };
-        }
-
-        return {
-            message: 'Invalid ID number',
-            path: ['applicant_id_number'],
-        };
-    }
-);
-
-// Validation schema for Step 2 (Additional Details)
-const step2Schema = z.object({
-    request_type: z.enum(['client_request', 'organization_request']).optional(),
-    submission_organization: z.string().optional(),
-    submission_address: z.string().optional(),
-    submission_recipient_position: z.string().optional(),
-    inspection_date: z.string().min(1, 'Please enter the inspection date (DD-MM-YYYY)'),
-    has_special_note: z.string().optional(),
-    special_note_text: z.string().optional(),
-    report_reference: z.string().optional(),
-    report_date: z.string().optional(),
-});
+// Validation schemas imported from centralized file
+// step1Schema = step1ApplicantPurposeSchema (with ID validation and valuation_purpose refinements)
+// step2Schema = step2AdditionalDetailsSchema (with required inspection_date)
+const step1Schema = step1ApplicantPurposeSchema;
+const step2Schema = step2AdditionalDetailsSchema;
 
 // Combined schema for form (all fields optional for form initialization)
 const multiPropertyCommonSchema = z.object({
@@ -639,8 +543,23 @@ export const MultiPropertyRedesignedStepForm: React.FC<MultiPropertyRedesignedSt
             const formData = getValues();
             console.log('[handleSaveDraft] Form data:', formData);
 
-            // Serialize properties data for API
-            const propertiesData = properties.map(prop => ({
+            // Fields to filter out - these should only exist in the `deeds` array, not at root level
+            const fieldsToRemove = [
+                'deed_type', 'deed_number', 'deed_date', 'notary_name', 'notary_location',
+                'certificate_number', 'certificate_date', 'certificate_notary_name', 'certificate_notary_district',
+            ];
+
+            // Helper to filter extra deed fields from an object
+            const filterDeedFields = (obj: any) => {
+                const filtered = { ...obj };
+                for (const field of fieldsToRemove) {
+                    delete filtered[field];
+                }
+                return filtered;
+            };
+
+            // Serialize properties data for API, filtering out extra deed fields from each property
+            const propertiesData = properties.map(prop => filterDeedFields({
                 ...prop.data,
                 property_order: prop.order,
                 status: prop.status,
@@ -648,8 +567,11 @@ export const MultiPropertyRedesignedStepForm: React.FC<MultiPropertyRedesignedSt
             }));
             console.log('[handleSaveDraft] Serialized properties:', propertiesData);
 
+            // Filter extra deed fields from form data as well
+            const filteredFormData = filterDeedFields(formData);
+
             const completeData = {
-                ...formData,
+                ...filteredFormData,
                 is_multi_property: true,
                 property_count: properties.length,
                 properties: propertiesData,

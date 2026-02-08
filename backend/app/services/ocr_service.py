@@ -52,16 +52,11 @@ def extract_text_from_image(image_data: bytes) -> str:
         Extracted text as a single string
     """
     try:
-        # Try GOOGLE_VISION_API_KEY first, fallback to GOOGLE_MAPS_API_KEY for backward compatibility
-        api_key = os.getenv("GOOGLE_VISION_API_KEY") or os.getenv("GOOGLE_MAPS_API_KEY")
+        # GOOGLE_VISION_API_KEY is required - no fallback to GOOGLE_MAPS_API_KEY
+        # Vision API should use its own dedicated key with appropriate quotas
+        api_key = os.getenv("GOOGLE_VISION_API_KEY")
         if not api_key:
-            raise ValueError("GOOGLE_VISION_API_KEY or GOOGLE_MAPS_API_KEY environment variable not set")
-
-        # Log warning if using fallback key
-        if not os.getenv("GOOGLE_VISION_API_KEY") and os.getenv("GOOGLE_MAPS_API_KEY"):
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.warning("Using GOOGLE_MAPS_API_KEY for Vision API. Consider setting GOOGLE_VISION_API_KEY")
+            raise ValueError("GOOGLE_VISION_API_KEY environment variable is required")
 
         # Encode image to base64
         base64_image = base64.b64encode(image_data).decode('utf-8')

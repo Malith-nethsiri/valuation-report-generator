@@ -18,6 +18,7 @@ PyJWT==2.10.1
 passlib==1.7.4
 bcrypt==4.0.1
 cryptography==45.0.5
+authlib==1.2.1
 
 # Environment & Configuration
 python-dotenv==1.1.1

@@ -337,6 +337,10 @@ def validate_json_field(field_name: str, data: Any) -> tuple[bool, Optional[str]
         'boundaries': validate_boundaries,
         'buildings': validate_buildings,
         'comparable_properties': validate_comparable_properties,
+        'deeds': validate_deeds,
+        'nearby_facilities': validate_nearby_facilities,
+        'property_photos': validate_property_photos,
+        'access_road_conditions': validate_access_road_conditions,
     }
 
     validator = validators.get(field_name)
@@ -347,14 +351,228 @@ def validate_json_field(field_name: str, data: Any) -> tuple[bool, Optional[str]
     return validator(data)
 
 
+# ===== DEEDS SCHEMA =====
+
+DEED_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "deed_type": {"type": "string", "maxLength": 100},
+        "deed_number": {"type": "string", "minLength": 1, "maxLength": 100},
+        "deed_date": {"type": "string", "pattern": "^\\d{2}-\\d{2}-\\d{4}$"},  # DD-MM-YYYY
+        "notary_name": {"type": ["string", "null"], "maxLength": 255},
+        "notary_location": {"type": ["string", "null"], "maxLength": 255}
+    },
+    "required": ["deed_type", "deed_number", "deed_date"]
+}
+
+DEEDS_SCHEMA = {
+    "type": "array",
+    "items": DEED_SCHEMA,
+    "maxItems": 10  # Limit to 10 deeds per property
+}
+
+
+# ===== NEARBY FACILITIES SCHEMA =====
+
+NEARBY_FACILITY_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "type": {
+            "type": "string",
+            "enum": [
+                "hospital", "school", "bank", "supermarket", "police",
+                "bus_stand", "railway", "post_office", "petrol_station",
+                "place_of_worship", "atm", "pharmacy", "market",
+                "bus_station", "train_station", "gas_station", "lodging", "shopping"
+            ]
+        },
+        "name": {"type": "string", "minLength": 1, "maxLength": 255},
+        "distance_km": {"type": "number", "minimum": 0, "maximum": 100},
+        "latitude": {"type": ["number", "null"], "minimum": -90, "maximum": 90},
+        "longitude": {"type": ["number", "null"], "minimum": -180, "maximum": 180},
+        "selected": {"type": "boolean"}
+    },
+    "required": ["type", "name", "distance_km"]
+}
+
+NEARBY_FACILITIES_SCHEMA = {
+    "type": "array",
+    "items": NEARBY_FACILITY_SCHEMA,
+    "maxItems": 50  # Reasonable limit
+}
+
+
+# ===== PROPERTY PHOTOS SCHEMA =====
+
+PROPERTY_PHOTO_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "id": {"type": "string", "maxLength": 50},
+        "image_data": {"type": "string"},  # Base64 encoded
+        "caption": {"type": ["string", "null"], "maxLength": 255},
+        "order": {"type": "integer", "minimum": 0}
+    },
+    "required": ["id", "image_data", "order"]
+}
+
+PROPERTY_PHOTOS_SCHEMA = {
+    "type": "array",
+    "items": PROPERTY_PHOTO_SCHEMA,
+    "maxItems": 20  # Limit to 20 photos per property
+}
+
+
+# ===== ACCESS ROAD CONDITIONS SCHEMA =====
+
+ACCESS_ROAD_CONDITION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "road_type": {
+            "type": "string",
+            "enum": [
+                "paved_road", "concrete_road", "carpet_road", "gravel_road",
+                "sand_road", "earth_road", "bitumen", "macadam"
+            ]
+        },
+        "condition": {
+            "type": ["string", "null"],
+            "enum": [None, "excellent", "good", "fair", "poor", "very_poor"]
+        },
+        "distance_km": {"type": ["number", "null"], "minimum": 0},
+        "notes": {"type": ["string", "null"], "maxLength": 500}
+    },
+    "required": ["road_type"]
+}
+
+ACCESS_ROAD_CONDITIONS_SCHEMA = {
+    "type": "array",
+    "items": ACCESS_ROAD_CONDITION_SCHEMA,
+    "maxItems": 10
+}
+
+
+# ===== NEW VALIDATION FUNCTIONS =====
+
+def validate_deeds(deeds: Any) -> tuple[bool, Optional[str]]:
+    """
+    Validate deeds JSON structure.
+
+    Args:
+        deeds: Deeds array to validate
+
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    if deeds is None:
+        return True, None
+
+    try:
+        validate(instance=deeds, schema=DEEDS_SCHEMA)
+        return True, None
+    except JSONSchemaValidationError as e:
+        error_path = " -> ".join(str(p) for p in e.path)
+        error_msg = f"Invalid deeds structure: {e.message}"
+        if error_path:
+            error_msg += f" (at {error_path})"
+        return False, error_msg
+
+
+def validate_nearby_facilities(nearby_facilities: Any) -> tuple[bool, Optional[str]]:
+    """
+    Validate nearby facilities JSON structure.
+
+    Args:
+        nearby_facilities: Nearby facilities array to validate
+
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    if nearby_facilities is None:
+        return True, None
+
+    try:
+        validate(instance=nearby_facilities, schema=NEARBY_FACILITIES_SCHEMA)
+        return True, None
+    except JSONSchemaValidationError as e:
+        error_path = " -> ".join(str(p) for p in e.path)
+        error_msg = f"Invalid nearby facilities structure: {e.message}"
+        if error_path:
+            error_msg += f" (at {error_path})"
+        return False, error_msg
+
+
+def validate_property_photos(property_photos: Any) -> tuple[bool, Optional[str]]:
+    """
+    Validate property photos JSON structure.
+
+    Args:
+        property_photos: Property photos array to validate
+
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    if property_photos is None:
+        return True, None
+
+    try:
+        validate(instance=property_photos, schema=PROPERTY_PHOTOS_SCHEMA)
+
+        # Additional validation: check image data size (~5MB max per image)
+        MAX_IMAGE_SIZE = 7_000_000  # ~5MB in base64
+        for i, photo in enumerate(property_photos):
+            image_data = photo.get('image_data', '')
+            if len(image_data) > MAX_IMAGE_SIZE:
+                return False, f"Photo {i+1} is too large (max 5MB per image)"
+
+        return True, None
+    except JSONSchemaValidationError as e:
+        error_path = " -> ".join(str(p) for p in e.path)
+        error_msg = f"Invalid property photos structure: {e.message}"
+        if error_path:
+            error_msg += f" (at {error_path})"
+        return False, error_msg
+
+
+def validate_access_road_conditions(access_road_conditions: Any) -> tuple[bool, Optional[str]]:
+    """
+    Validate access road conditions JSON structure.
+
+    Args:
+        access_road_conditions: Access road conditions array to validate
+
+    Returns:
+        Tuple of (is_valid, error_message)
+    """
+    if access_road_conditions is None:
+        return True, None
+
+    try:
+        validate(instance=access_road_conditions, schema=ACCESS_ROAD_CONDITIONS_SCHEMA)
+        return True, None
+    except JSONSchemaValidationError as e:
+        error_path = " -> ".join(str(p) for p in e.path)
+        error_msg = f"Invalid access road conditions structure: {e.message}"
+        if error_path:
+            error_msg += f" (at {error_path})"
+        return False, error_msg
+
+
 # ===== EXPORT ALL =====
 
 __all__ = [
     'BOUNDARIES_SCHEMA',
     'BUILDINGS_SCHEMA',
     'COMPARABLE_PROPERTIES_SCHEMA',
+    'DEEDS_SCHEMA',
+    'NEARBY_FACILITIES_SCHEMA',
+    'PROPERTY_PHOTOS_SCHEMA',
+    'ACCESS_ROAD_CONDITIONS_SCHEMA',
     'validate_boundaries',
     'validate_buildings',
     'validate_comparable_properties',
+    'validate_deeds',
+    'validate_nearby_facilities',
+    'validate_property_photos',
+    'validate_access_road_conditions',
     'validate_json_field',
 ]

@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Route, MapIcon, Navigation2, Loader2 } from 'lucide-react';
-import axios from 'axios';
 import type { Report, RoadCondition } from '../types';
 import { GooglePlacesAutocomplete } from './GooglePlacesAutocomplete';
 import { RoadConditionsSummary } from './RoadConditionsSummary';
-import { API_URL } from '../config';
+import { api } from '../services/api';
 
 interface Props {
   formData: Partial<Report>;
@@ -54,7 +53,7 @@ export function AccessDirectionsSection({ formData, updateFormData }: Props) {
 
     try {
       // Call directions API
-      const directionsResponse = await axios.post(`${API_URL}/api/maps/directions`, {
+      const directionsResponse = await api.post('/api/maps/directions', {
         origin_lat: formData.access_starting_point_latitude,
         origin_lng: formData.access_starting_point_longitude,
         dest_lat: formData.property_latitude,
@@ -66,7 +65,7 @@ export function AccessDirectionsSection({ formData, updateFormData }: Props) {
 
       // Generate static map with route
       try {
-        const mapResponse = await axios.post(`${API_URL}/api/maps/static-map`, {
+        const mapResponse = await api.post('/api/maps/static-map', {
           origin_lat: formData.access_starting_point_latitude,
           origin_lng: formData.access_starting_point_longitude,
           dest_lat: formData.property_latitude,
@@ -108,7 +107,7 @@ export function AccessDirectionsSection({ formData, updateFormData }: Props) {
     setGeneratingText(true);
 
     try {
-      const response = await axios.post(`${API_URL}/api/maps/transform-access`, {
+      const response = await api.post('/api/maps/transform-access', {
         starting_point_name: formData.access_starting_point_name,
         property_position: formData.property_road_position || 'right side',
         total_distance_km: routeData.distance_km,

@@ -4,7 +4,12 @@ import { Button } from './Button';
 import { Label } from './Label';
 import { cleanOCRText, formatBoundaryDescription, smartTitleCase } from '../utils/textFormatter';
 import { authTokenStorage } from '../utils/secureStorage';
-import { API_URL } from '../config';
+
+// Helper to get CSRF token from cookies (set by backend)
+const getCSRFToken = (): string | null => {
+  const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
+  return match ? decodeURIComponent(match[1]) : null;
+};
 
 interface OCRResult {
   success: boolean;
@@ -39,8 +44,10 @@ export function DocumentUploadOCR({
     if (files.length === 0) return;
 
     // Validate each file
+    const imageExtensions = ['.jpg', '.jpeg', '.jfif', '.png', '.webp'];
     for (const file of files) {
-      if (!file.type.startsWith('image/')) {
+      const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
+      if (!file.type.startsWith('image/') && !imageExtensions.includes(ext)) {
         onError?.(`File "${file.name}" is not an image. Please select only image files (JPEG, PNG, WEBP)`);
         return;
       }
@@ -180,11 +187,13 @@ export function DocumentUploadOCR({
         formData.append('document_type', documentTypeHint);
       }
 
-      // Call OCR API
-      const response = await fetch(`${API_URL}/api/ocr/extract`, {
+      // Call OCR API (use relative path to go through Vite proxy)
+      const csrfToken = getCSRFToken();
+      const response = await fetch('/api/ocr/extract', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
+          ...(csrfToken && { 'X-CSRF-Token': csrfToken }),
         },
         body: formData,
       });
@@ -291,7 +300,7 @@ export function DocumentUploadOCR({
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/jpeg,image/jpg,image/png,image/webp"
+            accept="image/jpeg,image/jpg,image/png,image/webp,.jfif"
             onChange={handleFileSelect}
             disabled={disabled}
             multiple

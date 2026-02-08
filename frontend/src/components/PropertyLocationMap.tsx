@@ -1,10 +1,9 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { GoogleMap, useJsApiLoader, Marker, Polyline } from '@react-google-maps/api';
 import { MapPin, Navigation, Edit2, Check, X, AlertTriangle, RefreshCw } from 'lucide-react';
-import axios from 'axios';
 import * as Sentry from '@sentry/react';
-import { API_URL } from '../config';
 import { ManualAddressInput, type ManualAddressData } from './ManualAddressInput';
+import { api } from '../services/api';
 
 // Sri Lanka center coordinates
 const SRI_LANKA_CENTER = {
@@ -161,7 +160,7 @@ const PropertyLocationMap: React.FC<PropertyLocationMapProps> = ({
     }
 
     try {
-      const response = await axios.post(`${API_URL}/api/maps/places/autocomplete`, {
+      const response = await api.post('/api/maps/places/autocomplete', {
         input,
         location: `${SRI_LANKA_CENTER.lat},${SRI_LANKA_CENTER.lng}`
       });
@@ -204,7 +203,7 @@ const PropertyLocationMap: React.FC<PropertyLocationMapProps> = ({
   // Select place from suggestions
   const selectPlace = async (placeId: string, type: 'starting' | 'property') => {
     try {
-      const response = await axios.post(`${API_URL}/api/maps/places/details`, {
+      const response = await api.post('/api/maps/places/details', {
         place_id: placeId
       });
 
@@ -246,7 +245,7 @@ const PropertyLocationMap: React.FC<PropertyLocationMapProps> = ({
   // Fetch route directions
   const fetchRoute = async (start: LocationData, end: LocationData) => {
     try {
-      const response = await axios.post(`${API_URL}/api/maps/directions`, {
+      const response = await api.post('/api/maps/directions', {
         origin_lat: start.lat,
         origin_lng: start.lng,
         dest_lat: end.lat,

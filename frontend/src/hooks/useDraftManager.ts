@@ -79,8 +79,21 @@ export const useDraftManager = (config: DraftManagerConfig): DraftManagerReturn 
 
     try {
       const formData = config.formMethods.getValues();
+
+      // Fields to filter out - these should only exist in the `deeds` array, not at root level
+      const fieldsToRemove = [
+        'deed_type', 'deed_number', 'deed_date', 'notary_name', 'notary_location',
+        'certificate_number', 'certificate_date', 'certificate_notary_name', 'certificate_notary_district',
+      ];
+
+      // Filter extra deed fields before saving draft
+      const filteredFormData = { ...formData };
+      for (const field of fieldsToRemove) {
+        delete (filteredFormData as any)[field];
+      }
+
       const reportData = {
-        ...formData,
+        ...filteredFormData,
         status: 'draft',
         report_type: 'residential_property'
       };

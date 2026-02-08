@@ -3,7 +3,13 @@ from sqlalchemy import inspect
 import copy
 from . import models, schemas
 from .auth import get_password_hash
+from .base_crud import BaseCRUD, verify_ownership as _base_verify_ownership
 from typing import List, Optional, Set, Dict, Any, Type
+
+# BaseCRUD instances for common entity operations
+report_crud = BaseCRUD(models.Report, "Report")
+property_crud = BaseCRUD(models.Property, "Property")
+vehicle_crud = BaseCRUD(models.Vehicle, "Vehicle")
 
 # Validation Functions
 def verify_ownership(db: Session, entity_type: type, entity_id: int,
@@ -282,11 +288,26 @@ def create_report(db: Session, report: schemas.ReportCreate, user_id: int):
     db.refresh(db_report)
     return db_report
 
-def get_report(db: Session, report_id: int, user_id: int = None):
-    """Get report by ID, optionally filtered by user_id"""
+def get_report(db: Session, report_id: int, user_id: int = None, eager_load_for_docx: bool = False):
+    """Get report by ID, optionally filtered by user_id
+
+    Args:
+        eager_load_for_docx: If True, eagerly loads relationships needed for DOCX generation
+    """
+    from sqlalchemy.orm import joinedload
+
     query = db.query(models.Report).filter(models.Report.id == report_id)
     if user_id:
         query = query.filter(models.Report.user_id == user_id)
+
+    if eager_load_for_docx:
+        query = query.options(
+            joinedload(models.Report.user),
+            joinedload(models.Report.primary_vehicle),
+            joinedload(models.Report.property_associations).joinedload(models.ReportProperty.property),
+            joinedload(models.Report.vehicle_associations).joinedload(models.ReportVehicle.vehicle),
+        )
+
     return query.first()
 
 def get_user_reports(db: Session, user_id: int, skip: int = 0, limit: int = 100):
@@ -445,11 +466,24 @@ def get_all_reports(db: Session, skip: int = 0, limit: int = 100):
     """Get all reports (admin function)"""
     return db.query(models.Report).offset(skip).limit(limit).all()
 
-def update_report(db: Session, report_id: int, report_update: schemas.ReportUpdate, user_id: int = None):
-    """Update a report"""
+def update_report(db: Session, report_id: int, report_update: schemas.ReportUpdate, user_id: int = None, use_locking: bool = False):
+    """Update a report.
+
+    Args:
+        db: Database session
+        report_id: ID of the report to update
+        report_update: Update data
+        user_id: Optional user ID for ownership check
+        use_locking: If True, uses SELECT FOR UPDATE to prevent race conditions.
+                     When True, caller is responsible for committing the transaction.
+    """
     query = db.query(models.Report).filter(models.Report.id == report_id)
     if user_id:
         query = query.filter(models.Report.user_id == user_id)
+
+    # Add pessimistic locking if requested (prevents concurrent modifications)
+    if use_locking:
+        query = query.with_for_update()
 
     db_report = query.first()
     if not db_report:
@@ -478,8 +512,14 @@ def update_report(db: Session, report_id: int, report_update: schemas.ReportUpda
     for field, value in update_data.items():
         setattr(db_report, field, value)
 
-    db.commit()
-    db.refresh(db_report)
+    if use_locking:
+        # When using locking, caller controls the transaction - just flush
+        db.flush()
+    else:
+        # Legacy behavior for backwards compatibility
+        db.commit()
+        db.refresh(db_report)
+
     return db_report
 
 def delete_report(db: Session, report_id: int, user_id: int = None):
@@ -520,8 +560,6 @@ def duplicate_report(db: Session, report_id: int, user_id: int):
             'certification_date': None,
             'certification_valuer_name': None,
             'certification_valuer_designation': None,
-            'certificate_survey_plan_ref': None,
-            'certificate_survey_plan_date': None,
             'certificate_identity_confirmed': False,
         }
     )
@@ -994,11 +1032,7 @@ def _update_report_total_valuation(db: Session, db_report: models.Report):
 
 def create_vehicle(db: Session, vehicle: schemas.VehicleCreate, user_id: int):
     """Create a new vehicle for a user"""
-    db_vehicle = models.Vehicle(**vehicle.model_dump(), user_id=user_id)
-    db.add(db_vehicle)
-    db.commit()
-    db.refresh(db_vehicle)
-    return db_vehicle
+    return vehicle_crud.create(db, vehicle.model_dump(), user_id)
 
 
 def get_vehicle(db: Session, vehicle_id: int, user_id: int = None):

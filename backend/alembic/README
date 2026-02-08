@@ -1,0 +1,26 @@
+Generic single-database configuration for Alembic.
+
+## Usage
+
+Generate a new migration (autogenerate):
+    alembic revision --autogenerate -m "description"
+
+Apply all migrations:
+    alembic upgrade head
+
+Rollback one migration:
+    alembic downgrade -1
+
+View current revision:
+    alembic current
+
+View migration history:
+    alembic history
+
+## Initial Setup for Existing Database
+
+If the database already has tables created (via create_all), stamp it:
+    alembic stamp head
+
+This marks the database as being at the current migration state without
+running any migrations.

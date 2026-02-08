@@ -8,9 +8,8 @@ import DashboardPage from './pages/DashboardPage';
 import ProfilePage from './pages/ProfilePage';
 import ProfessionalProfilePage from './pages/ProfessionalProfilePage';
 import ReportTypeSelection from './pages/ReportTypeSelection';
-import ResidentialPropertyForm from './pages/ResidentialPropertyForm';
+import PropertyReportForm from './pages/PropertyReportForm';
 import MultiPropertyForm from './pages/MultiPropertyForm';
-import BareLandForm from './pages/BareLandForm';
 import VehicleReportPage from './pages/VehicleReportPage';
 import VehicleLibraryPage from './pages/VehicleLibraryPage';
 import ReportEditRouter from './components/ReportEditRouter';
@@ -208,7 +207,7 @@ const AppRoutes: React.FC = () => {
                 path="/reports/new/residential_property"
                 element={
                     <ProtectedRoute>
-                        <ResidentialPropertyForm />
+                        <PropertyReportForm reportType="residential_property" />
                     </ProtectedRoute>
                 }
             />
@@ -232,7 +231,7 @@ const AppRoutes: React.FC = () => {
                 path="/reports/new/bare_land"
                 element={
                     <ProtectedRoute>
-                        <BareLandForm />
+                        <PropertyReportForm reportType="bare_land" />
                     </ProtectedRoute>
                 }
             />

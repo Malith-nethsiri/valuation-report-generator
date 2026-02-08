@@ -1,1 +1,1 @@
-# Backend test suite
+# Backend tests package

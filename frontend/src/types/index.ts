@@ -192,6 +192,8 @@ export interface AccommodationSummary {
 export interface Floor {
   floor_name: string;
   floor_area?: number;
+  rooms?: Room[];
+  accommodation_summary?: AccommodationSummary;
 }
 
 export interface BuildingPhoto {
@@ -390,8 +392,6 @@ export interface Report {
   status: string;
 
   // Property & Plan Information
-  /** @deprecated Use lot_number instead */
-  property_lot_description?: string;
   lot_number?: string;  // e.g., "Lot 15", "Lots 1 & 2"
   plan_number?: string;
   plan_date?: string;
@@ -652,8 +652,6 @@ export interface Report {
 
   // ===== CERTIFICATION =====
   certification_text?: string;
-  certificate_survey_plan_ref?: string;
-  certificate_survey_plan_date?: string;
   certificate_identity_confirmed?: boolean;
   certification_valuer_name?: string;
   certification_valuer_designation?: string;
@@ -668,8 +666,6 @@ export interface ReportCreate {
   status?: string;
 
   // Property & Plan Information
-  /** @deprecated Use lot_number instead */
-  property_lot_description?: string;
   lot_number?: string;  // e.g., "Lot 15", "Lots 1 & 2"
   plan_number?: string;
   plan_date?: string;
@@ -930,8 +926,6 @@ export interface ReportCreate {
 
   // ===== CERTIFICATION =====
   certification_text?: string;
-  certificate_survey_plan_ref?: string;
-  certificate_survey_plan_date?: string;
   certificate_identity_confirmed?: boolean;
   certification_valuer_name?: string;
   certification_valuer_designation?: string;
@@ -1003,6 +997,83 @@ export interface TemplateListResponse {
 }
 
 // ===== MULTI-PROPERTY FORM TYPES =====
+
+// Invoice types for multi-property forms
+export interface InvoiceItem {
+  description: string;
+  total: number;
+}
+
+export interface InvoiceData {
+  items: InvoiceItem[];
+  subtotal: number;
+  traveling_charges?: number | null;
+  discount?: number | null;
+  total: number;
+  bank_account_ids: string[];
+  manual_bank_details?: string;
+  payment_terms?: string;
+}
+
+export interface PropertyMetadata {
+  source: 'library' | 'new';
+  library_property?: any;
+  property_index?: number;
+}
+
+export interface MultiPropertyFormData {
+  // Report metadata
+  report_type: 'multi_property';
+  is_multi_property: true;
+  status?: string;
+
+  // Step 1: Applicant Information
+  applicant_title?: string;
+  applicant_full_name?: string;
+  applicant_id_type?: string;
+  applicant_id_number?: string;
+  applicant_address_line1?: string;
+  applicant_address_line2?: string;
+  applicant_district?: string;
+  applicant_province?: string;
+  applicant_country?: string;
+  has_additional_owner?: string;
+  additional_owner_names?: string;
+
+  // Step 2: Valuation Purpose
+  valuation_type?: string;
+  valuation_purpose?: string;
+  property_type_valued?: string;
+  submission_organization?: string;
+  submission_address?: string;
+  submission_recipient_position?: string;
+  inspection_date?: string;
+  report_reference?: string;
+  report_date?: string;
+  has_special_note?: string;
+  special_note_text?: string;
+
+  // Step 3: Property Source Selection
+  property_source?: 'library' | 'new' | 'mix';
+
+  // Step 4: Property Count
+  property_count: number;
+
+  // Properties (mixed from library and new)
+  property_ids?: number[];
+  properties?: any[];
+  property_metadata?: PropertyMetadata[];
+
+  // Invoice data
+  invoice_data?: InvoiceData;
+
+  // Certification
+  certification_text?: string;
+  certification_valuer_name?: string;
+  certification_valuer_designation?: string;
+  certification_date?: string;
+  certificate_identity_confirmed?: boolean;
+}
 
 /**
  * Represents a property within a multi-property report.

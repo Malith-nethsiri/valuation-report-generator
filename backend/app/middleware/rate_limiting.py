@@ -27,8 +27,14 @@ from fastapi import Request, Response, status
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 import asyncio
+import os
 
 logger = logging.getLogger(__name__)
+
+
+def is_production() -> bool:
+    """Check if running in production mode."""
+    return os.getenv("ENV", "development").lower() == "production"
 
 # Redis key prefix and TTL
 REDIS_KEY_PREFIX = "ratelimit"
@@ -251,8 +257,16 @@ class RateLimiter:
                 logger.warning(f"Rate limit exceeded: {client_id} on {endpoint} (retry after {retry_after}s)")
                 return False, retry_after
         else:
-            # Fall back to in-memory
-            return self.check_rate_limit(client_id, endpoint)
+            # Redis unavailable - behavior depends on environment
+            if is_production():
+                # PRODUCTION: Fail closed - deny request for security
+                # This prevents potential abuse when Redis is down
+                logger.error(f"Rate limiting Redis unavailable in production! Denying request from {client_id} to {endpoint}")
+                return False, 60  # Deny with 60 second retry
+            else:
+                # DEVELOPMENT: Fall back to in-memory for convenience
+                logger.debug(f"Redis unavailable, using in-memory rate limiting for {client_id}")
+                return self.check_rate_limit(client_id, endpoint)
 
     def check_rate_limit(self, client_id: str, endpoint: str) -> Tuple[bool, Optional[int]]:
         """

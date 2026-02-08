@@ -95,8 +95,7 @@ describe('Auth API', () => {
       expect(authApi.register).toHaveBeenCalledWith(
         'new@example.com',
         'SecurePass123!',
-        'New User',
-        undefined
+        'New User'
       );
       expect(result.access_token).toBe('mock-token');
     });

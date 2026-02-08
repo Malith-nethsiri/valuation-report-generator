@@ -1,7 +1,8 @@
-from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, BackgroundTasks, Query, Request
+from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File, Form, BackgroundTasks, Query, Request, Cookie
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.exceptions import RequestValidationError
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
 from dotenv import load_dotenv
@@ -11,6 +12,57 @@ import asyncio
 from datetime import timedelta, datetime
 from typing import Optional, List
 
+from pydantic import BaseModel
+from . import models, schemas, crud
+from .database import engine, get_db, SessionLocal
+from .docx_generator import generate_user_data_docx, get_filename_for_user
+from .autocomplete import get_all_autocomplete_data, search_autocomplete
+from .auth import (
+    authenticate_user,
+    create_access_token,
+    create_refresh_token,
+    verify_refresh_token,
+    get_current_user,
+    require_admin,
+    verify_token,
+    security_optional,
+    get_password_hash,
+    pwd_context,
+    ACCESS_TOKEN_EXPIRE_MINUTES,
+    REFRESH_TOKEN_EXPIRE_MINUTES
+)
+from .services.ocr_service import process_uploaded_document, process_multiple_documents
+from .services.redis_client import get_redis_client, close_redis_connection, redis_health_check
+from .utils.extent_calculator import calculate_extent_data
+from .utils.error_responses import (
+    validation_exception_handler,
+    sqlalchemy_exception_handler,
+    generic_exception_handler,
+    add_request_id_middleware
+)
+from .middleware.rate_limiting import (
+    RateLimitMiddleware,
+    configure_rate_limits,
+    cleanup_task
+)
+from .middleware.csrf_protection import CSRFMiddleware, get_csrf_token_endpoint
+
+import sentry_sdk
+from sentry_sdk.integrations.fastapi import FastApiIntegration
+from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+from sentry_sdk.integrations.logging import LoggingIntegration
+
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request as StarletteRequest
+from starlette.responses import Response
+
+from .services.login_limiter import LoginLimiter
+from .services.job_service import JobService
+from .services.file_storage import FileStorage
+from .services.email_service import EmailService
+from .services.google_oauth_service import GoogleOAuthService
+import secrets
+
 # Load environment variables FIRST (before Sentry init)
 # Load .env.local first if it exists (for local development), then .env as fallback
 # Use absolute path relative to this file's location
@@ -19,10 +71,7 @@ load_dotenv(os.path.join(_env_dir, '.env.local'), override=True)
 load_dotenv(os.path.join(_env_dir, '.env'))
 
 # Initialize Sentry before other imports (production only)
-import sentry_sdk
-from sentry_sdk.integrations.fastapi import FastApiIntegration
-from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
-from sentry_sdk.integrations.logging import LoggingIntegration
+
 
 SENTRY_DSN = os.getenv("SENTRY_DSN")
 ENV = os.getenv("ENV", "development").lower()
@@ -43,34 +92,7 @@ if SENTRY_DSN and ENV == "production":
     )
     logging.info("Sentry initialized for production")
 
-from . import models, schemas, crud
-from .database import engine, get_db
-from .docx_generator import generate_user_data_docx, get_filename_for_user
-from .autocomplete import get_all_autocomplete_data, search_autocomplete
-from .auth import (
-    authenticate_user,
-    create_access_token,
-    create_refresh_token,
-    verify_refresh_token,
-    get_current_user,
-    ACCESS_TOKEN_EXPIRE_MINUTES,
-    REFRESH_TOKEN_EXPIRE_MINUTES
-)
-from .services.ocr_service import process_uploaded_document, process_multiple_documents
-from .services.redis_client import get_redis_client, close_redis_connection, redis_health_check
-from .utils.extent_calculator import calculate_extent_data
-from .utils.error_responses import (
-    validation_exception_handler,
-    sqlalchemy_exception_handler,
-    generic_exception_handler,
-    add_request_id_middleware
-)
-from .middleware.rate_limiting import (
-    RateLimitMiddleware,
-    configure_rate_limits,
-    cleanup_task
-)
-from .middleware.csrf_protection import CSRFMiddleware, get_csrf_token_endpoint
+
 
 # Configure logging
 logging.basicConfig(
@@ -92,7 +114,7 @@ ALLOWED_MIME_TYPES = {
 }
 
 ALLOWED_EXTENSIONS = {
-    '.jpg', '.jpeg', '.png', '.webp', '.pdf'
+    '.jpg', '.jpeg', '.jfif', '.png', '.webp', '.pdf'
 }
 
 # Mapping of magic number signatures to MIME types
@@ -184,8 +206,10 @@ async def validate_upload_file(file: UploadFile) -> None:
             )
 
 
-# Create database tables
-models.Base.metadata.create_all(bind=engine)
+# Database tables are managed by Alembic migrations
+# For existing databases: alembic stamp 001_baseline
+# For new databases: alembic upgrade head
+# DO NOT use create_all() in production - it doesn't handle schema updates
 
 # Environment mode
 ENV = os.getenv("ENV", "development").lower()
@@ -232,7 +256,7 @@ app.add_middleware(
     allow_origins=origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With"],
+    allow_headers=["Content-Type", "Authorization", "Accept", "Origin", "X-Requested-With", "X-CSRF-Token"],
     expose_headers=["Content-Disposition"],
 )
 
@@ -244,9 +268,7 @@ app.add_middleware(CSRFMiddleware, is_production=IS_PRODUCTION)
 
 
 # ===== SECURITY HEADERS MIDDLEWARE =====
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request as StarletteRequest
-from starlette.responses import Response
+
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Add security headers to all responses."""
@@ -295,10 +317,59 @@ app.add_exception_handler(Exception, generic_exception_handler)
 
 
 # ===== STARTUP EVENT =====
+async def cleanup_token_blacklist():
+    """Background task to clean up expired blacklist entries periodically."""
+    while True:
+        try:
+            # Wait 1 hour between cleanups
+            await asyncio.sleep(3600)
+
+            # Create a new database session for cleanup
+            db = SessionLocal()
+            try:
+                from datetime import timezone
+                deleted_count = db.query(models.TokenBlacklist).filter(
+                    models.TokenBlacklist.expires_at < datetime.now(timezone.utc)
+                ).delete()
+                db.commit()
+                if deleted_count > 0:
+                    logger.info(f"[BLACKLIST_CLEANUP] Removed {deleted_count} expired token entries")
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"[BLACKLIST_CLEANUP] Error during cleanup: {e}")
+
+
 @app.on_event("startup")
 async def startup_event():
     """Configure rate limits, initialize Redis, and start background tasks on application startup"""
     logger.info("Application starting up...")
+
+    # Auto-migrate database if enabled
+    if os.getenv("AUTO_MIGRATE", "false").lower() == "true":
+        try:
+            from alembic.config import Config as AlembicConfig
+            from alembic import command as alembic_command
+
+            # Get the directory where alembic.ini is located (backend directory)
+            backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            alembic_ini_path = os.path.join(backend_dir, "alembic.ini")
+
+            if os.path.exists(alembic_ini_path):
+                alembic_cfg = AlembicConfig(alembic_ini_path)
+                # Set the script location relative to the alembic.ini directory
+                alembic_cfg.set_main_option("script_location", os.path.join(backend_dir, "alembic"))
+                alembic_command.upgrade(alembic_cfg, "head")
+                logger.info("Database migrations completed successfully")
+            else:
+                logger.warning(f"alembic.ini not found at {alembic_ini_path}, skipping auto-migration")
+        except Exception as e:
+            logger.error(f"Database migration failed: {e}")
+            # In production, fail closed - don't start with inconsistent DB
+            if ENV == "production":
+                raise RuntimeError(f"Database migration failed in production: {e}")
+            else:
+                logger.warning("Continuing without migrations (non-production mode)")
 
     # Configure rate limits for all endpoints
     configure_rate_limits()
@@ -315,6 +386,9 @@ async def startup_event():
 
     # Start background task for periodic bucket cleanup
     asyncio.create_task(cleanup_task())
+
+    # Start background task for token blacklist cleanup
+    asyncio.create_task(cleanup_token_blacklist())
 
     logger.info("Application startup complete")
 
@@ -460,6 +534,7 @@ async def detailed_health_check():
 @app.post("/api/auth/register", response_model=schemas.TokenResponse, status_code=status.HTTP_201_CREATED)
 async def register_user(
     user_data: schemas.UserCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """
@@ -469,7 +544,11 @@ async def register_user(
     - **password**: Password (minimum 6 characters)
     - **full_name**: User's full name
     - **phone**: Phone number (optional)
+
+    Also sends a verification email (non-blocking).
     """
+    from datetime import timezone
+
     # Check if user already exists
     existing_user = crud.get_user_by_email(db, email=user_data.email)
     if existing_user:
@@ -481,6 +560,20 @@ async def register_user(
     try:
         # Create new user
         db_user = crud.create_user(db, user_data)
+
+        # Generate email verification token
+        verification_token = secrets.token_urlsafe(32)
+        db_user.email_verification_token = pwd_context.hash(verification_token)
+        db_user.email_verification_expires = datetime.now(timezone.utc) + timedelta(hours=24)
+        db.commit()
+
+        # Send verification email in background (non-blocking)
+        background_tasks.add_task(
+            EmailService.send_verification_email,
+            db_user.email,
+            verification_token,
+            db_user.full_name
+        )
 
         # Create access token (short-lived)
         access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -509,17 +602,21 @@ async def register_user(
             detail="Error creating user. Please try again."
         )
 
-from .services.login_limiter import LoginLimiter
-from fastapi import Request
+
 
 @app.post("/api/auth/login", response_model=schemas.TokenResponse)
 async def login_user(
     user_credentials: schemas.UserLogin,
     request: Request,
+    response: Response,
     db: Session = Depends(get_db)
 ):
     """
-    Login user and return access token
+    Login user and return access token.
+
+    Security: Sets tokens in HttpOnly cookies for XSS protection.
+    Also returns tokens in response body for backwards compatibility
+    during migration period.
 
     - **email**: User's email address
     - **password**: User's password
@@ -582,6 +679,29 @@ async def login_user(
         expires_delta=refresh_token_expires
     )
 
+    # Set tokens in HttpOnly cookies (XSS-safe)
+    # These cookies are automatically sent with requests
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,  # JavaScript cannot access
+        secure=IS_PRODUCTION,  # HTTPS only in production
+        samesite="strict",  # Prevent CSRF
+        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        path="/"
+    )
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=IS_PRODUCTION,
+        samesite="strict",
+        max_age=REFRESH_TOKEN_EXPIRE_MINUTES * 60,
+        path="/api/auth"  # Only sent to auth endpoints
+    )
+
+    # Return tokens in body for backwards compatibility
+    # Frontend will transition to cookie-based auth over time
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,
@@ -592,18 +712,39 @@ async def login_user(
 
 @app.post("/api/auth/refresh", response_model=schemas.RefreshTokenResponse)
 async def refresh_access_token(
-    request_body: schemas.RefreshTokenRequest,
+    response: Response,
+    request_body: Optional[schemas.RefreshTokenRequest] = None,
+    refresh_token_cookie: Optional[str] = Cookie(None, alias="refresh_token"),
     db: Session = Depends(get_db)
 ):
     """
-    Refresh an access token using a valid refresh token.
+    Refresh tokens using a valid refresh token (with token rotation).
 
-    - **refresh_token**: The refresh token obtained during login
+    Implements refresh token rotation for enhanced security:
+    - Old refresh token is blacklisted
+    - New access token AND new refresh token are issued
+    - Prevents token replay attacks
 
-    Returns a new access token. The refresh token remains valid until it expires.
+    Supports both:
+    - Cookie-based refresh (preferred, XSS-safe)
+    - Body-based refresh (backwards compatibility)
+
+    Returns new access token and refresh token. Also sets HttpOnly cookies.
     """
+    # Get refresh token from cookie or request body
+    refresh_token = refresh_token_cookie
+    if not refresh_token and request_body:
+        refresh_token = request_body.refresh_token
+
+    if not refresh_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     # Verify the refresh token
-    payload = verify_refresh_token(request_body.refresh_token)
+    payload = verify_refresh_token(refresh_token)
 
     if payload is None:
         raise HTTPException(
@@ -611,6 +752,19 @@ async def refresh_access_token(
             detail="Invalid or expired refresh token",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Check if refresh token has been revoked
+    old_jti = payload.get("jti")
+    if old_jti:
+        blacklisted = db.query(models.TokenBlacklist).filter(
+            models.TokenBlacklist.jti == old_jti
+        ).first()
+        if blacklisted:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token has been revoked",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
 
     # Get the email from the token
     email: str = payload.get("sub")
@@ -630,6 +784,26 @@ async def refresh_access_token(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    # === TOKEN ROTATION: Blacklist the old refresh token ===
+    if old_jti:
+        old_exp = payload.get("exp")
+        if old_exp:
+            # Convert Unix timestamp to datetime
+            expires_at = datetime.utcfromtimestamp(old_exp)
+        else:
+            # Fallback: expire in the configured time
+            expires_at = datetime.utcnow() + timedelta(minutes=REFRESH_TOKEN_EXPIRE_MINUTES)
+
+        blacklist_entry = models.TokenBlacklist(
+            jti=old_jti,
+            user_id=user.id,
+            token_type="refresh",
+            expires_at=expires_at
+        )
+        db.add(blacklist_entry)
+        db.commit()
+        logger.info(f"[TOKEN_ROTATION] Old refresh token blacklisted for user {user.email}")
+
     # Create new access token
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     new_access_token = create_access_token(
@@ -637,10 +811,40 @@ async def refresh_access_token(
         expires_delta=access_token_expires
     )
 
-    logger.info(f"[TOKEN_REFRESH] New access token issued for user {user.email}")
+    # Create new refresh token (rotation)
+    refresh_token_expires = timedelta(minutes=REFRESH_TOKEN_EXPIRE_MINUTES)
+    new_refresh_token = create_refresh_token(
+        data={"sub": user.email},
+        expires_delta=refresh_token_expires
+    )
+
+    # Set new access token cookie
+    response.set_cookie(
+        key="access_token",
+        value=new_access_token,
+        httponly=True,
+        secure=IS_PRODUCTION,
+        samesite="strict",
+        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        path="/"
+    )
+
+    # Set new refresh token cookie (rotation)
+    response.set_cookie(
+        key="refresh_token",
+        value=new_refresh_token,
+        httponly=True,
+        secure=IS_PRODUCTION,
+        samesite="strict",
+        max_age=REFRESH_TOKEN_EXPIRE_MINUTES * 60,
+        path="/"
+    )
+
+    logger.info(f"[TOKEN_REFRESH] New access and refresh tokens issued for user {user.email}")
 
     return {
         "access_token": new_access_token,
+        "refresh_token": new_refresh_token,  # For body-based clients
         "token_type": "bearer"
     }
 
@@ -653,10 +857,81 @@ async def get_current_user_info(
     return current_user
 
 
+# ===== LOGOUT ENDPOINT =====
+
+
+@app.post("/api/auth/logout", status_code=status.HTTP_200_OK)
+async def logout(
+    response: Response,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_optional),
+    access_token_cookie: Optional[str] = Cookie(None, alias="access_token"),
+    db: Session = Depends(get_db)
+):
+    """
+    Logout and revoke the current access token.
+
+    This adds the token to a blacklist so it cannot be used again,
+    even if it hasn't expired yet. This is critical for security
+    when a user explicitly logs out or if a token is compromised.
+
+    Supports both cookie auth and header auth.
+    Also clears HttpOnly cookies on logout.
+    """
+    # Get token from cookie or header
+    token = None
+    if access_token_cookie:
+        token = access_token_cookie
+    elif credentials:
+        token = credentials.credentials
+
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="No token provided"
+        )
+
+    payload = verify_token(token)
+
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token"
+        )
+
+    jti = payload.get("jti")
+    exp = payload.get("exp")
+    user_email = payload.get("sub")
+    token_type = payload.get("type", "access")
+
+    # If token has JTI, blacklist it
+    if jti and exp:
+        from datetime import timezone
+        # Get user ID for audit purposes
+        user = crud.get_user_by_email(db, email=user_email) if user_email else None
+
+        blacklist_entry = models.TokenBlacklist(
+            jti=jti,
+            user_id=user.id if user else None,
+            token_type=token_type,
+            expires_at=datetime.fromtimestamp(exp, tz=timezone.utc)
+        )
+        db.add(blacklist_entry)
+        db.commit()
+
+        logger.info(f"[LOGOUT] Token revoked for user: {user_email}")
+    else:
+        # Old token without JTI - can't blacklist, but log it
+        logger.warning(f"[LOGOUT] Token without JTI cannot be revoked for user: {user_email}")
+
+    # Clear HttpOnly cookies
+    response.delete_cookie(key="access_token", path="/")
+    response.delete_cookie(key="refresh_token", path="/api/auth")
+
+    return {"message": "Successfully logged out"}
+
+
 # ===== PASSWORD RESET ENDPOINTS =====
-from .services.email_service import EmailService
-from .auth import get_password_hash
-import secrets
+
 
 @app.post("/api/auth/forgot-password", response_model=schemas.PasswordResetResponse)
 async def forgot_password(
@@ -668,24 +943,30 @@ async def forgot_password(
 
     Sends a reset link to the provided email if it exists in the system.
     Always returns success to prevent email enumeration.
+
+    Security: Token is hashed before storage (like a password) so database
+    breach cannot be used to reset arbitrary accounts.
     """
     # Find user by email
     user = crud.get_user_by_email(db, email=request.email)
 
     if user:
-        # Generate reset token
+        # Generate reset token (sent to user via email)
         reset_token = secrets.token_urlsafe(32)
+
+        # Hash the token before storing (security: treat like a password)
+        hashed_token = pwd_context.hash(reset_token)
 
         # Set token expiration (1 hour from now)
         from datetime import timezone
         expiration = datetime.now(timezone.utc) + timedelta(hours=1)
 
-        # Save token to user
-        user.password_reset_token = reset_token
+        # Save HASHED token to database
+        user.password_reset_token = hashed_token
         user.password_reset_expires = expiration
         db.commit()
 
-        # Send reset email
+        # Send PLAINTEXT token to user via email
         email_sent = EmailService.send_password_reset_email(user.email, reset_token)
 
         if not email_sent:
@@ -707,20 +988,32 @@ async def reset_password(
 ):
     """
     Reset password using the token from the email.
+
+    Security: Token is verified against stored hash (not compared directly).
+    This requires email in request since we can't query by hashed token.
     """
-    # Find user with this reset token
+    from datetime import timezone
+
+    # Find user by email (can't query by hashed token)
     user = db.query(models.User).filter(
-        models.User.password_reset_token == request.token
+        models.User.email == request.email
     ).first()
 
     if not user:
+        # Don't reveal whether email exists
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token"
+        )
+
+    # Check if user has a reset token
+    if not user.password_reset_token:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid or expired reset token"
         )
 
     # Check if token is expired
-    from datetime import timezone
     if user.password_reset_expires is None or user.password_reset_expires < datetime.now(timezone.utc):
         # Clear the expired token
         user.password_reset_token = None
@@ -730,6 +1023,13 @@ async def reset_password(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Reset token has expired. Please request a new one."
+        )
+
+    # Verify the provided token against the stored hash
+    if not pwd_context.verify(request.token, user.password_reset_token):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token"
         )
 
     # Hash new password and update user
@@ -746,8 +1046,262 @@ async def reset_password(
     )
 
 
+# ===== EMAIL VERIFICATION ENDPOINTS =====
+
+
+@app.post("/api/auth/send-verification", response_model=schemas.EmailVerificationResponse)
+async def send_verification_email(
+    background_tasks: BackgroundTasks,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Send or resend email verification link.
+
+    Requires authentication. Generates a new verification token and sends
+    an email with the verification link. Token expires in 24 hours.
+    """
+    from datetime import timezone
+
+    # Check if already verified
+    if current_user.email_verified:
+        return schemas.EmailVerificationResponse(
+            success=True,
+            message="Your email is already verified.",
+            email_verified=True
+        )
+
+    # Generate verification token
+    verification_token = secrets.token_urlsafe(32)
+
+    # Store hashed token (same pattern as password reset)
+    current_user.email_verification_token = pwd_context.hash(verification_token)
+    current_user.email_verification_expires = datetime.now(timezone.utc) + timedelta(hours=24)
+    db.commit()
+
+    # Send verification email in background
+    background_tasks.add_task(
+        EmailService.send_verification_email,
+        current_user.email,
+        verification_token,
+        current_user.full_name
+    )
+
+    logger.info(f"Verification email sent to: {current_user.email}")
+
+    return schemas.EmailVerificationResponse(
+        success=True,
+        message="Verification email sent. Please check your inbox.",
+        email_verified=False
+    )
+
+
+@app.post("/api/auth/verify-email", response_model=schemas.EmailVerificationResponse)
+async def verify_email(
+    request: schemas.VerifyEmailRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Verify email address using token from verification email.
+
+    This endpoint does not require authentication so users can verify
+    from a different device or after session expiry.
+    """
+    from datetime import timezone
+
+    # Find user by email
+    user = db.query(models.User).filter(
+        models.User.email == request.email
+    ).first()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid verification link"
+        )
+
+    # Check if already verified
+    if user.email_verified:
+        return schemas.EmailVerificationResponse(
+            success=True,
+            message="Your email is already verified.",
+            email_verified=True
+        )
+
+    # Check if user has a verification token
+    if not user.email_verification_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No verification pending. Please request a new verification email."
+        )
+
+    # Check if token is expired
+    if user.email_verification_expires is None or user.email_verification_expires < datetime.now(timezone.utc):
+        # Clear the expired token
+        user.email_verification_token = None
+        user.email_verification_expires = None
+        db.commit()
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Verification link has expired. Please request a new one."
+        )
+
+    # Verify the provided token against the stored hash
+    if not pwd_context.verify(request.token, user.email_verification_token):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid verification link"
+        )
+
+    # Mark email as verified and clear token
+    user.email_verified = True
+    user.email_verification_token = None
+    user.email_verification_expires = None
+    db.commit()
+
+    logger.info(f"Email verified for user: {user.email}")
+
+    return schemas.EmailVerificationResponse(
+        success=True,
+        message="Your email has been verified successfully!",
+        email_verified=True
+    )
+
+
+# ===== GOOGLE OAUTH ENDPOINTS =====
+
+
+class GoogleAuthUrlResponse(BaseModel):
+    """Response containing Google OAuth authorization URL."""
+    authorization_url: str
+    state: str
+
+
+class GoogleCallbackRequest(BaseModel):
+    """Request for Google OAuth callback."""
+    code: str
+    state: str
+
+
+@app.get("/api/auth/google/authorize", response_model=GoogleAuthUrlResponse)
+async def google_authorize():
+    """
+    Get Google OAuth authorization URL.
+
+    Returns the URL to redirect the user to for Google consent screen.
+    The state parameter should be verified in the callback.
+    """
+    if not GoogleOAuthService.is_configured():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Google OAuth is not configured"
+        )
+
+    # Generate state token for CSRF protection
+    state = secrets.token_urlsafe(32)
+
+    try:
+        authorization_url = GoogleOAuthService.get_authorization_url(state)
+        return GoogleAuthUrlResponse(
+            authorization_url=authorization_url,
+            state=state
+        )
+    except Exception as e:
+        logger.error(f"Failed to generate Google auth URL: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to initialize Google authentication"
+        )
+
+
+@app.post("/api/auth/google/callback", response_model=schemas.TokenResponse)
+async def google_callback(
+    request: GoogleCallbackRequest,
+    response: Response,
+    db: Session = Depends(get_db)
+):
+    """
+    Handle Google OAuth callback.
+
+    Exchanges the authorization code for tokens, fetches user info,
+    and creates or links the user account. Returns JWT tokens.
+    """
+    if not GoogleOAuthService.is_configured():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Google OAuth is not configured"
+        )
+
+    try:
+        # Exchange code for tokens and get user info
+        _, user_info = GoogleOAuthService.get_token_and_user_info(request.code)
+
+        # Create or link user account
+        user, is_new = GoogleOAuthService.create_or_link_user(
+            db=db,
+            user_info=user_info,
+            models_module=models,
+            crud_module=crud
+        )
+
+        # Create access token (short-lived)
+        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = create_access_token(
+            data={"sub": user.email},
+            expires_delta=access_token_expires
+        )
+
+        # Create refresh token (longer-lived)
+        refresh_token_expires = timedelta(minutes=REFRESH_TOKEN_EXPIRE_MINUTES)
+        refresh_token = create_refresh_token(
+            data={"sub": user.email},
+            expires_delta=refresh_token_expires
+        )
+
+        # Set HttpOnly cookies (same as regular login)
+        response.set_cookie(
+            key="access_token",
+            value=access_token,
+            httponly=True,
+            secure=os.getenv("ENV", "development") == "production",
+            samesite="lax",
+            max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60
+        )
+        response.set_cookie(
+            key="refresh_token",
+            value=refresh_token,
+            httponly=True,
+            secure=os.getenv("ENV", "development") == "production",
+            samesite="lax",
+            max_age=REFRESH_TOKEN_EXPIRE_MINUTES * 60
+        )
+
+        logger.info(f"Google OAuth login successful for: {user.email} (new={is_new})")
+
+        return {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "token_type": "bearer",
+            "user": user
+        }
+
+    except ValueError as e:
+        logger.error(f"Google OAuth callback failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.exception(f"Unexpected error in Google OAuth callback: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Authentication failed. Please try again."
+        )
+
+
 # ===== ADMIN ENDPOINTS (Protected) =====
-from .auth import require_admin
+
 
 @app.get("/api/admin/users", response_model=List[schemas.UserResponse])
 async def admin_list_users(
@@ -1045,100 +1599,104 @@ async def update_report(
 
     Security: Uses ReportUpdateRequest schema with extra='forbid' to prevent
     injection of internal fields like user_id, id, or other protected fields.
+
+    Concurrency: Uses pessimistic locking (SELECT FOR UPDATE) to prevent race
+    conditions when multiple requests try to modify the same report.
     """
     logger.info(f"[UPDATE_REPORT] Received PUT request for report {report_id}")
 
-    # Convert validated request to dict, excluding properties and metadata
-    request_dict = request_body.model_dump(exclude={'properties', 'property_metadata'}, exclude_unset=True)
-    logger.info(f"[UPDATE_REPORT] Request body keys: {list(request_dict.keys())}")
+    try:
+        # Convert validated request to dict, excluding properties and metadata
+        request_dict = request_body.model_dump(exclude={'properties', 'property_metadata'}, exclude_unset=True)
+        logger.info(f"[UPDATE_REPORT] Request body keys: {list(request_dict.keys())}")
 
-    # Extract properties from validated request
-    properties_data = request_body.properties
-    property_metadata = request_body.property_metadata
+        # Extract properties from validated request
+        properties_data = request_body.properties
+        property_metadata = request_body.property_metadata
 
-    logger.info(f"[UPDATE_REPORT] Properties data present: {properties_data is not None}")
-    if properties_data:
-        logger.info(f"[UPDATE_REPORT] Properties count: {len(properties_data)}")
+        logger.info(f"[UPDATE_REPORT] Properties data present: {properties_data is not None}")
+        if properties_data:
+            logger.info(f"[UPDATE_REPORT] Properties count: {len(properties_data)}")
 
-    # If properties are being sent, ensure report is marked as multi-property
-    if properties_data:
-        request_dict['is_multi_property'] = True
-        request_dict['property_count'] = len(properties_data)
-        logger.info(f"[UPDATE_REPORT] Setting is_multi_property=True because properties provided")
+        # If properties are being sent, ensure report is marked as multi-property
+        if properties_data:
+            request_dict['is_multi_property'] = True
+            request_dict['property_count'] = len(properties_data)
+            logger.info(f"[UPDATE_REPORT] Setting is_multi_property=True because properties provided")
 
-    # Update report common fields
-    report_update = schemas.ReportUpdate(**request_dict)
-    updated_report = crud.update_report(db, report_id, report_update, current_user.id)
-    if not updated_report:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Report with ID {report_id} not found"
-        )
+        # Update report common fields with locking to prevent race conditions
+        report_update = schemas.ReportUpdate(**request_dict)
+        updated_report = crud.update_report(db, report_id, report_update, current_user.id, use_locking=True)
+        if not updated_report:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Report with ID {report_id} not found"
+            )
 
-    logger.info(f"[UPDATE_REPORT] Report is_multi_property: {updated_report.is_multi_property}")
+        logger.info(f"[UPDATE_REPORT] Report is_multi_property: {updated_report.is_multi_property}")
 
-    # Handle properties for multi-property reports
-    if properties_data:
-        logger.info(f"[UPDATE_REPORT] Updating properties for multi-property report {report_id}")
-        logger.info(f"[UPDATE_REPORT] Received {len(properties_data)} properties")
+        # Handle properties for multi-property reports
+        if properties_data:
+            logger.info(f"[UPDATE_REPORT] Updating properties for multi-property report {report_id}")
+            logger.info(f"[UPDATE_REPORT] Received {len(properties_data)} properties")
 
-        # Get current properties associated with this report
-        current_property_ids = {rp.property_id for rp in updated_report.property_associations}
-        logger.info(f"[UPDATE_REPORT] Current property IDs in DB: {current_property_ids}")
+            # Get current properties associated with this report
+            current_property_ids = {rp.property_id for rp in updated_report.property_associations}
+            logger.info(f"[UPDATE_REPORT] Current property IDs in DB: {current_property_ids}")
 
-        # Get incoming property IDs (only those that are existing properties with integer IDs)
-        incoming_property_ids = {
-            prop_data.get('id') for prop_data in properties_data
-            if prop_data.get('id') and isinstance(prop_data.get('id'), int)
-        }
-        logger.info(f"[UPDATE_REPORT] Incoming property IDs from frontend: {incoming_property_ids}")
+            # Get incoming property IDs (only those that are existing properties with integer IDs)
+            incoming_property_ids = {
+                prop_data.get('id') for prop_data in properties_data
+                if prop_data.get('id') and isinstance(prop_data.get('id'), int)
+            }
+            logger.info(f"[UPDATE_REPORT] Incoming property IDs from frontend: {incoming_property_ids}")
 
-        # Find properties to delete (exist in DB but not in incoming data)
-        properties_to_delete = current_property_ids - incoming_property_ids
-        logger.info(f"[UPDATE_REPORT] Properties to delete: {properties_to_delete}")
+            # Find properties to delete (exist in DB but not in incoming data)
+            properties_to_delete = current_property_ids - incoming_property_ids
+            logger.info(f"[UPDATE_REPORT] Properties to delete: {properties_to_delete}")
 
-        # Delete removed properties
-        for property_id in properties_to_delete:
-            logger.info(f"[UPDATE_REPORT] Deleting property {property_id} from report")
-            # Delete the association
-            db.query(models.ReportProperty).filter(
-                models.ReportProperty.report_id == report_id,
-                models.ReportProperty.property_id == property_id
-            ).delete()
-
-            # Optionally delete the property itself if it's not used in other reports
-            property_usage_count = db.query(models.ReportProperty).filter(
-                models.ReportProperty.property_id == property_id
-            ).count()
-
-            if property_usage_count == 0:
-                logger.info(f"[UPDATE_REPORT] Property {property_id} not used in any other reports, deleting")
-                db.query(models.Property).filter(models.Property.id == property_id).delete()
-
-        # Update or create properties
-        for prop_data in properties_data:
-            property_id = prop_data.get('id')
-
-            # If property has an integer ID, it exists - update it
-            if property_id and isinstance(property_id, int):
-                logger.info(f"[UPDATE_REPORT] Updating existing property {property_id}")
-                property_update = schemas.PropertyUpdate(**prop_data)
-                crud.update_property(db, property_id, property_update, current_user.id)
-            else:
-                # Create new property
-                logger.info(f"[UPDATE_REPORT] Creating new property")
-                property_create = schemas.PropertyCreate(**prop_data)
-                new_property = crud.create_property(db, property_create, current_user.id)
-
-                # Associate with report
-                # Check if association already exists
-                existing_assoc = db.query(models.ReportProperty).filter(
+            # Delete removed properties with proper locking
+            for property_id in properties_to_delete:
+                logger.info(f"[UPDATE_REPORT] Deleting property {property_id} from report")
+                # Delete the association first
+                db.query(models.ReportProperty).filter(
                     models.ReportProperty.report_id == report_id,
-                    models.ReportProperty.property_id == new_property.id
-                ).first()
+                    models.ReportProperty.property_id == property_id
+                ).delete()
 
-                if not existing_assoc:
-                    property_order = prop_data.get('property_order', len(properties_data))
+                # Lock the property row before checking usage
+                property_to_check = db.query(models.Property).filter(
+                    models.Property.id == property_id
+                ).with_for_update().first()
+
+                if property_to_check:
+                    # Check if property is still used in other reports
+                    property_usage_count = db.query(models.ReportProperty).filter(
+                        models.ReportProperty.property_id == property_id
+                    ).count()
+
+                    if property_usage_count == 0:
+                        logger.info(f"[UPDATE_REPORT] Property {property_id} not used in any other reports, deleting")
+                        db.delete(property_to_check)
+
+            # Update or create properties
+            for idx, prop_data in enumerate(properties_data):
+                property_id = prop_data.get('id')
+
+                # If property has an integer ID, it exists - update it
+                if property_id and isinstance(property_id, int):
+                    logger.info(f"[UPDATE_REPORT] Updating existing property {property_id}")
+                    property_update = schemas.PropertyUpdate(**prop_data)
+                    crud.update_property(db, property_id, property_update, current_user.id)
+                else:
+                    # Create new property
+                    logger.info(f"[UPDATE_REPORT] Creating new property")
+                    property_create = schemas.PropertyCreate(**prop_data)
+                    new_property = crud.create_property(db, property_create, current_user.id)
+
+                    # Create association using INSERT ... ON CONFLICT pattern
+                    # to handle potential race conditions
+                    property_order = prop_data.get('property_order', idx + 1)
                     report_property = models.ReportProperty(
                         report_id=report_id,
                         property_id=new_property.id,
@@ -1146,19 +1704,32 @@ async def update_report(
                     )
                     db.add(report_property)
 
+        # Single commit for entire transaction
         db.commit()
         db.refresh(updated_report)
 
-    # Return with properties if multi-property
-    if updated_report.is_multi_property:
-        properties = updated_report.properties
-        response_data = {
-            **{key: getattr(updated_report, key) for key in updated_report.__dict__ if not key.startswith('_')},
-            'properties': properties
-        }
-        return response_data
+        # Return with properties if multi-property
+        if updated_report.is_multi_property:
+            properties = updated_report.properties
+            response_data = {
+                **{key: getattr(updated_report, key) for key in updated_report.__dict__ if not key.startswith('_')},
+                'properties': properties
+            }
+            return response_data
 
-    return updated_report
+        return updated_report
+
+    except HTTPException:
+        # Re-raise HTTP exceptions without rollback (they're expected errors)
+        raise
+    except Exception as e:
+        # Rollback on any unexpected error
+        db.rollback()
+        logger.error(f"[UPDATE_REPORT] Transaction failed for report {report_id}: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update report due to a server error"
+        )
 
 @app.delete("/api/reports/{report_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_report(
@@ -1232,8 +1803,8 @@ async def generate_report_docx(
 
     logger.info(f"[DOCX_GENERATION] Starting generation for report_id={report_id}, user={current_user.email}")
 
-    # Get report data from database
-    db_report = crud.get_report(db, report_id, current_user.id)
+    # Get report data from database with eager loading for thread-safe DOCX generation
+    db_report = crud.get_report(db, report_id, current_user.id, eager_load_for_docx=True)
     if db_report is None:
         logger.warning(f"[DOCX_GENERATION] Report {report_id} not found for user {current_user.id}")
         raise HTTPException(
@@ -1276,8 +1847,7 @@ async def generate_report_docx(
 
 
 # ===== ASYNC JOB ENDPOINTS FOR DOCUMENT GENERATION =====
-from .services.job_service import JobService
-from .services.file_storage import FileStorage
+
 
 @app.post("/api/reports/{report_id}/generate-async", response_model=schemas.JobResponse)
 async def generate_report_docx_async(
@@ -2498,7 +3068,7 @@ async def static_map_endpoint(request: dict):
         from .maps_service import maps_service
         import traceback
 
-        logger.debug(f"[DEBUG] Received static map request: {request}")
+        logger.debug(f"Received static map request: {request}")
 
         origin_lat = request.get("origin_lat")
         origin_lng = request.get("origin_lng")
@@ -2506,7 +3076,7 @@ async def static_map_endpoint(request: dict):
         dest_lng = request.get("dest_lng")
         polyline = request.get("polyline")
 
-        logger.debug(f"[DEBUG] Extracted params - origin: ({origin_lat}, {origin_lng}), dest: ({dest_lat}, {dest_lng}), polyline length: {len(polyline) if polyline else 0}")
+        logger.debug(f"Extracted params - origin: ({origin_lat}, {origin_lng}), dest: ({dest_lat}, {dest_lng}), polyline length: {len(polyline) if polyline else 0}")
 
         if not all([origin_lat, origin_lng, dest_lat, dest_lng, polyline]):
             raise HTTPException(
@@ -2521,7 +3091,7 @@ async def static_map_endpoint(request: dict):
             origin_lat, origin_lng, dest_lat, dest_lng, polyline, width, height
         )
 
-        logger.debug(f"[DEBUG] Generated map URL: {url}")
+        logger.debug(f"Generated map URL: {url}")
 
         return {"map_url": url}
     except HTTPException:
@@ -3003,53 +3573,6 @@ async def migrate_occupier_to_building_level(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Occupier migration failed: {str(e)}"
-        )
-
-
-@app.post("/api/admin/migrate-certificate-fields")
-async def migrate_certificate_fields(
-    current_user: models.User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Admin endpoint: Migrate certificate_survey_plan_ref to plan_number.
-
-    This is a one-time migration that:
-    1. Copies certificate_survey_plan_ref to plan_number if plan_number is empty
-    2. Copies certificate_survey_plan_date to plan_date if plan_date is empty
-    3. Preserves original certificate fields for backward compatibility
-
-    The migration allows consolidation of certificate identification fields,
-    enabling a flexible Certificate of Identity system in reports.
-
-    Returns:
-        Dict with migration statistics including total reports and migrated count
-    """
-    try:
-        from .migrations.migrate_certificate_to_plan_number import migrate_all_reports
-
-        logger.info("[ADMIN] Starting certificate fields migration")
-        result = migrate_all_reports(db)
-        logger.info(f"[ADMIN] Migration complete: {result}")
-
-        return {
-            "status": "success",
-            "message": "Certificate fields migration completed successfully",
-            "total_reports": result['total_reports'],
-            "migrated_reports": result['migrated_reports'],
-            "skipped_reports": result['skipped_reports'],
-            "migrated_at": datetime.utcnow().isoformat()
-        }
-
-    except Exception as e:
-        db.rollback()
-        logger.error(f"[ERROR] Certificate migration failed: {str(e)}")
-        import traceback
-        error_details = traceback.format_exc()
-        logger.error(f"[ERROR] Migration traceback: {error_details}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Certificate migration failed: {str(e)}"
         )
 
 

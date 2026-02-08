@@ -7,9 +7,12 @@ import { Textarea } from './Textarea';
 import { MultiSelectWithCustomInput } from './MultiSelectWithCustomInput';
 import { formatFacilityName, formatPlaceName, formatAddress } from '../utils/textFormatter';
 import { authTokenStorage } from '../utils/secureStorage';
-import { API_URL } from '../config';
 
-const API_BASE_URL = API_URL;
+// Helper to get CSRF token from cookie
+const getCSRFToken = (): string | null => {
+  const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
+  return match ? decodeURIComponent(match[1]) : null;
+};
 
 // Configuration Constants
 const SEARCH_RADIUS_DEFAULT = 5000; // meters (5 km)
@@ -156,11 +159,13 @@ const LocalityInformationSection: React.FC<Props> = ({
         throw new Error('Authentication required. Please log in again.');
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/locality/nearby-facilities`, {
+      const csrfToken = getCSRFToken();
+      const response = await fetch('/api/locality/nearby-facilities', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token}`,
+          ...(csrfToken && { 'X-CSRF-Token': csrfToken })
         },
         body: JSON.stringify({
           latitude: propertyLatitude,
@@ -242,11 +247,13 @@ const LocalityInformationSection: React.FC<Props> = ({
         throw new Error('Authentication required. Please log in again.');
       }
 
-      const response = await fetch(`${API_BASE_URL}/api/locality/generate-narrative`, {
+      const csrfToken = getCSRFToken();
+      const response = await fetch('/api/locality/generate-narrative', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token}`,
+          ...(csrfToken && { 'X-CSRF-Token': csrfToken })
         },
         body: JSON.stringify({
           property_village: propertyVillage,

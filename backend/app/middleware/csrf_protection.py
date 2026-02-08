@@ -11,6 +11,7 @@ For SPA applications, the frontend should:
 2. Include it as X-CSRF-Token header in all state-changing requests
 """
 
+import os
 import secrets
 import logging
 from typing import Optional
@@ -20,6 +21,13 @@ from starlette.responses import Response
 from fastapi import HTTPException, status
 
 logger = logging.getLogger(__name__)
+
+# CORS origins for error responses (mirrors main.py config)
+def get_cors_origins():
+    cors_origins_env = os.getenv("CORS_ORIGINS")
+    if cors_origins_env:
+        return [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
+    return ["http://localhost:5173", "http://localhost:5174"]
 
 # Configuration
 CSRF_COOKIE_NAME = "csrf_token"
@@ -72,6 +80,21 @@ class CSRFMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, is_production: bool = False):
         super().__init__(app)
         self.is_production = is_production
+        self.cors_origins = get_cors_origins()
+
+    def _create_csrf_error_response(self, request: Request, detail: str) -> Response:
+        """Create a CSRF error response with CORS headers."""
+        response = Response(
+            content=f'{{"detail": "{detail}"}}',
+            status_code=status.HTTP_403_FORBIDDEN,
+            media_type="application/json"
+        )
+        # Add CORS headers so browser can read the error
+        origin = request.headers.get("origin")
+        if origin and origin in self.cors_origins:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+        return response
 
     async def dispatch(self, request: Request, call_next) -> Response:
         # Get existing CSRF token from cookie
@@ -90,28 +113,30 @@ class CSRFMiddleware(BaseHTTPMiddleware):
                         f"Path: {request.url.path}, Method: {request.method}, "
                         f"Cookie present: {bool(existing_token)}, Header present: {bool(header_token)}"
                     )
-                    return Response(
-                        content='{"detail": "CSRF token missing"}',
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        media_type="application/json"
-                    )
+                    return self._create_csrf_error_response(request, "CSRF token missing")
 
                 if not secrets.compare_digest(existing_token, header_token):
                     logger.warning(
                         f"CSRF validation failed - token mismatch. "
                         f"Path: {request.url.path}, Method: {request.method}"
                     )
-                    return Response(
-                        content='{"detail": "CSRF token invalid"}',
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        media_type="application/json"
-                    )
+                    return self._create_csrf_error_response(request, "CSRF token invalid")
 
         # Process the request
         response: Response = await call_next(request)
 
-        # Set or refresh CSRF token cookie
-        if not existing_token:
+        # Determine if we should rotate the CSRF token
+        # Rotate on: 1) First request (no token), 2) Successful state-changing requests
+        should_rotate = (
+            not existing_token or  # First request
+            (
+                request.method in UNSAFE_METHODS and
+                not is_path_exempt(request.url.path) and
+                response.status_code < 400  # Only rotate on success
+            )
+        )
+
+        if should_rotate:
             new_token = generate_csrf_token()
             response.set_cookie(
                 key=CSRF_COOKIE_NAME,
@@ -121,6 +146,8 @@ class CSRFMiddleware(BaseHTTPMiddleware):
                 secure=self.is_production,  # HTTPS only in production
                 samesite="strict"  # Prevent cross-site cookie sending
             )
+            # Add header so frontend knows token was rotated (for debugging/retry logic)
+            response.headers["X-CSRF-Token-Rotated"] = "true"
 
         return response
 
