@@ -13,22 +13,7 @@ from docx.oxml import OxmlElement
 from datetime import datetime
 
 from .base import BaseLetterheadTemplate, TemplateMetadata
-
-
-def add_border_to_paragraph(paragraph, border_position="bottom", size=12, color="000000"):
-    """Add a border to a paragraph"""
-    p = paragraph._element
-    pPr = p.get_or_add_pPr()
-    pBdr = OxmlElement('w:pBdr')
-
-    border = OxmlElement(f'w:{border_position}')
-    border.set(qn('w:val'), 'single')
-    border.set(qn('w:sz'), str(size))
-    border.set(qn('w:space'), '1')
-    border.set(qn('w:color'), color)
-
-    pBdr.append(border)
-    pPr.append(pBdr)
+from ..docx_generation import add_border_to_paragraph
 
 
 class ModernTemplate(BaseLetterheadTemplate):

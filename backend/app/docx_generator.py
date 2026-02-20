@@ -1,779 +1,84 @@
 from docx import Document
 from docx.shared import Pt, Inches, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING, WD_TAB_ALIGNMENT, WD_UNDERLINE
-from docx.enum.table import WD_TABLE_ALIGNMENT, WD_CELL_VERTICAL_ALIGNMENT
-from docx.oxml.ns import qn, nsdecls
-from docx.oxml import OxmlElement, parse_xml
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT
+from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.oxml.ns import nsdecls
+from docx.oxml import parse_xml
 from io import BytesIO
 from datetime import datetime
-from typing import List, Dict, Optional, Any
-from decimal import Decimal
+from typing import Any, List, Dict, Optional, Union
 import requests
-import json
-import logging
 from . import models
 from .utils import append_label_if_missing, clean_spelling_errors, format_no_field
 from .letterhead_templates import get_template
+import logging
 
-# Setup logging
+from .docx_generation import (
+    format_currency,
+    format_currency_words,
+    format_currency_aligned,
+    format_room_count,
+    round_for_say,
+    format_material_list,
+    )
+
+from .docx_generation import (
+    add_section_heading,
+    add_market_value_line,
+    add_value_rounded_line,
+    add_inline_field,
+    add_subsection_paragraph,
+    format_building_valuation_2line,
+    format_addon_compact,
+    )
+
+from .docx_generation import (
+    add_border_to_paragraph,
+    MAP_IMAGE_WIDTH , MAP_IMAGE_MAX_HEIGHT,PROPERTY_PHOTO_WIDTH, PROPERTY_PHOTO_HEIGHT, IMAGE_SPACING_BEFORE,
+    IMAGE_SPACING_AFTER , MAJOR_SECTION_SPACE_BEFORE , MAJOR_SECTION_SPACE_AFTER ,
+
+    SUBSECTION_SPACE_BEFORE ,    SUBSECTION_SPACE_AFTER ,
+
+    BODY_PARA_SPACE_BEFORE ,    BODY_PARA_SPACE_AFTER ,
+
+    INLINE_FIELD_SPACE_BEFORE ,    INLINE_FIELD_SPACE_AFTER ,
+
+    SUBHEADING_SPACE_BEFORE ,    SUBHEADING_SPACE_AFTER ,
+
+    INDENTED_CONTENT_SPACE_BEFORE ,    INDENTED_CONTENT_SPACE_AFTER ,    INDENTED_CONTENT_LEFT_INDENT ,
+
+    BOUNDARY_LIST_SPACE_AFTER ,    ACCOMMODATION_ROOM_SPACE_AFTER,
+
+    FONT_SIZE_DOCUMENT_TITLE ,    FONT_SIZE_SECTION_HEADING ,    FONT_SIZE_SUBSECTION_HEADING ,
+
+    FONT_SIZE_BODY ,    FONT_SIZE_INLINE_LABEL,    FONT_SIZE_VALUATION ,
+
+    FONT_SIZE_TABLE_HEADER,    FONT_SIZE_TABLE_CELL ,    FONT_SIZE_INVOICE_TOTAL ,
+
+    FONT_SIZE_CAPTION ,    FONT_SIZE_BANK_HEADER,    FONT_SIZE_BANK_DETAILS,
+    FONT_SIZE_SIGNATURE,    FONT_SIZE_CERTIFICATION,
+    )
+
+from .docx_generation import (
+    calculate_image_dimensions,
+    apply_letterbox_to_image,
+    )
+
+from .docx_generation import (
+    safe_get_json_field,
+    safe_get_array_item,
+    to_float,
+    safe_parse_json_string,
+    safe_get_nested,
+    )
+
 logger = logging.getLogger(__name__)
 
-# ===== NUMERIC TYPE CONVERTER =====
-def to_float(value: Any) -> float:
-    """
-    Safely convert any numeric type (Decimal, int, float, str) to float.
-    Handles None and returns 0.0.
-    """
-    if value is None:
-        return 0.0
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, Decimal):
-        return float(value)
-    if isinstance(value, str):
-        try:
-            return float(value)
-        except (ValueError, TypeError):
-            return 0.0
-    return float(value if value else 0)
-
-# ===== DEFENSIVE DATA ACCESS HELPERS =====
-# These functions prevent crashes from None/missing data in report generation
-
-def safe_get_json_field(obj: Any, field_name: str, default: Any = None) -> Any:
-    """
-    Safely get JSON field from model object with None check.
-
-    Args:
-        obj: SQLAlchemy model object
-        field_name: Name of the field to retrieve
-        default: Default value if field is None or doesn't exist
-
-    Returns:
-        Field value or default
-    """
-    try:
-        value = getattr(obj, field_name, default)
-        return value if value is not None else default
-    except Exception as e:
-        logger.warning(f"Error accessing field '{field_name}': {e}")
-        return default
-
-
-def safe_get_array_item(arr: Any, index: int, default: Any = None) -> Any:
-    """
-    Safely get array item with bounds checking.
-
-    Args:
-        arr: Array/list to access
-        index: Index to retrieve
-        default: Default value if index out of bounds or arr is None
-
-    Returns:
-        Array item or default
-    """
-    if not arr or not isinstance(arr, (list, tuple)):
-        return default
-    if 0 <= index < len(arr):
-        item = arr[index]
-        return item if item is not None else default
-    return default
-
-
-def safe_parse_json_string(json_str: Any, default: Any = None) -> Any:
-    """
-    Safely parse JSON string with error handling.
-
-    Args:
-        json_str: JSON string or already-parsed object
-        default: Default value if parsing fails
-
-    Returns:
-        Parsed JSON or default
-    """
-    if not json_str:
-        return default
-    try:
-        return json.loads(json_str) if isinstance(json_str, str) else json_str
-    except (json.JSONDecodeError, TypeError) as e:
-        logger.warning(f"JSON parse error: {e}")
-        return default
-
-
-def safe_get_nested(obj: Any, *keys, default: Any = None) -> Any:
-    """
-    Safely traverse nested dict/object structure.
-
-    Args:
-        obj: Object to traverse
-        *keys: Keys to traverse (can be dict keys or object attributes)
-        default: Default value if any key is missing or None
-
-    Returns:
-        Nested value or default
-
-    Example:
-        safe_get_nested(report, 'boundaries', 'north', 'description', default='')
-    """
-    current = obj
-    for key in keys:
-        if current is None:
-            return default
-        if isinstance(current, dict):
-            current = current.get(key)
-        else:
-            current = getattr(current, key, None)
-        if current is None:
-            return default
-    return current
-
-# ===== IMAGE CONFIGURATION CONSTANTS =====
-# All measurements in inches
-MAP_IMAGE_WIDTH = 3.5           # Google Maps image width (75% of original 4.5")
-MAP_IMAGE_MAX_HEIGHT = 2.75     # Google Maps maximum height
-PROPERTY_PHOTO_WIDTH = 2.0      # Property photo width (uniform sizing)
-PROPERTY_PHOTO_HEIGHT = 2.0     # Property photo height (uniform sizing - square)
-IMAGE_SPACING_BEFORE = Pt(6)    # Standard spacing before images
-IMAGE_SPACING_AFTER = Pt(6)     # Standard spacing after images
-
-# ===== SPACING CONFIGURATION FOR A4 PRINTING =====
-# Professional spacing optimized for A4 hardcopy printing
-# All measurements in points (pt)
-
-# Major section spacing (1.0, 2.0, 3.0, etc.)
-MAJOR_SECTION_SPACE_BEFORE = Pt(10)      # Reduced from 12pt for tighter layout
-MAJOR_SECTION_SPACE_AFTER = Pt(3)        # Reduced from 4-6pt for consistency
-
-# Subsection spacing (4.1, 4.2, etc.)
-SUBSECTION_SPACE_BEFORE = Pt(8)          # Reduced from 12pt
-SUBSECTION_SPACE_AFTER = Pt(3)           # Consistent with major sections
-
-# Body paragraph spacing
-BODY_PARA_SPACE_BEFORE = Pt(0)           # No change (tight by default)
-BODY_PARA_SPACE_AFTER = Pt(3)            # Reduced from 4-6pt for consistency
-
-# Inline field spacing (for "heading: content" format)
-INLINE_FIELD_SPACE_BEFORE = Pt(3)        # Compact spacing for inline fields
-INLINE_FIELD_SPACE_AFTER = Pt(3)         # Compact spacing for inline fields
-
-# Subheading spacing (bold labels within sections like "Accommodation")
-SUBHEADING_SPACE_BEFORE = Pt(4)          # Moderate spacing before subheadings
-SUBHEADING_SPACE_AFTER = Pt(2)           # Minimal spacing after subheadings
-
-# Indented content spacing
-INDENTED_CONTENT_SPACE_BEFORE = Pt(0)    # No spacing before indented content
-INDENTED_CONTENT_SPACE_AFTER = Pt(2)     # Minimal spacing after indented content
-INDENTED_CONTENT_LEFT_INDENT = Inches(0.4)  # Standard indent for lists
-
-# Special spacing
-BOUNDARY_LIST_SPACE_AFTER = Pt(2)        # Spacing after boundary list items
-ACCOMMODATION_ROOM_SPACE_AFTER = Pt(2)   # Spacing after room details
-OPENING_SECTION_SPACE_AFTER = Pt(3)      # Spacing after opening sections
-
-# ===== FONT SIZE CONFIGURATION =====
-# Standardized font sizes (10-14pt range) for professional reports
-
-# Document title and headings
-FONT_SIZE_DOCUMENT_TITLE = Pt(14)        # "VALUATION REPORT" title
-FONT_SIZE_SECTION_HEADING = Pt(13)       # Major sections (1.0, 2.0, 3.0...)
-FONT_SIZE_SUBSECTION_HEADING = Pt(12)    # Subsections (4.1, 4.2...)
-
-# Body content
-FONT_SIZE_BODY = Pt(12)                  # Standard body text
-FONT_SIZE_INLINE_LABEL = Pt(12)          # Bold labels in inline fields
-FONT_SIZE_VALUATION = Pt(12)             # Valuation calculation lines
-
-# Tables
-FONT_SIZE_TABLE_HEADER = Pt(12)          # Table header cells
-FONT_SIZE_TABLE_CELL = Pt(11)            # Table content cells
-FONT_SIZE_INVOICE_TOTAL = Pt(12)         # Invoice subtotals and totals
-
-# Other elements
-FONT_SIZE_CAPTION = Pt(10)               # Image/photo captions
-FONT_SIZE_BANK_HEADER = Pt(12)           # Bank account section header
-FONT_SIZE_BANK_DETAILS = Pt(11)          # Bank account details
-FONT_SIZE_SIGNATURE = Pt(12)             # Signature line and label
-FONT_SIZE_CERTIFICATION = Pt(12)         # Certification text
-
-def add_border_to_paragraph(paragraph, border_position="bottom", size=12, color="000000"):
-    """Add a border to a paragraph"""
-    p = paragraph._element
-    pPr = p.get_or_add_pPr()
-    pBdr = OxmlElement('w:pBdr')
-
-    border = OxmlElement(f'w:{border_position}')
-    border.set(qn('w:val'), 'single')
-    border.set(qn('w:sz'), str(size))
-    border.set(qn('w:space'), '1')
-    border.set(qn('w:color'), color)
-
-    pBdr.append(border)
-    pPr.append(pBdr)
-
-def calculate_image_dimensions(image_stream, max_width: float, max_height: float):
-    """
-    Calculate image dimensions maintaining aspect ratio within constraints.
-
-    Args:
-        image_stream: BytesIO object containing image data
-        max_width: Maximum width in inches
-        max_height: Maximum height in inches
-
-    Returns:
-        dict with 'width' and 'height' in Inches, or None if only one dimension needed
-    """
-    try:
-        from PIL import Image
-
-        # Get current position and reset after reading
-        current_pos = image_stream.tell()
-        image_stream.seek(0)
-
-        # Open image to get dimensions
-        img = Image.open(image_stream)
-        img_width, img_height = img.size
-
-        # Reset stream position
-        image_stream.seek(current_pos)
-
-        # Calculate aspect ratio
-        aspect_ratio = img_width / img_height
-
-        # Calculate dimensions that fit within max constraints
-        # Try fitting by width first
-        fitted_width = max_width
-        fitted_height = fitted_width / aspect_ratio
-
-        # If height exceeds max, fit by height instead
-        if fitted_height > max_height:
-            fitted_height = max_height
-            fitted_width = fitted_height * aspect_ratio
-
-        return {
-            'width': Inches(fitted_width),
-            'height': Inches(fitted_height)
-        }
-    except Exception as e:
-        print(f"[DOCX] Could not calculate image dimensions: {e}")
-        # Fallback to just width constraint
-        return {'width': Inches(max_width)}
-
-
-def apply_letterbox_to_image(image_stream, target_width: float, target_height: float):
-    """
-    Apply letterbox/pillarbox to image to achieve uniform dimensions.
-    Maintains aspect ratio by adding borders to fill the target size.
-
-    Args:
-        image_stream: BytesIO object containing image data
-        target_width: Target width in inches
-        target_height: Target height in inches
-
-    Returns:
-        BytesIO with letterboxed image, or original stream if processing fails
-    """
-    try:
-        from PIL import Image, ImageOps
-
-        # Save current position
-        current_pos = image_stream.tell()
-        image_stream.seek(0)
-
-        # Open image
-        img = Image.open(image_stream)
-
-        # Convert to RGB if necessary (handles RGBA, P, etc.)
-        if img.mode != 'RGB':
-            img = img.convert('RGB')
-
-        # Calculate target size in pixels (assuming 96 DPI)
-        DPI = 96
-        target_width_px = int(target_width * DPI)
-        target_height_px = int(target_height * DPI)
-
-        # Calculate aspect ratios
-        img_aspect = img.width / img.height
-        target_aspect = target_width_px / target_height_px
-
-        # Determine scaling: fit within target dimensions
-        if img_aspect > target_aspect:
-            # Image is wider - scale by width
-            new_width = target_width_px
-            new_height = int(target_width_px / img_aspect)
-        else:
-            # Image is taller - scale by height
-            new_height = target_height_px
-            new_width = int(target_height_px * img_aspect)
-
-        # Resize image
-        img_resized = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-
-        # Add padding to reach exact target dimensions
-        # Calculate padding
-        pad_width = (target_width_px - new_width) // 2
-        pad_height = (target_height_px - new_height) // 2
-
-        # Create new image with white background
-        letterboxed = Image.new('RGB', (target_width_px, target_height_px), (255, 255, 255))
-        letterboxed.paste(img_resized, (pad_width, pad_height))
-
-        # Save to BytesIO
-        output_stream = BytesIO()
-        letterboxed.save(output_stream, format='JPEG', quality=90)
-        output_stream.seek(0)
-
-        print(f"[DOCX] Letterboxed image to {target_width}x{target_height} inches")
-        return output_stream
-
-    except Exception as e:
-        print(f"[DOCX] Error applying letterbox: {e}")
-        # Return original stream on error
-        image_stream.seek(current_pos)
-        return image_stream
-
-
-def add_section_heading(doc, section_number: str, section_title: str):
-    """
-    Add a hierarchically numbered section heading.
-
-    Args:
-        doc: Document object
-        section_number: Section number (e.g., "1.0", "4.7.1")
-        section_title: Section title text (e.g., "SITUATION", "PHOTOGRAPHS")
-
-    Returns:
-        Paragraph object containing the heading
-    """
-    # Determine if this is a major section (X.0) or subsection (X.Y)
-    is_subsection = '.' in section_number and section_number.count('.') >= 1 and not section_number.endswith('.0')
-
-    # Add spacing before section
-    spacing_para = doc.add_paragraph()
-    if is_subsection:
-        spacing_para.paragraph_format.space_before = SUBSECTION_SPACE_BEFORE
-    else:
-        spacing_para.paragraph_format.space_before = MAJOR_SECTION_SPACE_BEFORE
-    spacing_para.paragraph_format.space_after = Pt(0)
-
-    # Create heading paragraph
-    heading = doc.add_paragraph()
-    heading.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    heading.paragraph_format.space_before = Pt(0)
-    if is_subsection:
-        heading.paragraph_format.space_after = SUBSECTION_SPACE_AFTER
-    else:
-        heading.paragraph_format.space_after = MAJOR_SECTION_SPACE_AFTER
-    heading.paragraph_format.line_spacing = 0.9
-
-    # Add section number and title
-    heading_text = f"{section_number}. {section_title}"
-    heading_run = heading.add_run(heading_text)
-    heading_run.bold = True
-    # Use different font sizes: 13pt for major sections, 12pt for subsections
-    if is_subsection:
-        heading_run.font.size = FONT_SIZE_SUBSECTION_HEADING
-    else:
-        heading_run.font.size = FONT_SIZE_SECTION_HEADING
-    heading_run.font.color.rgb = RGBColor(0, 0, 0)
-
-    return heading
-
-
-def format_material_list(materials: List[str], labels_dict: Dict[str, str]) -> str:
-    """
-    Format a list of materials intelligently with proper grammar (Oxford comma).
-
-    Args:
-        materials: List of material keys (e.g., ['asbestos', 'tile', 'metal'])
-        labels_dict: Dictionary mapping keys to display labels
-
-    Returns:
-        Formatted string with proper grammar
-
-    Examples:
-        - 1 item: "asbestos sheets"
-        - 2 items: "asbestos sheets and tiles"
-        - 3+ items: "asbestos sheets, tiles and metal sheets" (Oxford comma)
-    """
-    if not materials:
-        return ""
-
-    # Get display labels for all materials
-    labeled_materials = [labels_dict.get(m, m) for m in materials]
-
-    if len(labeled_materials) == 1:
-        return labeled_materials[0]
-    elif len(labeled_materials) == 2:
-        return f"{labeled_materials[0]} and {labeled_materials[1]}"
-    else:
-        # Oxford comma format: "A, B, C and D"
-        return ", ".join(labeled_materials[:-1]) + f" and {labeled_materials[-1]}"
-
-
-def format_currency(value: float) -> str:
-    """
-    Format currency with thousand separators and 2 decimal places.
-
-    Args:
-        value: Numeric value to format
-
-    Returns:
-        Formatted string like "Rs. 10,000,000.00"
-    """
-    if value is None:
-        return "N/A"
-    return f"Rs. {value:,.2f}"
-
-
-def format_currency_words(value: float) -> str:
-    """
-    Convert numeric currency to words in Sri Lankan English format.
-
-    Args:
-        value: Numeric value (e.g., 122300000.00)
-
-    Returns:
-        String like "One Hundred Twenty Two Million Three Hundred Thousand"
-
-    Examples:
-        >>> format_currency_words(122300000.00)
-        'One Hundred Twenty Two Million Three Hundred Thousand'
-        >>> format_currency_words(50000.00)
-        'Fifty Thousand'
-        >>> format_currency_words(1500000.00)
-        'One Million Five Hundred Thousand'
-    """
-    if value is None or value == 0:
-        return "Zero"
-
-    # Round to nearest whole number (ignore cents)
-    value = int(round(abs(value)))
-
-    if value == 0:
-        return "Zero"
-
-    # Number words
-    ones = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine"]
-    teens = ["Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen",
-             "Sixteen", "Seventeen", "Eighteen", "Nineteen"]
-    tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"]
-
-    def convert_group(n):
-        """Convert a number group (1-999) to words"""
-        if n == 0:
-            return ""
-        elif n < 10:
-            return ones[n]
-        elif n < 20:
-            return teens[n - 10]
-        elif n < 100:
-            return tens[n // 10] + (" " + ones[n % 10] if n % 10 != 0 else "")
-        else:
-            return ones[n // 100] + " Hundred" + (" " + convert_group(n % 100) if n % 100 != 0 else "")
-
-    # Split into groups
-    billion = value // 1000000000
-    million = (value % 1000000000) // 1000000
-    thousand = (value % 1000000) // 1000
-    hundred = value % 1000
-
-    parts = []
-    if billion > 0:
-        parts.append(convert_group(billion) + " Billion")
-    if million > 0:
-        parts.append(convert_group(million) + " Million")
-    if thousand > 0:
-        parts.append(convert_group(thousand) + " Thousand")
-    if hundred > 0:
-        parts.append(convert_group(hundred))
-
-    return " ".join(parts)
-
-
-def format_currency_aligned(value: float, min_width: int = 13) -> str:
-    """
-    Format currency with right-padding for digit alignment at tab stops.
-
-    When used with right-aligned tab stops, this ensures that currency values
-    align properly by padding the numeric portion to a consistent width.
-
-    Args:
-        value: Numeric value to format
-        min_width: Minimum width for the numeric portion (default 13)
-
-    Returns:
-        Formatted string like "Rs.   50,000.00" or "Rs. 12,750,000.00"
-
-    Examples:
-        format_currency_aligned(50000) -> "Rs.   50,000.00"
-        format_currency_aligned(12750000) -> "Rs. 12,750,000.00"
-    """
-    if value is None:
-        return "N/A"
-
-    formatted_number = f"{value:,.2f}"
-    # Pad to minimum width, but allow larger numbers to exceed it
-    actual_width = max(min_width, len(formatted_number))
-    padded_number = formatted_number.rjust(actual_width)
-
-    return f"Rs. {padded_number}"
-
-
-def format_room_count(count: int, singular: str, plural: str = None) -> str:
-    """
-    Format room count with conditional number word display.
-
-    Rules:
-    - count == 1: Return singular form only (e.g., "bedroom")
-    - count >= 2: Return number word + plural form (e.g., "two bedrooms")
-
-    Args:
-        count: Number of rooms
-        singular: Singular form of room name (e.g., "bedroom")
-        plural: Plural form (optional, defaults to singular + 's')
-
-    Returns:
-        Formatted string
-
-    Examples:
-        format_room_count(1, "bedroom") -> "bedroom"
-        format_room_count(2, "bedroom") -> "two bedrooms"
-        format_room_count(3, "pantry", "pantries") -> "three pantries"
-    """
-    if plural is None:
-        plural = f"{singular}s"
-
-    if count == 1:
-        return singular
-    else:
-        number_words = {
-            2: 'two', 3: 'three', 4: 'four', 5: 'five',
-            6: 'six', 7: 'seven', 8: 'eight', 9: 'nine', 10: 'ten'
-        }
-        number_word = number_words.get(count, str(count))
-        return f"{number_word} {plural}"
-
-
-def round_for_say(value: float) -> float:
-    """
-    Round value for 'Say' convention in professional valuations.
-
-    Professional valuations often round the final value to a reasonable amount:
-    - 10M+: Round to nearest 100K
-    - 1M - 10M: Round to nearest 50K
-    - 100K - 1M: Round to nearest 10K
-    - Below 100K: Round to nearest 1K
-
-    Args:
-        value: Value to round
-
-    Returns:
-        Rounded value
-    """
-    if value >= 10_000_000:  # 10M+
-        return round(value / 100_000) * 100_000  # Round to nearest 100K
-    elif value >= 1_000_000:  # 1M - 10M
-        return round(value / 50_000) * 50_000  # Round to nearest 50K
-    elif value >= 100_000:  # 100K - 1M
-        return round(value / 10_000) * 10_000  # Round to nearest 10K
-    else:
-        return round(value / 1_000) * 1_000  # Round to nearest 1K
-
-
-def format_building_valuation_2line(doc, building_name: str, total_floor_area: float,
-                                    avg_rate: float, depreciation_rate: float,
-                                    depreciated_value: float) -> None:
-    """
-    Add building valuation in new 2-line compact format.
-
-    Line 1: Building name – area
-    Line 2: @ rate less X% for dep[x.XX] = final value
-
-    Args:
-        doc: Document object
-        building_name: Name of the building
-        total_floor_area: Total floor area in sq.ft
-        avg_rate: Average rate per sq.ft (before depreciation)
-        depreciation_rate: Depreciation percentage (e.g., 25 for 25%)
-        depreciated_value: Final depreciated value
-    """
-    # Line 1: Building name and area
-    p1 = doc.add_paragraph()
-    text1 = f"{building_name} – {total_floor_area:,.0f} sq.ft"
-    run1 = p1.add_run(text1)
-    run1.font.size = FONT_SIZE_VALUATION
-    p1.paragraph_format.space_after = Pt(2)
-
-    # Line 2: Rate + depreciation inline with multiplier
-    p2 = doc.add_paragraph()
-    p2.paragraph_format.left_indent = Inches(0.3)
-
-    # Add tab stop for right alignment
-    tab_stops = p2.paragraph_format.tab_stops
-    tab_stops.add_tab_stop(Inches(6.0), WD_TAB_ALIGNMENT.RIGHT)
-
-    # Calculate depreciation multiplier
-    multiplier = (100 - depreciation_rate) / 100
-
-    text2 = f"@ {format_currency(avg_rate)} per square foot less {depreciation_rate:.0f}% for dep[x{multiplier:.2f}]\t= {format_currency_aligned(depreciated_value)}"
-    run2 = p2.add_run(text2)
-    run2.font.size = FONT_SIZE_VALUATION
-    p2.paragraph_format.space_after = Pt(3)
-
-
-def add_market_value_line(doc, calculated_value: float, has_blank_before: bool = True) -> None:
-    """
-    Add "Market Value of the property" line with double-underlined value.
-
-    Args:
-        doc: Document object
-        calculated_value: The calculated (non-rounded) market value
-        has_blank_before: Whether to add blank line before (default True)
-    """
-    p = doc.add_paragraph()
-
-    # Add spacing before instead of blank line
-    if has_blank_before:
-        p.paragraph_format.space_before = Pt(6)
-
-    # Add tab stop at 6 inches for right alignment
-    tab_stops = p.paragraph_format.tab_stops
-    tab_stops.add_tab_stop(Inches(6.0), WD_TAB_ALIGNMENT.RIGHT)
-
-    # Add label (bold, underlined)
-    run_label = p.add_run("Market Value of the property")
-    run_label.font.bold = True
-    run_label.font.underline = True
-    run_label.font.size = FONT_SIZE_BODY
-
-    # Add tab and equals sign
-    run_eq = p.add_run("\t= ")
-    run_eq.font.bold = True
-    run_eq.font.size = FONT_SIZE_BODY
-
-    # Add value (bold, double underlined)
-    run_value = p.add_run(format_currency(calculated_value))
-    run_value.font.bold = True
-    run_value.font.underline = WD_UNDERLINE.DOUBLE
-    run_value.font.size = FONT_SIZE_BODY
-
-    p.paragraph_format.space_after = Pt(3)
-
-
-def add_value_rounded_line(doc, rounded_value: float) -> None:
-    """
-    Add centered "Value rounded off" line (bold, underlined).
-
-    Args:
-        doc: Document object
-        rounded_value: The rounded value using round_for_say()
-    """
-    p = doc.add_paragraph()
-    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p.paragraph_format.space_before = Pt(6)
-
-    text = f"Value rounded off to {format_currency(rounded_value)}"
-    run = p.add_run(text)
-    run.font.bold = True
-    run.font.underline = True
-    run.font.size = FONT_SIZE_BODY
-
-    p.paragraph_format.space_after = Pt(12)
-
-
-def format_addon_compact(doc, description: str, value: float) -> None:
-    """
-    Add add-on in single-line format (description and value on same line).
-
-    Args:
-        doc: Document object
-        description: Add-on description
-        value: Add-on value
-    """
-    p = doc.add_paragraph()
-
-    # Add tab stop for right alignment
-    tab_stops = p.paragraph_format.tab_stops
-    tab_stops.add_tab_stop(Inches(6.0), WD_TAB_ALIGNMENT.RIGHT)
-
-    text = f"{description}\t= {format_currency_aligned(value)}"
-    run = p.add_run(text)
-    run.font.size = FONT_SIZE_VALUATION
-    p.paragraph_format.space_after = Pt(3)
-
-
-def add_inline_field(doc, label: str, content: str,
-                    space_before=None, space_after=None) -> None:
-    """
-    Add a single-line field in format "Label: content" (inline format).
-
-    Args:
-        doc: Document object
-        label: Bold label text (e.g., "Floor area")
-        content: Content text (e.g., "1250 square feet approximately.")
-        space_before: Override default spacing before (optional)
-        space_after: Override default spacing after (optional)
-
-    Example output:
-        "Floor area: 1250 square feet approximately."
-        (where "Floor area:" is bold and rest is regular)
-    """
-    para = doc.add_paragraph()
-    para.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    para.paragraph_format.space_before = space_before if space_before is not None else INLINE_FIELD_SPACE_BEFORE
-    para.paragraph_format.space_after = space_after if space_after is not None else INLINE_FIELD_SPACE_AFTER
-    para.paragraph_format.line_spacing = 0.9
-
-    # Add bold label
-    label_run = para.add_run(f"{label}: ")
-    label_run.bold = True
-    label_run.font.size = FONT_SIZE_BODY
-    label_run.font.color.rgb = RGBColor(0, 0, 0)
-
-    # Add regular content
-    content_run = para.add_run(content)
-    content_run.font.size = FONT_SIZE_BODY
-    content_run.font.color.rgb = RGBColor(0, 0, 0)
-
-
-def add_subsection_paragraph(doc, label: str, heading: str, content: str,
-                             space_before=None, space_after=None) -> None:
-    """
-    Add a paragraph with subsection label for narrative content.
-
-    Args:
-        doc: Document object
-        label: Subsection label (e.g., "(a)", "(b)")
-        heading: Section heading (e.g., "Ownership", "Street lines")
-        content: Paragraph content text
-        space_before: Override default spacing before (optional)
-        space_after: Override default spacing after (optional)
-
-    Example output:
-        "(a). Ownership:
-        Mr. D Indika Harshana Perera claims ownership to the property..."
-    """
-    para = doc.add_paragraph()
-    para.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    para.paragraph_format.space_before = space_before if space_before is not None else INLINE_FIELD_SPACE_BEFORE
-    para.paragraph_format.space_after = space_after if space_after is not None else INLINE_FIELD_SPACE_AFTER
-    para.paragraph_format.line_spacing = 0.9
-
-    # Add bold label and heading
-    label_run = para.add_run(f"{label}. {heading}:\n")
-    label_run.bold = True
-    label_run.font.size = FONT_SIZE_BODY
-    label_run.font.color.rgb = RGBColor(0, 0, 0)
-
-    # Add paragraph content
-    content_run = para.add_run(content)
-    content_run.font.size = FONT_SIZE_BODY
-    content_run.font.color.rgb = RGBColor(0, 0, 0)
-
+Deed_Type = Union[Dict[str, Any], Any]
 
 # ===== LEGAL ASPECTS PARAGRAPH GENERATORS =====
 
-def generate_ownership_paragraph(report) -> str:
+def generate_ownership_paragraph(report: Any) -> str:
     """
     Generate professional ownership paragraph with graceful handling of missing data.
 
@@ -782,11 +87,11 @@ def generate_ownership_paragraph(report) -> str:
     - Survey plan only: Ownership based on plan identification
     - Minimal data: Fallback to valuation basis statement
     """
-    parts = []
+    parts: list[str] = []
 
     # Determine property identification method - USE SAFE HELPERS
     deeds = safe_get_json_field(report, 'deeds', [])
-    has_deed = isinstance(deeds, list) and len(deeds) > 0
+    has_deed = bool(deeds)
     has_plan = bool(safe_get_json_field(report, 'plan_number', None))
 
     # Owner name (use applicant if available) - USE SAFE HELPER
@@ -804,9 +109,9 @@ def generate_ownership_paragraph(report) -> str:
     # Main ownership statement
     if has_deed and owner_name:
         # Deed-based ownership - USE SAFE ARRAY ACCESS
-        deed = safe_get_array_item(deeds, 0, {})
+        deed : Deed_Type = safe_get_array_item(deeds, 0, {})
         # Handle both dict and object formats
-        deed_type = deed.get('deed_type', 'transfer deed') if isinstance(deed, dict) else getattr(deed, 'deed_type', 'transfer deed')
+        deed_type: str = deed.get('deed_type', 'transfer deed') if isinstance(deed, dict) else getattr(deed, 'deed_type', 'transfer deed')
         deed_number = deed.get('deed_number', '') if isinstance(deed, dict) else getattr(deed, 'deed_number', '')
         deed_date = deed.get('deed_date', '') if isinstance(deed, dict) else getattr(deed, 'deed_date', '')
         notary_name = deed.get('notary_name', '') if isinstance(deed, dict) else getattr(deed, 'notary_name', '')
@@ -1771,7 +1076,6 @@ def generate_organization_side_introduction(report: models.Report) -> List[str]:
 
     return paragraphs
 
-
 def generate_multi_property_concluding_statement(
     report: models.Report,
     user: models.User,
@@ -1835,7 +1139,6 @@ def generate_multi_property_concluding_statement(
     valuer_line = f"Vlr.{honorific} {valuer_name}".replace("  ", " ").strip()
 
     return [statement, valuer_line, designation]
-
 
 def generate_deed_description(deeds: Optional[List[Dict]]) -> Optional[str]:
     """Generate deed description text if deeds are provided"""
@@ -5011,7 +4314,7 @@ def generate_vehicle_report_docx(report: models.Report, user: models.User) -> By
         doc.save(buffer)
         buffer.seek(0)
 
-        logger.info(f"[DOCX] Vehicle report generated successfully")
+        logger.info("[DOCX] Vehicle report generated successfully")
         return buffer
 
     except Exception as e:
@@ -5021,7 +4324,7 @@ def generate_vehicle_report_docx(report: models.Report, user: models.User) -> By
         raise
 
 
-def generate_user_data_docx(report: models.Report, user: models.User = None) -> BytesIO:
+def generate_user_data_docx(report: models.Report, user: Optional[models.User] = None) -> BytesIO:
     """
     Generate a formatted DOCX file from report and user data with comprehensive error handling.
     Routes to multi-property generator if report has multiple properties.
@@ -5044,7 +4347,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
 
     # Route to appropriate generator based on report type
     if hasattr(report, 'report_type') and report.report_type == 'vehicle':
-        logger.info(f"[DOCX] Generating vehicle report")
+        logger.info("[DOCX] Generating vehicle report")
         return generate_vehicle_report_docx(report, user)
 
     # Route to multi-property generator if applicable
@@ -5053,7 +4356,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
         return generate_multi_property_report_docx(report, user)
 
     # Continue with single-property generation
-    logger.info(f"[DOCX] Generating single-property report")
+    logger.info("[DOCX] Generating single-property report")
 
     # Normalize report_type for legacy data
     if not report.report_type:
@@ -5867,9 +5170,6 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
 
                     # === PROFESSIONAL STRUCTURED FORMAT (All buildings) ===
 
-                    # Opening paragraph: Construction materials and general description
-                    building_desc_parts = []
-
                     # Use custom description text if provided
                     if building.get('building_description_text'):
                         opening_para = doc.add_paragraph()
@@ -6138,7 +5438,7 @@ def generate_user_data_docx(report: models.Report, user: models.User = None) -> 
                         # Modern flexible photo grid layout using tables for proper caption alignment
                         import base64
                         import re
-                        import math
+
 
                         num_photos = len(sorted_photos)
                         photos_per_row = 3
