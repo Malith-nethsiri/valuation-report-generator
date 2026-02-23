@@ -13,7 +13,7 @@ from datetime import datetime
 import requests
 
 # Import AI parser for Claude AI integration
-from .ai_parser import parse_with_claude, merge_multi_document_results, parse_vehicle_book_with_claude
+from .ai import parse_with_claude, merge_multi_document_results, parse_vehicle_book_with_claude
 
 
 def detect_document_type(extracted_data: Dict) -> str:

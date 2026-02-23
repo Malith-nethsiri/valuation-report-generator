@@ -7,6 +7,7 @@ import { Label } from './Label';
 import { PropertyPhotosSection } from './PropertyPhotosSection';
 import { generateEnhancedLandDescription } from '../utils/landDescriptionGenerator';
 import { authTokenStorage } from '../utils/secureStorage';
+import { getCSRFToken } from '../utils/csrf';
 import {
   LAND_SHAPES,
   LAND_TYPES,
@@ -21,12 +22,6 @@ import {
   DEVELOPMENT_FEASIBILITY_TEMPLATES,
   OCCUPIER_RELATIONSHIPS,
 } from '../constants/propertyDescriptionConstants';
-
-// Helper to get CSRF token from cookie
-const getCSRFToken = (): string | null => {
-  const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
-  return match ? decodeURIComponent(match[1]) : null;
-};
 
 interface LandDescriptionTabProps {
   register: any;

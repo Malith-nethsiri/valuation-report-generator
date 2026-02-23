@@ -251,18 +251,21 @@ class JobService:
             try:
                 import sentry_sdk
                 sentry_sdk.capture_exception(e)
-            except:
-                pass
+            except Exception as sentry_err:
+                logger.debug(f"Sentry capture skipped (not configured or unavailable): {sentry_err}")
 
-            # Update job as failed
+            # Update job as failed — if this also fails the job will hang in RUNNING
             try:
                 JobService.update_job_status(
                     db, job_id,
                     status=JobStatus.FAILED.value,
                     error_message=str(e)
                 )
-            except:
-                pass
+            except Exception as status_err:
+                logger.critical(
+                    f"[Job {job_id}] CRITICAL: Failed to mark job as FAILED after generation error. "
+                    f"Job will remain in RUNNING state. DB error: {status_err}"
+                )
 
         finally:
             db.close()

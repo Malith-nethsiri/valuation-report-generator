@@ -4,12 +4,7 @@ import { Button } from './Button';
 import { Label } from './Label';
 import { cleanOCRText, formatBoundaryDescription, smartTitleCase } from '../utils/textFormatter';
 import { authTokenStorage } from '../utils/secureStorage';
-
-// Helper to get CSRF token from cookies (set by backend)
-const getCSRFToken = (): string | null => {
-  const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
-  return match ? decodeURIComponent(match[1]) : null;
-};
+import { getCSRFToken } from '../utils/csrf';
 
 interface OCRResult {
   success: boolean;

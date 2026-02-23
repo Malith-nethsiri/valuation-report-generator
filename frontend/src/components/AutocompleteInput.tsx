@@ -247,7 +247,10 @@ export const AutocompleteInput: React.FC<AutocompleteInputProps> = ({
                     className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-100 focus:bg-gray-100 focus:outline-none flex items-center justify-between ${
                       highlightedIndex === index ? 'bg-emerald-50 text-emerald-900' : 'text-gray-900'
                     } ${multiSelect && selectedItems.includes(suggestion) ? 'bg-emerald-50' : ''}`}
-                    onClick={() => handleSuggestionClick(suggestion)}
+                    onMouseDown={(e) => {
+                      e.preventDefault(); // keep input focused — prevents blur race condition
+                      handleSuggestionClick(suggestion);
+                    }}
                   >
                     <span>{suggestion}</span>
                     {multiSelect && selectedItems.includes(suggestion) && (

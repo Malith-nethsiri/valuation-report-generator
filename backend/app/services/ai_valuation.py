@@ -9,6 +9,7 @@ import logging
 from typing import Dict, Any, Optional
 from datetime import datetime, date
 from anthropic import Anthropic
+from .anthropic_client import AI_DEFAULT_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -250,7 +251,7 @@ Return ONLY the JSON object, no additional text."""
 
         # Call Claude API
         message = client.messages.create(
-            model="claude-3-5-haiku-20241022",  # Fast and cost-effective for valuation
+            model=AI_DEFAULT_MODEL,
             max_tokens=1024,
             temperature=0.2,  # Slight variation allowed for market estimates
             messages=[

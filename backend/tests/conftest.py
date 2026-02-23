@@ -26,6 +26,22 @@ from app.database import Base, get_db
 from app.main import app
 from app import models, crud
 from app.auth import get_password_hash
+from app.middleware.csrf_protection import CSRFMiddleware
+
+# ---------------------------------------------------------------------------
+# CSRF bypass for unit tests.
+# CSRF is a browser-based security mechanism (double-submit cookie).
+# Automated tests make direct HTTP calls with no cross-origin context, so
+# CSRF validation is irrelevant and would otherwise block all state-changing
+# requests.  We patch the middleware dispatch here rather than at each call
+# site to keep test code clean.
+# ---------------------------------------------------------------------------
+_original_csrf_dispatch = CSRFMiddleware.dispatch
+
+
+async def _csrf_passthrough(self, request, call_next):  # type: ignore[override]
+    """Test-only CSRF bypass: forward requests without token validation."""
+    return await call_next(request)
 
 
 # Use in-memory SQLite for testing
@@ -66,10 +82,12 @@ def client(db: Session) -> Generator[TestClient, None, None]:
             pass
 
     app.dependency_overrides[get_db] = override_get_db
+    CSRFMiddleware.dispatch = _csrf_passthrough  # type: ignore[method-assign]
 
     with TestClient(app) as test_client:
         yield test_client
 
+    CSRFMiddleware.dispatch = _original_csrf_dispatch  # type: ignore[method-assign]
     app.dependency_overrides.clear()
 
 
@@ -140,6 +158,37 @@ def admin_auth_headers(client: TestClient, test_admin: models.User) -> Dict[str,
         json={
             "email": "admin@example.com",
             "password": "AdminPass123!"
+        }
+    )
+    assert response.status_code == 200
+    token = response.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def second_user(db: Session) -> models.User:
+    """Create a second, unrelated test user (the 'attacker' in ownership tests)."""
+    user = models.User(
+        email="otheruser@example.com",
+        password_hash=get_password_hash("OtherPass123!"),
+        full_name="Other User",
+        email_verified=True,
+        role="user"
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@pytest.fixture
+def second_user_auth_headers(client: TestClient, second_user: models.User) -> Dict[str, str]:
+    """Get authentication headers for the second (unrelated) test user."""
+    response = client.post(
+        "/api/auth/login",
+        json={
+            "email": "otheruser@example.com",
+            "password": "OtherPass123!"
         }
     )
     assert response.status_code == 200

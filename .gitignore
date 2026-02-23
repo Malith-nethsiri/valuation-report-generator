@@ -28,6 +28,8 @@ wheels/
 .venv
 env/
 venv/
+ENV/
+.env.example
 
 # Node
 node_modules/

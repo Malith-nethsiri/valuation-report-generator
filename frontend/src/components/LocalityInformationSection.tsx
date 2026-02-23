@@ -7,12 +7,7 @@ import { Textarea } from './Textarea';
 import { MultiSelectWithCustomInput } from './MultiSelectWithCustomInput';
 import { formatFacilityName, formatPlaceName, formatAddress } from '../utils/textFormatter';
 import { authTokenStorage } from '../utils/secureStorage';
-
-// Helper to get CSRF token from cookie
-const getCSRFToken = (): string | null => {
-  const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
-  return match ? decodeURIComponent(match[1]) : null;
-};
+import { getCSRFToken } from '../utils/csrf';
 
 // Configuration Constants
 const SEARCH_RADIUS_DEFAULT = 5000; // meters (5 km)

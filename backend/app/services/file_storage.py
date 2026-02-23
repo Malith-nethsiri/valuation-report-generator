@@ -194,13 +194,13 @@ class FileStorage:
                     if line.startswith("created_at="):
                         try:
                             created_at = datetime.fromisoformat(line.strip().split("=", 1)[1])
-                        except:
-                            pass
+                        except (ValueError, IndexError) as e:
+                            logger.warning(f"Failed to parse created_at from metadata: {e}")
                     elif line.startswith("ttl_seconds="):
                         try:
                             ttl = int(line.strip().split("=", 1)[1])
-                        except:
-                            pass
+                        except (ValueError, IndexError) as e:
+                            logger.warning(f"Failed to parse ttl_seconds from metadata: {e}")
 
             if created_at is None:
                 mtime = os.path.getmtime(file_path)
