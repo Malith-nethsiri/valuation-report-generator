@@ -2,7 +2,7 @@
 AI narrative generation router (building and land descriptions).
 """
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -47,7 +47,7 @@ async def generate_building_description_endpoint(
         return {
             "status": "success",
             "description": description,
-            "generated_at": datetime.utcnow().isoformat()
+            "generated_at": datetime.now(timezone.utc).isoformat()
         }
 
     except HTTPException:
@@ -97,7 +97,7 @@ async def generate_land_description_endpoint(
         return {
             "status": "success",
             "description": description,
-            "generated_at": datetime.utcnow().isoformat()
+            "generated_at": datetime.now(timezone.utc).isoformat()
         }
 
     except HTTPException:

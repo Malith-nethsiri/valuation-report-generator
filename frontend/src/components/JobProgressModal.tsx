@@ -10,7 +10,7 @@
 
 import React from 'react';
 import { X, FileText, Download, AlertCircle, Loader2, CheckCircle } from 'lucide-react';
-import type { JobStatus } from '../hooks/useJobPolling';
+import type { JobStatus } from '../types';
 
 interface JobProgressModalProps {
   isOpen: boolean;

@@ -166,9 +166,13 @@ const AppRoutes: React.FC = () => {
                 element={!user ? <RegisterPage /> : <Navigate to="/dashboard" replace />}
             />
 
-            {/* Testing routes */}
-            <Route path="/legacy" element={<LegacyFormPage />} />
-            <Route path="/test-components" element={<TestComponents />} />
+            {/* Testing routes — development only */}
+            {import.meta.env.DEV && (
+                <>
+                    <Route path="/legacy" element={<LegacyFormPage />} />
+                    <Route path="/test-components" element={<TestComponents />} />
+                </>
+            )}
 
             {/* Protected routes */}
             <Route

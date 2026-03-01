@@ -11,17 +11,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../services/api';
 import { downloadBlobFile, DOCX_MIME_TYPE } from '../utils/downloadHelper';
+import type { JobStatus } from '../types/misc';
 
-export interface JobStatus {
-  id: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
-  progress_percent: number;
-  progress_message: string | null;
-  error_message: string | null;
-  download_ready: boolean;
-  download_url: string | null;
-  filename: string | null;
-}
+export type { JobStatus };
 
 interface UseJobPollingOptions {
   onComplete?: (job: JobStatus) => void;

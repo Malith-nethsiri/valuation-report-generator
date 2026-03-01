@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { User } from '../types';
-import { authApi, setAuthToken, clearAuthToken, initializeCSRF } from '../services/api';
+import { authApi, setAuthToken, clearAuthToken, initializeCSRF, registerNavigate } from '../services/api';
 import { authTokenStorage } from '../utils/secureStorage';
 
 interface AuthContextType {
@@ -32,6 +33,12 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const navigate = useNavigate();
+
+  // Register navigate callback so the API client can use React Router navigation
+  useEffect(() => {
+    registerNavigate(navigate);
+  }, [navigate]);
 
   // Check for existing token on mount
   useEffect(() => {

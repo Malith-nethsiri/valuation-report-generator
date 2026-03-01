@@ -135,173 +135,180 @@ class PropertyDataMixin:
 
     Using a mixin eliminates code duplication while keeping the database schema unchanged -
     each table still has its own copy of these columns.
+
+    Data Category Legend (see backend/app/utils/field_categories.py for full mapping):
+      [P:C] Paper-Based / Client Document  — survey plan, deed, applicant info
+      [P:O] Paper-Based / Official Record  — gazette, building approval, local authority
+      [I]   Inspection-Based              — physically observed / measured on-site
+      [CD]  Computed / Derived            — AI, Google Maps, extent calculator, system
+      [VJ]  Valuation Judgment            — comparables, rates, final professional values
     """
 
-    # ===== PROPERTY & PLAN IDENTIFICATION =====
-    lot_number = Column(String(200), nullable=True)
-    plan_number = Column(String(100), nullable=True)
-    plan_date = Column(String(50), nullable=True)
-    licensed_surveyor_name = Column(String(255), nullable=True)
-    property_identification_type = Column(String(50), nullable=True)
-    property_identification_documents = Column(JSON, nullable=True)
+    # ===== [P:C] PAPER-BASED: CLIENT DOCUMENTS — Survey Plan & Property ID =====
+    lot_number = Column(String(200), nullable=True)                    # [P:C] From survey plan
+    plan_number = Column(String(100), nullable=True)                   # [P:C] From survey plan
+    plan_date = Column(String(50), nullable=True)                      # [P:C] From survey plan
+    licensed_surveyor_name = Column(String(255), nullable=True)        # [P:C] From survey plan
+    property_identification_type = Column(String(50), nullable=True)   # [P:C] plan/deed/certificate
+    property_identification_documents = Column(JSON, nullable=True)    # [CD]  Uploaded file metadata
 
-    # ===== DEED INFORMATION =====
-    has_deed_info = Column(String(10), nullable=True)
-    deeds = Column(JSON, nullable=True)
+    # ===== [P:C] PAPER-BASED: CLIENT DOCUMENTS — Deed Information =====
+    has_deed_info = Column(String(10), nullable=True)                  # [P:C] Boolean flag
+    deeds = Column(JSON, nullable=True)                                # [P:C] Deed details array
 
-    # ===== ADDITIONAL OWNER =====
-    has_additional_owner = Column(String(10), nullable=True)
-    additional_owner_names = Column(Text, nullable=True)
+    # ===== [P:C] PAPER-BASED: CLIENT DOCUMENTS — Additional Owner =====
+    has_additional_owner = Column(String(10), nullable=True)           # [P:C] From client info
+    additional_owner_names = Column(Text, nullable=True)               # [P:C] From client info
 
-    # ===== INSPECTION =====
-    inspection_date = Column(String(50), nullable=True)
+    # ===== [I] INSPECTION-BASED — Site Visit Metadata =====
+    inspection_date = Column(String(50), nullable=True)                # [I]  Date of physical site visit
 
-    # ===== PROPERTY LOCATION =====
-    assessment_number = Column(String(100), nullable=True)
-    property_village = Column(String(200), nullable=True)
-    property_divisional_secretariat = Column(String(200), nullable=True)
-    property_district = Column(String(100), nullable=True)
-    property_province = Column(String(100), nullable=True)
-    property_latitude = Column(Numeric(10, 8), nullable=True)
-    property_longitude = Column(Numeric(11, 8), nullable=True)
-    property_number = Column(String(50), nullable=True)
-    grama_niladari_division = Column(String(200), nullable=True)
-    hathpaththuwa = Column(String(300), nullable=True)
-    korale = Column(String(300), nullable=True)
-    pradeshiya_sabha = Column(String(200), nullable=True)
-    ward_number = Column(String(20), nullable=True)
-    location_direction = Column(String(50), nullable=True)
+    # ===== [P:O] / [CD] PROPERTY LOCATION =====
+    assessment_number = Column(String(100), nullable=True)             # [P:O] Rates assessment notice
+    property_village = Column(String(200), nullable=True)              # [P:C] From plan / client
+    property_divisional_secretariat = Column(String(200), nullable=True)  # [P:O] Admin division record
+    property_district = Column(String(100), nullable=True)             # [P:O] Admin division record
+    property_province = Column(String(100), nullable=True)             # [P:O] Admin division record
+    property_latitude = Column(Numeric(10, 8), nullable=True)          # [CD]  Google Maps API
+    property_longitude = Column(Numeric(11, 8), nullable=True)         # [CD]  Google Maps API
+    property_number = Column(String(50), nullable=True)                # [P:O] Authority records
+    grama_niladari_division = Column(String(200), nullable=True)       # [P:O] Admin division record
+    hathpaththuwa = Column(String(300), nullable=True)                 # [P:O] Admin division record
+    korale = Column(String(300), nullable=True)                        # [P:O] Admin division record
+    pradeshiya_sabha = Column(String(200), nullable=True)              # [P:O] Admin division record
+    ward_number = Column(String(20), nullable=True)                    # [P:O] Admin division record
+    location_direction = Column(String(50), nullable=True)             # [I]  Physically observed on-site
 
-    # ===== ACCESS DIRECTIONS =====
-    access_starting_point_name = Column(Text, nullable=True)
-    access_starting_point_latitude = Column(Numeric(10, 8), nullable=True)
-    access_starting_point_longitude = Column(Numeric(11, 8), nullable=True)
-    access_route_data = Column(JSON, nullable=True)
-    access_directions_text = Column(Text, nullable=True)
-    access_distance_km = Column(Numeric(10, 2), nullable=True)
-    access_duration_minutes = Column(Integer, nullable=True)
-    access_road_type = Column(String(200), nullable=True)
-    property_road_position = Column(String(100), nullable=True)
-    location_map_image_data = Column(Text, nullable=True)
-    access_road_conditions = Column(JSON, nullable=True)
-    access_entry_mode = Column(String(20), nullable=True)
-    access_road_classes_detected = Column(JSON, nullable=True)
+    # ===== [I] / [CD] ACCESS DIRECTIONS =====
+    access_starting_point_name = Column(Text, nullable=True)           # [I]  Valuer's starting point
+    access_starting_point_latitude = Column(Numeric(10, 8), nullable=True)   # [CD]  Google Maps
+    access_starting_point_longitude = Column(Numeric(11, 8), nullable=True)  # [CD]  Google Maps
+    access_route_data = Column(JSON, nullable=True)                    # [CD]  Google Maps route
+    access_directions_text = Column(Text, nullable=True)               # [CD]  Google Directions / manual
+    access_distance_km = Column(Numeric(10, 2), nullable=True)         # [CD]  Google Maps calculated
+    access_duration_minutes = Column(Integer, nullable=True)           # [CD]  Google Maps calculated
+    access_road_type = Column(String(200), nullable=True)              # [I]  Observed on-site
+    property_road_position = Column(String(100), nullable=True)        # [I]  Observed on-site
+    location_map_image_data = Column(Text, nullable=True)              # [CD]  Google Maps Static image
+    access_road_conditions = Column(JSON, nullable=True)               # [I]  On-site road assessment
+    access_entry_mode = Column(String(20), nullable=True)              # [I]  Observed on-site
+    access_road_classes_detected = Column(JSON, nullable=True)         # [CD]  System / AI detected
 
-    # ===== LAND EXTENT =====
-    land_extent_acres = Column(Numeric(8, 2), nullable=True)
-    land_extent_roods = Column(Integer, nullable=True)
-    land_extent_perches = Column(Numeric(6, 2), nullable=True)
-    land_extent_hectares = Column(Numeric(10, 4), nullable=True)
-    land_extent_square_meters = Column(Numeric(12, 2), nullable=True)
-    land_extent_formatted = Column(String(50), nullable=True)
-    land_traditional_name = Column(String(300), nullable=True)
+    # ===== [P:C] PAPER-BASED: CLIENT DOCUMENTS — Land Extent (from survey plan) =====
+    land_extent_acres = Column(Numeric(8, 2), nullable=True)           # [P:C] From survey plan
+    land_extent_roods = Column(Integer, nullable=True)                 # [P:C] From survey plan
+    land_extent_perches = Column(Numeric(6, 2), nullable=True)         # [P:C] From survey plan
+    land_extent_hectares = Column(Numeric(10, 4), nullable=True)       # [CD]  Auto-calculated (extent_calculator)
+    land_extent_square_meters = Column(Numeric(12, 2), nullable=True)  # [CD]  Auto-calculated (extent_calculator)
+    land_extent_formatted = Column(String(50), nullable=True)          # [CD]  Display string e.g. "0A-1R-13.8P"
+    land_traditional_name = Column(String(300), nullable=True)         # [P:C] From survey plan
 
-    # ===== BOUNDARIES =====
-    boundaries = Column(JSON, nullable=True)
-    physical_boundaries_types = Column(JSON, nullable=True)
-    physical_boundaries_description = Column(Text, nullable=True)
-    boundary_types_per_direction = Column(JSON, nullable=True)
-    entrance_type = Column(String(100), nullable=True)
-    boundaries_summary_text = Column(Text, nullable=True)
-    lots_data = Column(JSON, nullable=True)
+    # ===== [P:C] / [I] / [CD] BOUNDARIES =====
+    boundaries = Column(JSON, nullable=True)                           # [P:C] Legal boundary from survey plan
+    physical_boundaries_types = Column(JSON, nullable=True)            # [I]  What physically exists on-site
+    physical_boundaries_description = Column(Text, nullable=True)      # [I]  On-site physical description
+    boundary_types_per_direction = Column(JSON, nullable=True)         # [I]  Physical type per direction
+    entrance_type = Column(String(100), nullable=True)                 # [I]  Physical gate type observed
+    boundaries_summary_text = Column(Text, nullable=True)              # [CD]  Auto-generated summary
+    lots_data = Column(JSON, nullable=True)                            # [P:C] Multiple lots breakdown
 
-    # ===== OCR DOCUMENT PROCESSING =====
-    uploaded_documents = Column(JSON, nullable=True)
-    field_sources = Column(JSON, nullable=True)
-    survey_plan_scale = Column(String(50), nullable=True)
-    plan_reference_notes = Column(Text, nullable=True)
+    # ===== [CD] COMPUTED — OCR Document Processing =====
+    uploaded_documents = Column(JSON, nullable=True)                   # [CD]  File upload metadata
+    field_sources = Column(JSON, nullable=True)                        # [CD]  Per-field source + category tracking
+    survey_plan_scale = Column(String(50), nullable=True)              # [P:C] From survey plan (OCR-extracted)
+    plan_reference_notes = Column(Text, nullable=True)                 # [P:C] From survey plan (OCR-extracted)
 
-    # ===== DESCRIPTION OF PROPERTY =====
-    land_shape = Column(String(50), nullable=True)
-    land_type = Column(String(50), nullable=True)
-    land_frontage_type = Column(String(100), nullable=True)
-    land_frontage_width = Column(Numeric(6, 2), nullable=True)
-    land_frontage_description = Column(Text, nullable=True)
-    land_level = Column(String(50), nullable=True)
-    land_level_difference = Column(Numeric(8, 2), nullable=True)
-    soil_type = Column(String(50), nullable=True)
-    water_table_depth = Column(Numeric(8, 2), nullable=True)
-    flood_risk = Column(String(50), nullable=True)
-    inundation_risk = Column(String(50), nullable=True)
-    earth_slip_risk = Column(String(50), nullable=True)
-    land_condition = Column(String(50), nullable=True)
-    land_condition_description = Column(Text, nullable=True)
-    land_description_text = Column(Text, nullable=True)
+    # ===== [I] INSPECTION-BASED — Land Physical Characteristics =====
+    land_shape = Column(String(50), nullable=True)                     # [I]  Observed on-site
+    land_type = Column(String(50), nullable=True)                      # [I]  Assessed on-site
+    land_frontage_type = Column(String(100), nullable=True)            # [I]  Observed on-site
+    land_frontage_width = Column(Numeric(6, 2), nullable=True)         # [I]  Measured on-site (metres)
+    land_frontage_description = Column(Text, nullable=True)            # [I]  Described from inspection
+    land_level = Column(String(50), nullable=True)                     # [I]  Observed on-site
+    land_level_difference = Column(Numeric(8, 2), nullable=True)       # [I]  Measured on-site (metres)
+    soil_type = Column(String(50), nullable=True)                      # [I]  Observed / assessed on-site
+    water_table_depth = Column(Numeric(8, 2), nullable=True)           # [I]  Assessed on-site
+    flood_risk = Column(String(50), nullable=True)                     # [I]  Assessed on-site
+    inundation_risk = Column(String(50), nullable=True)                # [I]  Assessed on-site
+    earth_slip_risk = Column(String(50), nullable=True)                # [I]  Assessed on-site
+    land_condition = Column(String(50), nullable=True)                 # [I]  Assessed on-site
+    land_condition_description = Column(Text, nullable=True)           # [I]  Free-text from inspection
+    land_description_text = Column(Text, nullable=True)                # [CD]  AI-generated (Claude)
 
-    # Topographical Features
-    elevation_changes = Column(String(50), nullable=True)
-    drainage_pattern = Column(String(50), nullable=True)
-    vegetation_type = Column(String(50), nullable=True)
-    natural_features = Column(Text, nullable=True)
+    # [I] Topographical Features — observed on-site
+    elevation_changes = Column(String(50), nullable=True)              # [I]  Observed on-site
+    drainage_pattern = Column(String(50), nullable=True)               # [I]  Observed on-site
+    vegetation_type = Column(String(50), nullable=True)                # [I]  Observed on-site
+    natural_features = Column(Text, nullable=True)                     # [I]  Observed on-site
 
-    # ===== BUILDING DETAILS =====
-    buildings = Column(JSON, nullable=True)
-    occupier_name = Column(String(300), nullable=True)
-    occupier_relationship = Column(String(50), nullable=True)
+    # ===== [I] INSPECTION-BASED — Buildings (all sub-fields observed on-site) =====
+    buildings = Column(JSON, nullable=True)                            # [I]  Full nested building structure
+    occupier_name = Column(String(300), nullable=True)                 # [I]  Ascertained on-site
+    occupier_relationship = Column(String(50), nullable=True)          # [I]  Ascertained on-site
 
-    # ===== PROPERTY PHOTOS =====
-    property_photos = Column(JSON, nullable=True)
+    # ===== [I] INSPECTION-BASED — Site Photography =====
+    property_photos = Column(JSON, nullable=True)                      # [I]  Photographed during site visit
 
-    # ===== LOCALITY INFORMATION =====
-    distance_to_major_town_km = Column(Numeric(6, 2), nullable=True)
-    major_town_name = Column(String(200), nullable=True)
-    nearby_facilities = Column(JSON, nullable=True)
-    water_supply_type = Column(JSON, nullable=True)
-    telecommunication_types = Column(JSON, nullable=True)
-    internet_types = Column(JSON, nullable=True)
-    has_public_transport = Column(Boolean, nullable=True)
-    public_transport_routes = Column(Text, nullable=True)
-    public_transport_frequency = Column(String(200), nullable=True)
-    nearest_bus_stop_distance_km = Column(Numeric(6, 2), nullable=True)
-    nearest_bus_stop_name = Column(String(200), nullable=True)
-    nearest_railway_station = Column(String(200), nullable=True)
-    nearest_railway_distance_km = Column(Numeric(6, 2), nullable=True)
-    area_type = Column(String(50), nullable=True)
-    development_level = Column(String(50), nullable=True)
-    predominant_building_type = Column(JSON, nullable=True)
-    tourist_attractions_nearby = Column(Text, nullable=True)
-    locality_description_text = Column(Text, nullable=True)
+    # ===== [I] / [CD] LOCALITY INFORMATION =====
+    distance_to_major_town_km = Column(Numeric(6, 2), nullable=True)   # [I]  Estimated during site visit
+    major_town_name = Column(String(200), nullable=True)               # [I]  Known from site visit
+    nearby_facilities = Column(JSON, nullable=True)                    # [CD]  Google Places API
+    water_supply_type = Column(JSON, nullable=True)                    # [I]  Physically confirmed on-site
+    telecommunication_types = Column(JSON, nullable=True)              # [I]  Physically confirmed on-site
+    internet_types = Column(JSON, nullable=True)                       # [I]  Physically confirmed on-site
+    has_public_transport = Column(Boolean, nullable=True)              # [I]  Observed on-site
+    public_transport_routes = Column(Text, nullable=True)              # [I]  Observed on-site
+    public_transport_frequency = Column(String(200), nullable=True)    # [I]  Observed on-site
+    nearest_bus_stop_distance_km = Column(Numeric(6, 2), nullable=True)  # [I]  Estimated during visit
+    nearest_bus_stop_name = Column(String(200), nullable=True)         # [I]  Observed during site visit
+    nearest_railway_station = Column(String(200), nullable=True)       # [I]  Known from site area
+    nearest_railway_distance_km = Column(Numeric(6, 2), nullable=True) # [I]  Estimated during visit
+    area_type = Column(String(50), nullable=True)                      # [I]  Professionally assessed on-site
+    development_level = Column(String(50), nullable=True)              # [I]  Professionally assessed on-site
+    predominant_building_type = Column(JSON, nullable=True)            # [I]  Observed on-site
+    tourist_attractions_nearby = Column(Text, nullable=True)           # [I]  Known from site visit
+    locality_description_text = Column(Text, nullable=True)            # [CD]  AI-generated (Claude)
 
-    # ===== LEGAL ASPECTS =====
-    ownership_type = Column(String(200), nullable=True)
-    street_lines_status = Column(String(200), nullable=True)
-    building_limits_status = Column(String(200), nullable=True)
-    local_authority_data = Column(Text, nullable=True)
-    rent_act_effectiveness = Column(String(200), nullable=True)
-    title_search_conducted = Column(String(3), nullable=True)
-    pedigree_search_conducted = Column(String(3), nullable=True)
-    valuation_basis_note = Column(Text, nullable=True)
-    property_encumbered = Column(String(3), nullable=True)
-    encumbrance_type = Column(String(100), nullable=True)
-    encumbrance_details = Column(Text, nullable=True)
-    street_lines_gazette_ref = Column(String(100), nullable=True)
-    street_lines_gazette_date = Column(String(20), nullable=True)
-    street_lines_impact_description = Column(Text, nullable=True)
-    building_distance_from_road = Column(String(50), nullable=True)
-    building_plan_approved = Column(String(20), nullable=True)
-    building_plan_reference = Column(String(200), nullable=True)
-    building_approval_authority = Column(String(200), nullable=True)
-    building_within_limits = Column(String(3), nullable=True)
-    local_authority_rated = Column(String(3), nullable=True)
-    local_authority_tax_levy = Column(Text, nullable=True)
+    # ===== [P:O] PAPER-BASED: OFFICIAL RECORDS — Legal Aspects =====
+    ownership_type = Column(String(200), nullable=True)                # [P:O] From title deed / registry
+    street_lines_status = Column(String(200), nullable=True)           # [P:O] From gazette / authority
+    building_limits_status = Column(String(200), nullable=True)        # [P:O] From local authority records
+    local_authority_data = Column(Text, nullable=True)                 # [P:O] From local authority records
+    rent_act_effectiveness = Column(String(200), nullable=True)        # [P:O] From legal records
+    title_search_conducted = Column(String(3), nullable=True)          # [P:O] Paper search activity
+    pedigree_search_conducted = Column(String(3), nullable=True)       # [P:O] Paper search activity
+    valuation_basis_note = Column(Text, nullable=True)                 # [P:O] Legal basis statement
+    property_encumbered = Column(String(3), nullable=True)             # [P:O] From encumbrance records
+    encumbrance_type = Column(String(100), nullable=True)              # [P:O] From encumbrance records
+    encumbrance_details = Column(Text, nullable=True)                  # [P:O] From encumbrance records
+    street_lines_gazette_ref = Column(String(100), nullable=True)      # [P:O] From gazette publication
+    street_lines_gazette_date = Column(String(20), nullable=True)      # [P:O] From gazette publication
+    street_lines_impact_description = Column(Text, nullable=True)      # [P:O] Derived from gazette
+    building_distance_from_road = Column(String(50), nullable=True)    # [P:O] From building approval
+    building_plan_approved = Column(String(20), nullable=True)         # [P:O] From building plan document
+    building_plan_reference = Column(String(200), nullable=True)       # [P:O] From building plan document
+    building_approval_authority = Column(String(200), nullable=True)   # [P:O] From approval authority
+    building_within_limits = Column(String(3), nullable=True)          # [P:O] From authority records
+    local_authority_rated = Column(String(3), nullable=True)           # [P:O] From authority records
+    local_authority_tax_levy = Column(Text, nullable=True)             # [P:O] From authority records
 
-    # ===== COMPARABLE PROPERTIES & LAND VALUES =====
-    comparable_properties = Column(JSON, nullable=True)
-    land_market_analysis = Column(Text, nullable=True)
+    # ===== [VJ] VALUATION JUDGMENT — Comparable Properties & Land Values =====
+    comparable_properties = Column(JSON, nullable=True)                # [VJ]  Valuation market research
+    land_market_analysis = Column(Text, nullable=True)                 # [VJ]  Professional market analysis
 
-    # ===== VALUATION =====
-    valuation_land_extent = Column(Numeric(10, 2), nullable=True)
-    valuation_rate_per_perch = Column(Numeric(12, 2), nullable=True)
-    valuation_total_land_value = Column(Numeric(15, 2), nullable=True)
-    valuation_buildings_data = Column(JSON, nullable=True)
-    valuation_total_buildings_value = Column(Numeric(15, 2), nullable=True)
-    valuation_addons = Column(JSON, nullable=True)
-    valuation_total_addons_value = Column(Numeric(15, 2), nullable=True)
-    valuation_market_value = Column(Numeric(15, 2), nullable=True)
-    valuation_forced_sale_percentage = Column(Numeric(5, 2), nullable=True)
-    valuation_forced_sale_value = Column(Numeric(15, 2), nullable=True)
-    valuation_insurance_value = Column(Numeric(15, 2), nullable=True)
-    valuation_manual_overrides = Column(JSON, nullable=True)
+    # ===== [VJ] VALUATION JUDGMENT — Professional Valuation Figures =====
+    valuation_land_extent = Column(Numeric(10, 2), nullable=True)      # [VJ]  Appraisal extent (may differ from plan)
+    valuation_rate_per_perch = Column(Numeric(12, 2), nullable=True)   # [VJ]  Rate from comparables analysis
+    valuation_total_land_value = Column(Numeric(15, 2), nullable=True) # [VJ]  rate × extent
+    valuation_buildings_data = Column(JSON, nullable=True)             # [VJ]  Per-building replacement cost
+    valuation_total_buildings_value = Column(Numeric(15, 2), nullable=True)  # [VJ]  Sum of building values
+    valuation_addons = Column(JSON, nullable=True)                     # [VJ]  Add-on items (pool, wall, etc.)
+    valuation_total_addons_value = Column(Numeric(15, 2), nullable=True)     # [VJ]  Sum of add-ons
+    valuation_market_value = Column(Numeric(15, 2), nullable=True)     # [VJ]  Final market value opinion
+    valuation_forced_sale_percentage = Column(Numeric(5, 2), nullable=True)  # [VJ]  Forced sale %
+    valuation_forced_sale_value = Column(Numeric(15, 2), nullable=True)      # [VJ]  Calculated forced sale value
+    valuation_insurance_value = Column(Numeric(15, 2), nullable=True)  # [VJ]  Insurance replacement value
+    valuation_manual_overrides = Column(JSON, nullable=True)           # [VJ]  Tracks user-overridden values
 
 
 class Report(PropertyDataMixin, Base):
@@ -312,77 +319,70 @@ class Report(PropertyDataMixin, Base):
     report_type = Column(String(100), nullable=False, default="residential_property", index=True)
     status = Column(String(50), nullable=False, default="draft", index=True)  # draft, completed
 
-    # Applicant Information
-    applicant_title = Column(String(20), nullable=True)  # Mr./Mrs./Miss./Dr.
-    applicant_full_name = Column(String(500), nullable=True)
-    applicant_id_type = Column(String(50), nullable=True)  # Passport, NIC, Other
-    applicant_id_number = Column(String(100), nullable=True)
-    applicant_address_line1 = Column(String(500), nullable=True)  # house/plot, street
-    applicant_address_line2 = Column(String(500), nullable=True)  # village/area
-    applicant_district = Column(String(100), nullable=True)
-    applicant_province = Column(String(100), nullable=True)
-    applicant_country = Column(String(100), nullable=True, default="Sri Lanka")
+    # ===== [P:C] PAPER-BASED: CLIENT DOCUMENTS — Applicant Information =====
+    applicant_title = Column(String(20), nullable=True)                # [P:C] Mr./Mrs./Miss./Dr.
+    applicant_full_name = Column(String(500), nullable=True)           # [P:C] Client identity
+    applicant_id_type = Column(String(50), nullable=True)              # [P:C] Passport, NIC, Other
+    applicant_id_number = Column(String(100), nullable=True)           # [P:C] From client document
+    applicant_address_line1 = Column(String(500), nullable=True)       # [P:C] house/plot, street
+    applicant_address_line2 = Column(String(500), nullable=True)       # [P:C] village/area
+    applicant_district = Column(String(100), nullable=True)            # [P:C] From client info
+    applicant_province = Column(String(100), nullable=True)            # [P:C] From client info
+    applicant_country = Column(String(100), nullable=True, default="Sri Lanka")  # [P:C]
 
-    # Request Type (client vs organization)
-    request_type = Column(String(50), nullable=True)  # "client_request" or "organization_request"
+    # ===== [P:C] PAPER-BASED: CLIENT DOCUMENTS — Request Context =====
+    request_type = Column(String(50), nullable=True)                   # [P:C] client_request / organization_request
+    applicant_contact_number = Column(String(50), nullable=True)       # [P:C] Client contact
 
-    # Applicant Contact Number
-    applicant_contact_number = Column(String(50), nullable=True)
+    # ===== [P:C] PAPER-BASED: CLIENT DOCUMENTS — Valuation Purpose =====
+    valuation_type = Column(String(100), nullable=True)                # [P:C] Market Value, Present Market Value, etc.
+    property_type_valued = Column(String(200), nullable=True)          # [P:C] Immovable property, etc.
+    valuation_purpose = Column(String(200), nullable=True)             # [P:C] Purpose of the valuation report
 
-    # Valuation Purpose
-    valuation_type = Column(String(100), nullable=True)  # Market Value, Present Market Value, etc.
-    property_type_valued = Column(String(200), nullable=True)  # immovable property, movable & immovable properties
+    # ===== [P:C] PAPER-BASED: CLIENT DOCUMENTS — Submission Destination =====
+    submission_organization = Column(Text, nullable=True)              # [P:C] Receiving organisation
+    submission_address = Column(Text, nullable=True)                   # [P:C] Submission address
+    submission_recipient_position = Column(String(200), nullable=True) # [P:C] Manager, Credit Officer, etc.
 
-    # Valuation Purpose (new)
-    valuation_purpose = Column(String(200), nullable=True)  # Purpose of the valuation report
+    # ===== [P:C] PAPER-BASED: CLIENT DOCUMENTS — Special Notes & Report Meta =====
+    has_special_note = Column(String(10), nullable=True)               # [P:C] "yes" or "no"
+    special_note_text = Column(Text, nullable=True)                    # [P:C] Conditional note text
+    report_reference = Column(String(100), nullable=True)              # [P:C] Valuer's reference number
+    report_date = Column(String(50), nullable=True)                    # [P:C] Date of report
 
-    # Submission Destination
-    submission_organization = Column(Text, nullable=True)
-    submission_address = Column(Text, nullable=True)
-    submission_recipient_position = Column(String(200), nullable=True)  # e.g., Manager, Credit Officer
+    # ===== [CD] COMPUTED — Convenience & System Flags =====
+    use_applicant_address_as_property = Column(Boolean, nullable=True, default=False)  # [CD] UI convenience flag
 
-    # Special Notes (optional)
-    has_special_note = Column(String(10), nullable=True)  # "yes" or "no"
-    special_note_text = Column(Text, nullable=True)
-
-    # Report metadata (keeping for compatibility)
-    report_reference = Column(String(100), nullable=True)
-    report_date = Column(String(50), nullable=True)
-
-    # Property Location - Report-specific fields
-    use_applicant_address_as_property = Column(Boolean, nullable=True, default=False)  # Checkbox to reuse applicant address
-
-    # Fields with Report-specific defaults (differ from Property)
-    is_municipal_limit = Column(Boolean, nullable=True, default=False)  # Within Municipal Council limit
-    has_multiple_lots = Column(Boolean, nullable=True, default=False)
-    has_electricity = Column(Boolean, nullable=True, default=True)
-    is_tourist_area = Column(Boolean, nullable=True, default=False)
+    # ===== [I] INSPECTION-BASED — Site Condition Flags =====
+    is_municipal_limit = Column(Boolean, nullable=True, default=False) # [P:O] Within Municipal Council limit
+    has_multiple_lots = Column(Boolean, nullable=True, default=False)  # [I]  Observed on-site
+    has_electricity = Column(Boolean, nullable=True, default=True)     # [I]  Confirmed on-site
+    is_tourist_area = Column(Boolean, nullable=True, default=False)    # [I]  Assessed during visit
 
     # Development feasibility/construction status (Report-only)
-    ongoing_construction_notes = Column(Text, nullable=True)
+    ongoing_construction_notes = Column(Text, nullable=True)           # [I]  Observed on-site
 
-    # ===== CERTIFICATION =====
-    certification_text = Column(Text, nullable=True)
-    certificate_identity_confirmed = Column(Boolean, default=False)
+    # ===== [CD] COMPUTED / DERIVED — Certification (auto-filled from User profile) =====
+    certification_text = Column(Text, nullable=True)                   # [CD]  Pre-filled template
+    certificate_identity_confirmed = Column(Boolean, default=False)    # [CD]  Auto-populated
+    certification_valuer_name = Column(String(300), nullable=True)     # [CD]  From User.full_name
+    certification_valuer_designation = Column(String(200), nullable=True)  # [CD]  From User.professional_designation
+    certification_date = Column(String(50), nullable=True)             # [CD]  From report_date / today
 
-    certification_valuer_name = Column(String(300), nullable=True)
-    certification_valuer_designation = Column(String(200), nullable=True)
-    certification_date = Column(String(50), nullable=True)
-
-    # ===== MULTI-PROPERTY SUPPORT =====
-    is_multi_property = Column(Boolean, default=False, nullable=False)
-    property_count = Column(Integer, default=1, nullable=False)
-    total_valuation_amount = Column(Numeric(15, 2), nullable=True)
-    invoice_data = Column(JSON, nullable=True)  # {items: [...], subtotal, discount, total, payment_terms, bank_details}
+    # ===== [CD] / [VJ] MULTI-PROPERTY SUPPORT =====
+    is_multi_property = Column(Boolean, default=False, nullable=False)   # [CD]  System-set flag
+    property_count = Column(Integer, default=1, nullable=False)          # [CD]  System-set count
+    total_valuation_amount = Column(Numeric(15, 2), nullable=True)       # [VJ]  Sum of all property values
+    invoice_data = Column(JSON, nullable=True)  # [CD]  {items, subtotal, discount, total, payment_terms, bank_details}
 
     # ===== VEHICLE REPORT SUPPORT =====
     primary_vehicle_id = Column(Integer, ForeignKey("vehicles.id", ondelete="SET NULL"), nullable=True)  # For standalone vehicle reports
     is_office_use = Column(Boolean, default=False, nullable=True)  # Office/Private distinction
-    vehicle_count = Column(Integer, default=0, nullable=True)  # Number of vehicles in report
+    vehicle_count = Column(Integer, default=0, nullable=True)      # Number of vehicles in report
 
     # ===== VEHICLE REPORT HEADER FIELDS =====
-    folio_number = Column(String(100), nullable=True)  # Manual entry by user
-    inspection_place = Column(Text, nullable=True)  # Free text entry
+    folio_number = Column(String(100), nullable=True)     # Manual entry by user
+    inspection_place = Column(Text, nullable=True)        # Free text entry
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

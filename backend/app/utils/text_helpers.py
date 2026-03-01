@@ -7,6 +7,25 @@ from typing import Optional, List
 import re
 
 
+def format_list_with_grammar(items: List[str]) -> str:
+    """
+    Format a list of items with proper Oxford comma grammar.
+
+    Examples:
+        ['item1'] -> 'item1'
+        ['item1', 'item2'] -> 'item1 and item2'
+        ['item1', 'item2', 'item3'] -> 'item1, item2, and item3'
+    """
+    if not items:
+        return ""
+    if len(items) == 1:
+        return items[0]
+    elif len(items) == 2:
+        return f"{items[0]} and {items[1]}"
+    else:
+        return ", ".join(items[:-1]) + f", and {items[-1]}"
+
+
 # Common spelling corrections for Sri Lankan administrative divisions
 SPELLING_CORRECTIONS = {
     # Secretariat variations

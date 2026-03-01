@@ -1,6 +1,8 @@
 # Routers package — all domain APIRouter instances re-exported for main.py
 from .health import router as health_router
 from .auth import router as auth_router
+from .password import router as password_router
+from .oauth import router as oauth_router
 from .admin import router as admin_router
 from .users import router as users_router
 from .reports import router as reports_router
@@ -16,6 +18,8 @@ from .narratives import router as narratives_router
 __all__ = [
     "health_router",
     "auth_router",
+    "password_router",
+    "oauth_router",
     "admin_router",
     "users_router",
     "reports_router",

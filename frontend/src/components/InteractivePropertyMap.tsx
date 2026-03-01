@@ -5,7 +5,7 @@ import * as Sentry from '@sentry/react';
 import type { RoadSegment, RoadCondition } from '../types';
 import { RoadConditionsSummary } from './RoadConditionsSummary';
 import { authTokenStorage } from '../utils/secureStorage';
-import { loadGoogleMapsScript } from '../utils/loadGoogleMaps';
+import { loadGoogleMapsScript } from '../hooks/useGoogleMapsStatus';
 import { GOOGLE_MAPS_API_KEY } from '../config';
 import { ManualAddressInput, type ManualAddressData } from './ManualAddressInput';
 import { api } from '../services/api';
@@ -171,7 +171,7 @@ export function InteractivePropertyMap({
       }
     }, 15000);
 
-    loadGoogleMapsScript(GOOGLE_MAPS_API_KEY)
+    loadGoogleMapsScript()
       .then(() => {
         clearTimeout(loadTimeout);
         console.log('[InteractivePropertyMap] Google Maps script loaded successfully');
@@ -903,7 +903,7 @@ export function InteractivePropertyMap({
       existingScript.remove();
     }
 
-    loadGoogleMapsScript(GOOGLE_MAPS_API_KEY!)
+    loadGoogleMapsScript()
       .then(() => {
         console.log('[InteractivePropertyMap] Google Maps script reloaded successfully');
         setGoogleMapsLoaded(true);

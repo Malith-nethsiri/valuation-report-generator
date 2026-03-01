@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 from fastapi import Request
 
 from .. import models
+from ..database import SessionLocal
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,9 @@ class AuditService:
         Returns:
             Created AuditLog entry
         """
+        # Use an independent session so audit entries are never rolled back
+        # if the caller's business transaction fails.
+        audit_db = SessionLocal()
         try:
             # Extract request context
             ip_address = None
@@ -92,9 +96,9 @@ class AuditService:
                 error_message=error_message
             )
 
-            db.add(audit_log)
-            db.commit()
-            db.refresh(audit_log)
+            audit_db.add(audit_log)
+            audit_db.commit()
+            audit_db.refresh(audit_log)
 
             # Log for debugging
             logger.info(
@@ -108,8 +112,10 @@ class AuditService:
         except Exception as e:
             # Don't let audit logging failures break the application
             logger.error(f"[AUDIT ERROR] Failed to create audit log: {str(e)}")
-            db.rollback()
+            audit_db.rollback()
             return None
+        finally:
+            audit_db.close()
 
     @staticmethod
     async def log_login(

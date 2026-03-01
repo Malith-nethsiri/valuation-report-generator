@@ -5,7 +5,7 @@ Provides consistent error responses across the API with proper status codes,
 error messages, and request tracking.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 from pydantic import BaseModel
 from fastapi import Request, status
@@ -68,7 +68,7 @@ def create_error_response(
         message=message,
         details=details,
         request_id=request_id,
-        timestamp=datetime.utcnow().isoformat() + "Z",
+        timestamp=datetime.now(timezone.utc).isoformat(),
         path=path
     )
 

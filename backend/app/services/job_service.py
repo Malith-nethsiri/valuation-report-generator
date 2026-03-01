@@ -12,7 +12,7 @@ import os
 import uuid
 import logging
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
@@ -136,9 +136,9 @@ class JobService:
 
         # Set timestamps based on status
         if status == JobStatus.PROCESSING.value and job.started_at is None:
-            job.started_at = datetime.utcnow()
+            job.started_at = datetime.now(timezone.utc)
         elif status in [JobStatus.COMPLETED.value, JobStatus.FAILED.value]:
-            job.completed_at = datetime.utcnow()
+            job.completed_at = datetime.now(timezone.utc)
 
         db.commit()
         db.refresh(job)
@@ -203,7 +203,7 @@ class JobService:
             )
 
             # Import docx generator here to avoid circular imports
-            from ..docx_generator import generate_report_docx, get_filename_for_report
+            from ..docx_generator import generate_user_data_docx, get_filename_for_user
 
             # Update progress
             JobService.update_job_status(
@@ -214,8 +214,8 @@ class JobService:
             )
 
             # Generate the DOCX
-            docx_bytes = generate_report_docx(report, user)
-            filename = get_filename_for_report(report)
+            docx_bytes = generate_user_data_docx(report, user)
+            filename = get_filename_for_user(report)
 
             # Update progress
             JobService.update_job_status(
@@ -254,7 +254,7 @@ class JobService:
             except Exception as sentry_err:
                 logger.debug(f"Sentry capture skipped (not configured or unavailable): {sentry_err}")
 
-            # Update job as failed — if this also fails the job will hang in RUNNING
+            # Update job as failed — if existing session is broken, retry with a fresh one
             try:
                 JobService.update_job_status(
                     db, job_id,
@@ -262,10 +262,25 @@ class JobService:
                     error_message=str(e)
                 )
             except Exception as status_err:
-                logger.critical(
-                    f"[Job {job_id}] CRITICAL: Failed to mark job as FAILED after generation error. "
-                    f"Job will remain in RUNNING state. DB error: {status_err}"
+                logger.error(
+                    f"[Job {job_id}] Failed to mark FAILED via existing session: {status_err}. "
+                    f"Retrying with fresh session."
                 )
+                recovery_db = SessionLocal()
+                try:
+                    JobService.update_job_status(
+                        recovery_db, job_id,
+                        status=JobStatus.FAILED.value,
+                        error_message=str(e)
+                    )
+                    logger.info(f"[Job {job_id}] Successfully marked as FAILED via recovery session.")
+                except Exception as recovery_err:
+                    logger.critical(
+                        f"[Job {job_id}] CRITICAL: Failed to mark job as FAILED on both sessions. "
+                        f"Job will remain stuck in PROCESSING. Recovery error: {recovery_err}"
+                    )
+                finally:
+                    recovery_db.close()
 
         finally:
             db.close()
@@ -282,7 +297,7 @@ class JobService:
         Returns:
             Number of jobs deleted
         """
-        cutoff = datetime.utcnow() - timedelta(hours=max_age_hours)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
 
         # Find old completed/failed jobs
         old_jobs = db.query(Job).filter(

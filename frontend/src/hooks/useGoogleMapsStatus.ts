@@ -30,9 +30,10 @@ const MAX_RETRIES = 3;
 const LOAD_TIMEOUT = 15000; // 15 seconds
 
 /**
- * Load Google Maps script with timeout.
+ * Load Google Maps script with timeout and retry support.
+ * Used by both the hook and components that need imperative loading.
  */
-async function loadGoogleMaps(): Promise<void> {
+export async function loadGoogleMapsScript(): Promise<void> {
   // Already loaded
   if (window.google?.maps) {
     mapsLoaded = true;
@@ -138,7 +139,7 @@ export function useGoogleMapsStatus(): GoogleMapsStatus {
 
     try {
       if (!mapsLoadPromise) {
-        mapsLoadPromise = loadGoogleMaps();
+        mapsLoadPromise = loadGoogleMapsScript();
       }
 
       await mapsLoadPromise;

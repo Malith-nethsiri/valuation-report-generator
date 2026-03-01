@@ -126,9 +126,10 @@ export const applicantPurposeSchema = centralizedApplicantPurposeSchema;
 // ===== Additional Details Schema =====
 
 /**
- * Base schema for additional details without refinement (for merging).
+ * Base shape for additional details without refinement (internal — for merging within this file).
+ * The canonical loose base for external/test use is in validationSchemas.ts.
  */
-export const baseAdditionalDetailsSchema = z.object({
+const _additionalDetailsBase = z.object({
   submission_recipient_position: z.string().optional(),
   submission_organization: z.string().optional(),
   submission_address: z.string().optional(),
@@ -145,7 +146,7 @@ export const baseAdditionalDetailsSchema = z.object({
 /**
  * Additional details schema with refinement (for step validation).
  */
-export const additionalDetailsSchema = baseAdditionalDetailsSchema.superRefine((data, ctx) => {
+export const additionalDetailsSchema = _additionalDetailsBase.superRefine((data, ctx) => {
   // Validate special note text is required when has_special_note is "yes"
   if (data.has_special_note === 'yes' && !data.special_note_text) {
     ctx.addIssue({
@@ -177,8 +178,8 @@ export const propertySearchSchema = z.object({
   property_longitude: z.number().optional(),
 }).refine(
   (data) => {
-    // Coordinates should be provided
-    return data.property_latitude && data.property_longitude;
+    // Coordinates should be provided (use != null to allow 0 as a valid coordinate)
+    return data.property_latitude != null && data.property_longitude != null;
   },
   {
     message: "Please select a property location on the map",
@@ -262,7 +263,7 @@ export const baseCertificationSchema = z.object({});
  */
 export const completeFormSchema = basePropertyPlanSchema
   .merge(baseApplicantPurposeSchema)
-  .merge(baseAdditionalDetailsSchema)
+  .merge(_additionalDetailsBase)
   .merge(baseCertificationSchema);
 
 /**

@@ -1,16 +1,9 @@
 from sqlalchemy import create_engine, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.exc import OperationalError, DisconnectionError
-from dotenv import load_dotenv
+from sqlalchemy.exc import OperationalError
 import os
 import logging
-from pathlib import Path
-
-# Load environment files: .env first, then .env.local overrides
-env_path = Path(__file__).parent.parent
-load_dotenv(env_path / '.env')
-load_dotenv(env_path / '.env.local', override=True)  # .env.local takes priority
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -23,7 +16,9 @@ if not DATABASE_URL:
     logger.critical("DATABASE_URL environment variable is not set")
     raise RuntimeError("DATABASE_URL environment variable is required")
 
-# Create SQLAlchemy engine with enhanced connection pooling and error handling
+# Create SQLAlchemy engine with enhanced connection pooling and error handling.
+# Connection health check is performed in startup_event (main.py), not here,
+# so that importing this module does not require a live database connection.
 try:
     engine = create_engine(
         DATABASE_URL,
@@ -36,17 +31,8 @@ try:
         },
         echo=False                   # Set to True for SQL debugging
     )
-
-    # Test connection on startup
-    with engine.connect() as conn:
-        conn.execute(text("SELECT 1"))
-    logger.info("✓ Database connection established successfully")
-
-except OperationalError as e:
-    logger.critical(f"✗ Database connection failed: {e}")
-    raise RuntimeError(f"Cannot connect to database. Please check DATABASE_URL configuration: {e}")
 except Exception as e:
-    logger.critical(f"✗ Unexpected database error: {e}")
+    logger.critical(f"✗ Failed to configure database engine: {e}")
     raise
 
 # Create SessionLocal class
@@ -55,26 +41,20 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 # Create Base class for models
 Base = declarative_base()
 
-# Dependency to get database session with retry logic
+
 def get_db():
     """
-    Get database session with automatic retry on disconnection.
+    Yields a scoped SQLAlchemy database session for use as a FastAPI dependency.
 
     Yields:
         Session: SQLAlchemy database session
 
     Raises:
-        Exception: If database operations fail after retry
+        Exception: Propagates any exception raised by the route handler after
+                   rolling back the session.
     """
     db = SessionLocal()
     try:
-        yield db
-    except DisconnectionError as e:
-        logger.error(f"Database disconnection detected: {e}. Attempting reconnection...")
-        db.rollback()
-        db.close()
-        # Create new session and retry
-        db = SessionLocal()
         yield db
     except Exception as e:
         logger.error(f"Database session error: {e}")

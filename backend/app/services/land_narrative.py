@@ -56,10 +56,8 @@ def format_land_value(value: str) -> str:
 
         # Land condition
         'developed': 'developed',
-        'bare_land': 'bare land',
         'scrub_jungle': 'scrub jungle',
         'cultivated': 'cultivated land',
-        'marshy': 'marshy',
 
         # Elevation changes
         'relatively_flat': 'relatively flat',
@@ -76,7 +74,6 @@ def format_land_value(value: str) -> str:
         'artificial_drainage': 'artificial drainage system',
 
         # Vegetation type
-        'bare_land': 'bare',
         'grass_coverage': 'grass coverage',
         'shrubs_bushes': 'shrubs and bushes',
         'mature_trees': 'mature trees',

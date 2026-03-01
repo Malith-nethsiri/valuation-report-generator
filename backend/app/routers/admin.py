@@ -2,7 +2,7 @@
 Admin router — endpoints restricted to admin role only.
 """
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -118,7 +118,7 @@ async def migrate_rooms_to_building_level(
             "reports_processed": migrated_reports,
             "properties_processed": len(properties),
             "total_buildings_migrated": migrated_buildings,
-            "migrated_at": datetime.utcnow().isoformat()
+            "migrated_at": datetime.now(timezone.utc).isoformat()
         }
 
     except Exception as e:
@@ -187,7 +187,7 @@ async def migrate_occupier_to_building_level(
             "reports_processed": migrated_reports,
             "properties_processed": migrated_properties,
             "total_buildings_migrated": migrated_buildings,
-            "migrated_at": datetime.utcnow().isoformat()
+            "migrated_at": datetime.now(timezone.utc).isoformat()
         }
 
     except Exception as e:

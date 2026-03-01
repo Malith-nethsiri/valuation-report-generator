@@ -3,7 +3,7 @@ AI-powered narrative generation for building descriptions in valuation reports.
 Uses Claude API (same as locality descriptions).
 """
 from typing import Dict, List, Optional, Any
-from ..docx_generator import format_list_with_grammar
+from ..utils.text_helpers import format_list_with_grammar
 from .anthropic_client import get_anthropic_client, is_anthropic_configured
 from .base_narrative import BaseNarrativeService
 from .narrative_constants import format_water_supply

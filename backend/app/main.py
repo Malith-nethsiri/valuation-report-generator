@@ -70,6 +70,8 @@ from .utils.error_responses import (
 from .routers import (
     admin_router,
     auth_router,
+    password_router,
+    oauth_router,
     autocomplete_router,
     health_router,
     jobs_router,
@@ -136,6 +138,8 @@ app.add_exception_handler(Exception, generic_exception_handler)
 # ===== ROUTERS =====
 app.include_router(health_router)
 app.include_router(auth_router)
+app.include_router(password_router)
+app.include_router(oauth_router)
 app.include_router(admin_router)
 app.include_router(users_router)
 app.include_router(reports_router)
@@ -174,6 +178,16 @@ async def _cleanup_token_blacklist():
 async def startup_event():
     """Configure rate limits, initialize Redis, and start background tasks."""
     logger.info("Application starting up...")
+
+    # Verify database connectivity at startup (not at import time, to allow test isolation)
+    try:
+        from sqlalchemy import text as sa_text
+        with engine.connect() as conn:
+            conn.execute(sa_text("SELECT 1"))
+        logger.info("✓ Database connection established successfully")
+    except Exception as e:
+        logger.critical(f"✗ Database connection failed: {e}")
+        raise RuntimeError(f"Cannot connect to database. Please check DATABASE_URL configuration: {e}")
 
     if os.getenv("AUTO_MIGRATE", "false").lower() == "true":
         try:

@@ -2,7 +2,6 @@ from docx.shared import Pt, Inches
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
 from docx.text.paragraph import Paragraph
-from matplotlib.pylab import size
 
 # ===== IMAGE CONFIGURATION CONSTANTS =====
 # All measurements in inches

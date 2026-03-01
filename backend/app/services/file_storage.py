@@ -11,7 +11,7 @@ import os
 import uuid
 import logging
 import tempfile
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -81,7 +81,7 @@ class FileStorage:
         with open(metadata_path, 'w') as f:
             f.write(f"filename={filename}\n")
             f.write(f"content_type={content_type}\n")
-            f.write(f"created_at={datetime.utcnow().isoformat()}\n")
+            f.write(f"created_at={datetime.now(timezone.utc).isoformat()}\n")
             f.write(f"ttl_seconds={FILE_TTL_SECONDS}\n")
 
         logger.info(f"Stored file {file_id} ({filename})")
@@ -207,7 +207,7 @@ class FileStorage:
                 created_at = datetime.fromtimestamp(mtime)
 
         expiry = created_at + timedelta(seconds=ttl)
-        return datetime.utcnow() > expiry
+        return datetime.now(timezone.utc) > expiry
 
     @staticmethod
     def cleanup_expired_files() -> int:

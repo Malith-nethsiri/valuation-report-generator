@@ -3,12 +3,13 @@ Health check router.
 
 Provides endpoints for API health status, CSRF token, and detailed dependency checks.
 """
-from fastapi import APIRouter, Request
-from datetime import datetime
+from fastapi import APIRouter, Depends, Request
+from datetime import datetime, timezone
 import os
 import logging
 
-from .. import schemas
+from .. import schemas, models
+from ..auth import require_admin
 from ..middleware.csrf_protection import get_csrf_token_endpoint
 from ..services.redis_client import redis_health_check
 
@@ -49,14 +50,16 @@ async def csrf_token(request: Request):
 
 
 @router.get("/api/health/detailed")
-async def detailed_health_check():
+async def detailed_health_check(
+    _current_user: models.User = Depends(require_admin)
+):
     """
     Detailed health check that validates all critical dependencies
     Returns status of database, Redis, API keys, and critical services
     """
     health_status = {
         "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "checks": {}
     }
 

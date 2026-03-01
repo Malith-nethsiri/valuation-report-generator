@@ -1,5 +1,5 @@
 // Re-export axios instance + token helpers
-export { api, setAuthToken, clearAuthToken, initializeCSRF } from './client';
+export { api, setAuthToken, clearAuthToken, initializeCSRF, registerNavigate } from './client';
 
 // Re-export all API namespaces
 export { authApi } from './authApi';

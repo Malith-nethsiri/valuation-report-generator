@@ -5,7 +5,7 @@ OCR processing pipeline: regex parsing, AI integration, document upload handling
 import re
 import logging
 import traceback
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
 from fastapi import UploadFile
@@ -13,6 +13,7 @@ from fastapi import UploadFile
 from .vision_client import extract_text_from_image
 from .preprocessor import preprocess_ocr_text, validate_extracted_data
 from ..ai import parse_with_claude, merge_multi_document_results, parse_vehicle_book_with_claude
+from ...utils.field_categories import build_field_source_entry
 
 
 def parse_property_data_from_text(text: str, document_hint: Optional[str] = None) -> Tuple[Dict, float]:
@@ -425,7 +426,7 @@ async def process_uploaded_document(
                 "filename": file.filename,
                 "content_type": content_type,
                 "file_size_bytes": len(content),
-                "processed_at": datetime.utcnow().isoformat(),
+                "processed_at": datetime.now(timezone.utc).isoformat(),
                 "document_type_hint": document_type_hint,
                 "ai_metadata": ai_metadata
             }
@@ -439,7 +440,7 @@ async def process_uploaded_document(
             "error": str(e),
             "metadata": {
                 "filename": file.filename if file else "unknown",
-                "processed_at": datetime.utcnow().isoformat()
+                "processed_at": datetime.now(timezone.utc).isoformat()
             }
         }
 
@@ -496,16 +497,32 @@ async def process_multiple_documents(
         merged_result = merge_multi_document_results(individual_results)
 
         # Prepare final result with enhanced metadata
+        extracted_fields = merged_result.get('extracted_data', {})
+        cs_map = merged_result.get('confidence_scores', {})
+        overall_conf = merged_result.get('overall_confidence', 0.5)
+
+        # Build field_sources tracking for every OCR-extracted field
+        field_sources: Dict[str, dict] = {}
+        for field_name, value in extracted_fields.items():
+            if not field_name.startswith('_') and value is not None:
+                per_field_conf = cs_map.get(field_name)
+                field_sources[field_name] = build_field_source_entry(
+                    "ocr",
+                    field_name,
+                    confidence=float(per_field_conf) if isinstance(per_field_conf, (int, float)) else overall_conf,
+                )
+
         result = {
             "success": True,
-            "extracted_data": merged_result.get('extracted_data', {}),
-            "overall_confidence": merged_result.get('overall_confidence', 0.5),
-            "confidence_scores": merged_result.get('confidence_scores', {}),
+            "extracted_data": extracted_fields,
+            "overall_confidence": overall_conf,
+            "confidence_scores": cs_map,
             "detected_plans": merged_result.get('detected_plans', []),
+            "field_sources": field_sources,
             "metadata": {
                 "total_pages_processed": len(individual_results),
                 "total_files_submitted": len(files),
-                "processed_at": datetime.utcnow().isoformat(),
+                "processed_at": datetime.now(timezone.utc).isoformat(),
                 "document_type_hint": document_type_hint,
                 "merged_from_documents": merged_result.get('metadata', {}).get('merged_from_documents', len(individual_results)),
                 "total_fields_extracted": merged_result.get('metadata', {}).get('total_fields_extracted', 0),
@@ -528,7 +545,7 @@ async def process_multiple_documents(
             "error": str(e),
             "metadata": {
                 "total_files_submitted": len(files) if files else 0,
-                "processed_at": datetime.utcnow().isoformat()
+                "processed_at": datetime.now(timezone.utc).isoformat()
             }
         }
 

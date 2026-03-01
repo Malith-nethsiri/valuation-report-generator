@@ -74,15 +74,15 @@ class BaseNarrativeService(ABC):
 
     def log_info(self, message: str) -> None:
         """Log info message with service name prefix."""
-        print(f"[{self.get_service_name()}] {message}")
+        logger.info("[%s] %s", self.get_service_name(), message)
 
     def log_warning(self, message: str) -> None:
         """Log warning message with service name prefix."""
-        print(f"[{self.get_service_name()}] Warning: {message}")
+        logger.warning("[%s] %s", self.get_service_name(), message)
 
     def log_error(self, message: str) -> None:
         """Log error message with service name prefix."""
-        print(f"[{self.get_service_name()}] Error: {message}")
+        logger.error("[%s] %s", self.get_service_name(), message)
 
     async def generate(self, data: Dict[str, Any]) -> Optional[str]:
         """

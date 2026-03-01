@@ -47,21 +47,24 @@ from .helpers import (
 logger = logging.getLogger(__name__)
 Deed_Type = Union[Dict[str, Any], Any]
 
-from .building_renderer import render_construction_details, render_utilities_and_conveniences
+from ..utils.text_helpers import format_list_with_grammar
+from .building_renderer import (
+    render_construction_details, render_utilities_and_conveniences,
+    aggregate_accommodation_across_building, deduplicate_water_sources,
+)
+from .photo_section import render_photo_grid
+from .valuation_section_renderer import render_valuation_section
 from .text_generators import (
     generate_ownership_paragraph, generate_street_lines_paragraph,
     generate_building_limits_paragraph, generate_local_authority_paragraph,
-    generate_rent_act_paragraph, _synthesize_location_context,
+    generate_rent_act_paragraph,
     generate_land_values_paragraph, generate_simplified_certification_text,
     generate_certificate_of_identity_text, add_signature_block, get_pronoun,
     generate_title_block, generate_applicant_statement,
     generate_organization_side_introduction, generate_multi_property_concluding_statement,
     generate_deed_description, generate_submission_statement, generate_situation_text,
     generate_smart_address, generate_access_text, generate_locality_description,
-    generate_boundary_summary_text, format_list_with_grammar,
-)
-from .building_renderer import (
-    aggregate_accommodation_across_building, deduplicate_water_sources,
+    generate_boundary_summary_text,
 )
 
 def generate_property_sections(doc, prop, report, user):
@@ -555,108 +558,11 @@ def generate_property_sections(doc, prop, report, user):
 
                 add_inline_field(doc, "Occupation", occupier_text, space_after=Pt(6))
 
-            # === BUILDING PHOTOS - USE SAME GRID TABLE FORMAT AS STANDALONE ===
+            # === BUILDING PHOTOS ===
             building_photos = building.get('building_photos', [])
-            if building_photos and len(building_photos) > 0:
+            if building_photos:
                 sorted_photos = sorted(building_photos, key=lambda x: x.get('order', 0))
-
-                import base64
-                import re
-
-                num_photos = len(sorted_photos)
-                photos_per_row = 3
-
-                idx = 0
-                while idx < num_photos:
-                    remaining = num_photos - idx
-                    if remaining >= photos_per_row:
-                        photos_in_row = photos_per_row
-                    elif remaining == 1 and idx > 0:
-                        photos_in_row = 1
-                    else:
-                        photos_in_row = remaining
-
-                    table = doc.add_table(rows=2, cols=photos_in_row)
-                    table.alignment = WD_TABLE_ALIGNMENT.CENTER
-
-                    for row in table.rows:
-                        for cell in row.cells:
-                            cell.width = Inches(6.5 / photos_in_row)
-                            tc = cell._element
-                            tcPr = tc.get_or_add_tcPr()
-                            tcBorders = parse_xml(
-                                r'<w:tcBorders %s>'
-                                r'<w:top w:val="none"/>'
-                                r'<w:left w:val="none"/>'
-                                r'<w:bottom w:val="none"/>'
-                                r'<w:right w:val="none"/>'
-                                r'</w:tcBorders>' % nsdecls('w')
-                            )
-                            tcPr.append(tcBorders)
-
-                    for i in range(photos_in_row):
-                        if idx >= num_photos:
-                            break
-
-                        photo = sorted_photos[idx]
-                        try:
-                            image_data = photo.get('image_data', '')
-                            caption = photo.get('caption', '')
-
-                            if image_data:
-                                # Handle both data URI and raw base64
-                                if image_data.startswith('data:image'):
-                                    base64_match = re.search(r'base64,(.+)', image_data)
-                                    if not base64_match:
-                                        idx += 1
-                                        continue
-                                    base64_data = base64_match.group(1)
-                                else:
-                                    base64_data = image_data
-
-                                image_bytes = base64.b64decode(base64_data)
-                                image_stream = BytesIO(image_bytes)
-
-                                img_width = Inches(2.0)
-                                dimensions = calculate_image_dimensions(
-                                    image_stream,
-                                    img_width,
-                                    PROPERTY_PHOTO_HEIGHT
-                                )
-
-                                image_stream.seek(0)
-                                cell = table.rows[0].cells[i]
-                                cell_para = cell.paragraphs[0]
-                                cell_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                                cell_para.add_run().add_picture(image_stream, **dimensions)
-
-                                caption_cell = table.rows[1].cells[i]
-                                caption_para = caption_cell.paragraphs[0]
-                                caption_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                                caption_para.paragraph_format.space_before = Pt(2)
-                                caption_para.paragraph_format.space_after = Pt(2)
-
-                                caption_text = f"Fig. {idx + 1}"
-                                if caption:
-                                    caption_text += f": {caption}"
-
-                                caption_run = caption_para.add_run(caption_text)
-                                caption_run.font.size = FONT_SIZE_CAPTION
-                                caption_run.font.italic = True
-                                caption_run.font.color.rgb = RGBColor(60, 60, 60)
-
-                                logger.info(f"[MULTI-PROPERTY] Added building photo {idx + 1}")
-
-                        except Exception as e:
-                            logger.error(f"[MULTI-PROPERTY] Error adding photo {idx + 1}: {str(e)}")
-
-                        idx += 1
-
-                    spacing_para = doc.add_paragraph()
-                    spacing_para.paragraph_format.space_after = Pt(8)
-
-                final_spacing = doc.add_paragraph()
-                final_spacing.paragraph_format.space_after = IMAGE_SPACING_AFTER
+                render_photo_grid(doc, sorted_photos)
 
     # === DEVELOPMENT FEASIBILITY / ONGOING CONSTRUCTION (Bare Land only) ===
     if prop.property_type == 'bare_land' and prop.ongoing_construction_notes:
@@ -706,108 +612,12 @@ def generate_property_sections(doc, prop, report, user):
             value_run.font.color.rgb = RGBColor(0, 0, 0)
 
     # Property Photos (embedded in DESCRIPTION section) - USE SAME GRID TABLE FORMAT AS STANDALONE
+    # Property Photos (embedded in DESCRIPTION section)
     if prop.property_type == 'bare_land':
         property_photos = safe_get_json_field(prop, 'property_photos', [])
-        if property_photos and len(property_photos) > 0:
+        if property_photos:
             sorted_photos = sorted(property_photos, key=lambda x: x.get('order', 0))
-
-            import base64
-            import re
-
-            num_photos = len(sorted_photos)
-            photos_per_row = 3
-
-            idx = 0
-            while idx < num_photos:
-                remaining = num_photos - idx
-                if remaining >= photos_per_row:
-                    photos_in_row = photos_per_row
-                elif remaining == 1 and idx > 0:
-                    photos_in_row = 1
-                else:
-                    photos_in_row = remaining
-
-                table = doc.add_table(rows=2, cols=photos_in_row)
-                table.alignment = WD_TABLE_ALIGNMENT.CENTER
-
-                for row in table.rows:
-                    for cell in row.cells:
-                        cell.width = Inches(6.5 / photos_in_row)
-                        tc = cell._element
-                        tcPr = tc.get_or_add_tcPr()
-                        tcBorders = parse_xml(
-                            r'<w:tcBorders %s>'
-                            r'<w:top w:val="none"/>'
-                            r'<w:left w:val="none"/>'
-                            r'<w:bottom w:val="none"/>'
-                            r'<w:right w:val="none"/>'
-                            r'</w:tcBorders>' % nsdecls('w')
-                        )
-                        tcPr.append(tcBorders)
-
-                for i in range(photos_in_row):
-                    if idx >= num_photos:
-                        break
-
-                    photo = sorted_photos[idx]
-                    try:
-                        image_data = photo.get('image_data', '')
-                        caption = photo.get('caption', '')
-
-                        if image_data:
-                            # Handle both data URI and raw base64
-                            if image_data.startswith('data:image'):
-                                base64_match = re.search(r'base64,(.+)', image_data)
-                                if not base64_match:
-                                    idx += 1
-                                    continue
-                                base64_data = base64_match.group(1)
-                            else:
-                                base64_data = image_data
-
-                            image_bytes = base64.b64decode(base64_data)
-                            image_stream = BytesIO(image_bytes)
-
-                            img_width = Inches(2.0)
-                            dimensions = calculate_image_dimensions(
-                                image_stream,
-                                img_width,
-                                PROPERTY_PHOTO_HEIGHT
-                            )
-
-                            image_stream.seek(0)
-                            cell = table.rows[0].cells[i]
-                            cell_para = cell.paragraphs[0]
-                            cell_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                            cell_para.add_run().add_picture(image_stream, **dimensions)
-
-                            caption_cell = table.rows[1].cells[i]
-                            caption_para = caption_cell.paragraphs[0]
-                            caption_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                            caption_para.paragraph_format.space_before = Pt(2)
-                            caption_para.paragraph_format.space_after = Pt(2)
-
-                            caption_text = f"Fig. {idx + 1}"
-                            if caption:
-                                caption_text += f": {caption}"
-
-                            caption_run = caption_para.add_run(caption_text)
-                            caption_run.font.size = FONT_SIZE_CAPTION
-                            caption_run.font.italic = True
-                            caption_run.font.color.rgb = RGBColor(60, 60, 60)
-
-                            logger.info(f"[MULTI-PROPERTY BARE LAND] Added property photo {idx + 1}")
-
-                    except Exception as e:
-                        logger.error(f"[MULTI-PROPERTY BARE LAND] Error adding photo {idx + 1}: {str(e)}")
-
-                    idx += 1
-
-                spacing_para = doc.add_paragraph()
-                spacing_para.paragraph_format.space_after = Pt(8)
-
-            final_spacing = doc.add_paragraph()
-            final_spacing.paragraph_format.space_after = IMAGE_SPACING_AFTER
+            render_photo_grid(doc, sorted_photos)
 
     # ===== 5.0 LOCALITY SECTION (CONDITIONAL) =====
     locality_text = generate_locality_description(prop)
@@ -901,161 +711,7 @@ def generate_property_sections(doc, prop, report, user):
         doc.add_paragraph()
 
     # ===== 8.0 VALUATION SECTION =====
-    if prop.valuation_total_land_value or prop.valuation_buildings_data:
-        add_section_heading(doc, f"{section_num}.0", "VALUATION OF THE PROPERTY")
-        section_num += 1
-
-        # Land valuation
-        if prop.valuation_total_land_value:
-            extent = prop.valuation_land_extent or prop.land_extent_perches or 0
-            rate = prop.valuation_rate_per_perch or 0
-            land_value = prop.valuation_total_land_value
-
-            p = doc.add_paragraph()
-
-            # Add tab stop for right alignment
-            tab_stops = p.paragraph_format.tab_stops
-            tab_stops.add_tab_stop(Inches(6.0), WD_TAB_ALIGNMENT.RIGHT)
-
-            text = f"Land – {extent:,.2f} perches @ {format_currency(rate)} per perch\t= {format_currency_aligned(land_value)}"
-            run = p.add_run(text)
-            run.font.size = FONT_SIZE_VALUATION
-            p.paragraph_format.space_after = Pt(3)
-
-        # Buildings valuation (skip for bare_land)
-        total_buildings_value = 0
-        buildings_insurance_values = []
-
-        if prop.property_type != 'bare_land' and prop.valuation_buildings_data:
-            buildings_data = safe_get_json_field(prop, 'valuation_buildings_data', [])
-
-            for idx, bldg in enumerate(buildings_data, 1):
-                building_name = bldg.get('building_name', f'Building {idx}')
-                subtotal = bldg.get('subtotal', 0)
-
-                # Calculate total floor area from components
-                components = bldg.get('components', [])
-                total_floor_area = sum(comp.get('floor_area', 0) for comp in components)
-
-                # Calculate average rate per sq.ft
-                avg_rate = subtotal / total_floor_area if total_floor_area > 0 else 0
-
-                # Check if depreciation data exists
-                has_depreciation = bldg.get('depreciation_amount') is not None and to_float(bldg.get('depreciation_amount', 0)) > 0
-
-                if has_depreciation:
-                    depreciation_rate = to_float(bldg.get('depreciation_rate_percent', 0))
-                    depreciated_value = to_float(bldg.get('depreciated_value', subtotal))
-
-                    # NEW FORMAT: 2-line building with inline depreciation
-                    format_building_valuation_2line(
-                        doc,
-                        building_name,
-                        total_floor_area,
-                        avg_rate,
-                        depreciation_rate,
-                        depreciated_value
-                    )
-
-                    building_value = depreciated_value
-                else:
-                    # No depreciation: Use single-line format
-                    p = doc.add_paragraph()
-
-                    # Add tab stop for right alignment
-                    tab_stops = p.paragraph_format.tab_stops
-                    tab_stops.add_tab_stop(Inches(6.0), WD_TAB_ALIGNMENT.RIGHT)
-
-                    text = f"{building_name} – {total_floor_area:,.0f} sq.ft @ {format_currency(avg_rate)} per square foot\t= {format_currency_aligned(subtotal)}"
-                    run = p.add_run(text)
-                    run.font.size = FONT_SIZE_VALUATION
-                    p.paragraph_format.space_after = Pt(3)
-                    building_value = to_float(subtotal)
-
-                total_buildings_value += building_value
-                # Insurance always uses replacement cost (undepreciated)
-                buildings_insurance_values.append({
-                    'name': building_name,
-                    'value': to_float(subtotal)
-                })
-
-        # Addons/Improvements (support both field names)
-        total_addons_value = 0
-        if prop.valuation_addons:
-            addons = safe_get_json_field(prop, 'valuation_addons', [])
-            for addon in addons:
-                # Support both 'description' and 'item_name' fields
-                addon_description = addon.get('description') or addon.get('item_name', 'Add-on')
-                addon_value = to_float(addon.get('value', 0))
-
-                format_addon_compact(doc, addon_description, addon_value)
-                total_addons_value += addon_value
-
-        # Calculate market values
-        land_val = to_float(prop.valuation_total_land_value)
-        market_value_calculated = land_val + total_buildings_value + total_addons_value
-        market_value_rounded = round_for_say(market_value_calculated)
-
-        # Determine if we should show "Market Value of the property" section
-        has_buildings_or_addons = (total_buildings_value > 0) or (total_addons_value > 0)
-
-        if has_buildings_or_addons:
-            # Show "Market Value of the property" line (with double underline)
-            add_market_value_line(doc, market_value_calculated, has_blank_before=True)
-
-        # Always show "Value rounded off" line
-        add_value_rounded_line(doc, market_value_rounded)
-
-        # === NEW: SUMMARY OF THE VALUATION (previously missing) ===
-        # Check if valuation type is "Forced Sale Value" to show forced sale fields
-        show_forced_sale = report.valuation_type == "Forced Sale Value"
-
-        if show_forced_sale:
-            forced_sale_percentage = prop.valuation_forced_sale_percentage or 90
-            forced_sale_value = market_value_rounded * (forced_sale_percentage / 100)
-
-        p = doc.add_paragraph()
-        run = p.add_run("SUMMARY OF THE VALUATION")
-        run.font.bold = True
-        run.font.underline = True
-        run.font.size = FONT_SIZE_BODY
-        p.paragraph_format.space_before = Pt(12)
-        p.paragraph_format.space_after = Pt(6)
-
-        # Open Market Value
-        p = doc.add_paragraph()
-        tab_stops = p.paragraph_format.tab_stops
-        tab_stops.add_tab_stop(Inches(3.5), WD_TAB_ALIGNMENT.LEFT)
-        tab_stops.add_tab_stop(Inches(3.7), WD_TAB_ALIGNMENT.LEFT)
-        text = f"Open Market Value of the property\t:\t{format_currency(market_value_rounded)}"
-        run = p.add_run(text)
-        run.font.size = FONT_SIZE_VALUATION
-        p.paragraph_format.space_after = Pt(3)
-
-        # Forced Sale Value - only show when valuation type is "Forced Sale Value"
-        if show_forced_sale:
-            p = doc.add_paragraph()
-            tab_stops = p.paragraph_format.tab_stops
-            tab_stops.add_tab_stop(Inches(3.5), WD_TAB_ALIGNMENT.LEFT)
-            tab_stops.add_tab_stop(Inches(3.7), WD_TAB_ALIGNMENT.LEFT)
-            text = f"Forced Sale Value of the property\t:\t{format_currency(forced_sale_value)}"
-            run = p.add_run(text)
-            run.font.size = FONT_SIZE_VALUATION
-            p.paragraph_format.space_after = Pt(3)
-
-        # Insurance Value (NEW INLINE FORMAT)
-        if buildings_insurance_values:
-            for building_ins in buildings_insurance_values:
-                p = doc.add_paragraph()
-                tab_stops = p.paragraph_format.tab_stops
-                tab_stops.add_tab_stop(Inches(3.5), WD_TAB_ALIGNMENT.LEFT)
-                tab_stops.add_tab_stop(Inches(3.7), WD_TAB_ALIGNMENT.LEFT)
-                text = f"Insurance Value of the {building_ins['name']}\t:\t{format_currency(building_ins['value'])}"
-                run = p.add_run(text)
-                run.font.size = FONT_SIZE_VALUATION
-                p.paragraph_format.space_after = Pt(2)
-
-            doc.add_paragraph()  # Final spacing
+    section_num = render_valuation_section(doc, prop, report, section_num)
 
     # ===== 9.0 CERTIFICATION SECTION (SIMPLIFIED FORMAT - REPORT-LEVEL) =====
     add_section_heading(doc, f"{section_num}.0", "CERTIFICATION")

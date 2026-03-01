@@ -1,6 +1,6 @@
 """Shared constants and helpers for narrative generation services."""
 from typing import List, Optional, Union
-from ..docx_generator import format_list_with_grammar
+from ..utils.text_helpers import format_list_with_grammar
 
 WATER_SUPPLY_LABELS = {
     # Core display values (from frontend selects)

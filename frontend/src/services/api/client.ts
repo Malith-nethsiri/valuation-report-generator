@@ -76,6 +76,21 @@ export const clearAuthToken = () => {
   delete api.defaults.headers.common['Authorization'];
 };
 
+// Navigate callback - registered by AuthContext for client-side navigation
+let navigateCallback: ((path: string) => void) | null = null;
+
+export const registerNavigate = (navigate: (path: string) => void): void => {
+  navigateCallback = navigate;
+};
+
+const navigateTo = (path: string): void => {
+  if (navigateCallback) {
+    navigateCallback(path);
+  } else {
+    window.location.href = path;
+  }
+};
+
 // Initialize CSRF token by making a GET request to set the cookie
 export const initializeCSRF = async (): Promise<void> => {
   try {
@@ -128,29 +143,42 @@ api.interceptors.response.use(
     // Handle specific HTTP error codes
     switch (status) {
       case 401: // Unauthorized
-        // Skip redirect for auth endpoints - let them handle their own errors
+        // Skip retry for auth endpoints - let them handle their own errors
         const requestUrl = originalRequest.url || '';
-        const isAuthEndpoint = requestUrl.includes('/api/auth/login') || requestUrl.includes('/api/auth/register');
+        const isAuthEndpoint = requestUrl.includes('/api/auth/login') ||
+                               requestUrl.includes('/api/auth/register') ||
+                               requestUrl.includes('/api/auth/refresh');
 
         if (isAuthEndpoint) {
-          // Let the login/register components handle 401 errors
           throw new Error(responseData?.detail || 'Authentication failed');
         }
 
         if (!originalRequest._retry) {
           originalRequest._retry = true;
 
-          // Check if we have a token
           const token = authTokenStorage.getToken();
           if (!token) {
-            window.location.href = '/login';
+            navigateTo('/login');
             return Promise.reject(error);
           }
 
-          // Token exists but is expired, redirect to login
-          clearAuthToken();
-          authTokenStorage.clearAll();
-          window.location.href = '/login';
+          // Attempt token refresh before giving up
+          try {
+            const refreshResponse = await api.post<{ access_token: string }>('/api/auth/refresh');
+            const newToken = refreshResponse.data.access_token;
+            authTokenStorage.setToken(newToken);
+            setAuthToken(newToken);
+            if (originalRequest.headers) {
+              originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
+            }
+            return api.request(originalRequest);
+          } catch {
+            // Refresh failed - session cannot be recovered
+            clearAuthToken();
+            authTokenStorage.clearAll();
+            navigateTo('/login');
+            return Promise.reject(error);
+          }
         }
         break;
 

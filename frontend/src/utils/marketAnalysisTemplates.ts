@@ -118,7 +118,7 @@ export function suggestTemplate(formData: any): MarketAnalysisTemplate {
   let locationType: 'highway' | 'interior' | 'village' | 'urban' = 'village';
 
   const roadType = formData.access_road_type?.toLowerCase() || '';
-  const roadName = formData.access_road_name?.toLowerCase() || '';
+  const roadName = formData.road_access?.toLowerCase() || '';
   const areaType = formData.area_type?.toLowerCase() || '';
 
   if (roadType.includes('highway') || roadName.includes('highway')) {
@@ -157,7 +157,7 @@ export function fillTemplate(template: string, data: any): string {
   let filled = template;
 
   // Replace road name
-  const roadName = data.access_road_name || data.access_starting_point_name || '[Road Name]';
+  const roadName = data.road_access || data.access_starting_point_name || '[Road Name]';
   filled = filled.replace(/\{\{roadName\}\}/g, roadName);
 
   // Calculate rate range from comparable properties

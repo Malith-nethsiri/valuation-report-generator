@@ -3,7 +3,10 @@ Google Maps proxy router.
 """
 import logging
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
+
+from .. import models
+from ..auth import get_current_user
 
 logger = logging.getLogger(__name__)
 
@@ -11,7 +14,10 @@ router = APIRouter(prefix="/api/maps", tags=["maps"])
 
 
 @router.post("/geocode")
-async def geocode_address_endpoint(request: dict):
+async def geocode_address_endpoint(
+    request: dict,
+    _current_user: models.User = Depends(get_current_user)
+):
     """Geocode an address to get coordinates and location details.
 
     Request body: {address: string}
@@ -38,6 +44,8 @@ async def geocode_address_endpoint(request: dict):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -46,7 +54,10 @@ async def geocode_address_endpoint(request: dict):
 
 
 @router.post("/places/autocomplete")
-async def places_autocomplete_endpoint(request: dict):
+async def places_autocomplete_endpoint(
+    request: dict,
+    _current_user: models.User = Depends(get_current_user)
+):
     """Get place suggestions using Google Places Autocomplete.
 
     Request body: {input: string, location?: string}
@@ -68,7 +79,10 @@ async def places_autocomplete_endpoint(request: dict):
 
 
 @router.post("/places/details")
-async def place_details_endpoint(request: dict):
+async def place_details_endpoint(
+    request: dict,
+    _current_user: models.User = Depends(get_current_user)
+):
     """Get detailed information about a place from place_id.
 
     Request body: {place_id: string}
@@ -90,6 +104,8 @@ async def place_details_endpoint(request: dict):
             )
 
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -98,7 +114,10 @@ async def place_details_endpoint(request: dict):
 
 
 @router.post("/directions")
-async def directions_endpoint(request: dict):
+async def directions_endpoint(
+    request: dict,
+    _current_user: models.User = Depends(get_current_user)
+):
     """Get route directions between two points.
 
     Request body: {origin_lat, origin_lng, dest_lat, dest_lng}
@@ -132,6 +151,8 @@ async def directions_endpoint(request: dict):
             )
 
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -140,7 +161,10 @@ async def directions_endpoint(request: dict):
 
 
 @router.post("/static-map")
-async def static_map_endpoint(request: dict):
+async def static_map_endpoint(
+    request: dict,
+    _current_user: models.User = Depends(get_current_user)
+):
     """Generate static map URL with route.
 
     Request body: {origin_lat, origin_lng, dest_lat, dest_lng, polyline, width?, height?}
@@ -182,7 +206,10 @@ async def static_map_endpoint(request: dict):
 
 
 @router.post("/transform-access")
-async def transform_access_endpoint(request: dict):
+async def transform_access_endpoint(
+    request: dict,
+    _current_user: models.User = Depends(get_current_user)
+):
     """Transform Google Maps directions into professional valuation report format."""
     try:
         from ..services.access import (

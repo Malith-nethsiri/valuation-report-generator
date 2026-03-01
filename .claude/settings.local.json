@@ -17,7 +17,9 @@
       "Bash(git push)",
       "Bash(grep:*)",
       "Bash(uvicorn:*)",
-      "Bash(npm run dev:*)"
+      "Bash(npm run dev:*)",
+      "Bash(npx tsc --noEmit)",
+      "Bash(npm run build)"
     ],
     "deny": [],
     "ask": []

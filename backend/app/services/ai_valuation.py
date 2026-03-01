@@ -3,13 +3,11 @@ AI-powered vehicle valuation service using Claude AI.
 Analyzes vehicle data and suggests market values based on condition, age, mileage, and market trends.
 """
 
-import os
 import json
 import logging
 from typing import Dict, Any, Optional
 from datetime import datetime, date
-from anthropic import Anthropic
-from .anthropic_client import AI_DEFAULT_MODEL
+from .anthropic_client import get_anthropic_client, is_anthropic_configured, AI_DEFAULT_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -144,9 +142,7 @@ async def suggest_vehicle_valuation(vehicle) -> Dict[str, Any]:
         - reasoning: str
     """
 
-    # Get API key from environment
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
+    if not is_anthropic_configured():
         logger.warning("ANTHROPIC_API_KEY not found, returning placeholder response")
         return {
             "suggested_market_value": None,
@@ -246,8 +242,7 @@ Notes:
 Return ONLY the JSON object, no additional text."""
 
     try:
-        # Initialize Anthropic client
-        client = Anthropic(api_key=api_key)
+        client = get_anthropic_client()
 
         # Call Claude API
         message = client.messages.create(

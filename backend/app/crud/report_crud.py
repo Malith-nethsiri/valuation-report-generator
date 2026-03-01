@@ -51,7 +51,7 @@ def get_user_reports(db: Session, user_id: int, skip: int = 0, limit: int = 100)
     """Get all reports for a specific user"""
     return db.query(models.Report).filter(
         models.Report.user_id == user_id
-    ).offset(skip).limit(limit).all()
+    ).order_by(models.Report.created_at.desc()).offset(skip).limit(limit).all()
 
 
 def get_user_reports_filtered(
@@ -102,7 +102,7 @@ def get_user_reports_filtered(
     ).offset(skip).limit(limit).all()
 
     current_month = date.today().replace(day=1)
-    stats_query = filtered_query
+    stats_query = base_query
 
     this_month_count = stats_query.filter(models.Report.created_at >= current_month).count()
     completed_count = stats_query.filter(models.Report.status == 'completed').count()
@@ -268,6 +268,18 @@ def duplicate_report(db: Session, report_id: int, user_id: int):
                 property_order=assoc.property_order
             )
             db.add(new_assoc)
+
+    # Copy vehicle associations if any exist
+    original_vehicle_assocs = db.query(models.ReportVehicle).filter(
+        models.ReportVehicle.report_id == report_id
+    ).all()
+    for vassoc in original_vehicle_assocs:
+        new_vassoc = models.ReportVehicle(
+            report_id=new_report.id,
+            vehicle_id=vassoc.vehicle_id,
+            vehicle_order=vassoc.vehicle_order
+        )
+        db.add(new_vassoc)
 
     db.commit()
     db.refresh(new_report)

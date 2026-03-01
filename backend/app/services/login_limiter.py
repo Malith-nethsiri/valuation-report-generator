@@ -10,6 +10,7 @@ Provides protection against brute-force login attacks by:
 
 import logging
 from typing import Tuple, Optional
+from fastapi import HTTPException, status
 from .redis_client import RedisCache
 
 logger = logging.getLogger(__name__)
@@ -27,7 +28,8 @@ class LoginLimiter:
     Key format: login_attempts:{ip}:{email}
     Value: number of failed attempts
 
-    Falls back gracefully if Redis is unavailable (allows login).
+    Fails closed if Redis is unavailable (denies login with 503) to prevent
+    brute-force attacks during a Redis outage.
     """
 
     @staticmethod
@@ -48,7 +50,10 @@ class LoginLimiter:
 
         Returns:
             Tuple of (is_allowed, remaining_attempts)
-            If Redis is unavailable, always returns (True, MAX_ATTEMPTS)
+
+        Raises:
+            HTTPException 503 if Redis is unavailable (fail-closed to prevent
+            brute-force attacks during a Redis outage).
         """
         key = LoginLimiter._get_key(ip, email)
 
@@ -70,9 +75,11 @@ class LoginLimiter:
             return True, remaining
 
         except Exception as e:
-            logger.warning(f"Login limiter check failed: {e}")
-            # Fail open - allow login if Redis is down
-            return True, MAX_ATTEMPTS
+            logger.error(f"Login limiter check failed — Redis unavailable, denying login: {e}")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Login service temporarily unavailable. Please try again shortly.",
+            )
 
     @staticmethod
     async def record_failed_attempt(ip: str, email: str) -> Tuple[bool, int]:

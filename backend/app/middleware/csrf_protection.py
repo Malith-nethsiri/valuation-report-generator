@@ -157,12 +157,14 @@ def get_csrf_token_endpoint(request: Request) -> dict:
     Endpoint to get CSRF token.
 
     Frontend can call this to ensure a CSRF token cookie is set.
-    Returns the token value for convenience (matches cookie).
+    On first call (no cookie), the CSRFMiddleware sets the cookie in the response.
+    Returns the existing token if already set, or None if this is the first call
+    (in which case the frontend should read the csrf_token cookie from the response).
     """
     existing_token = request.cookies.get(CSRF_COOKIE_NAME)
     if existing_token:
         return {"csrf_token": existing_token}
 
-    # Generate new token - will be set by middleware
-    new_token = generate_csrf_token()
-    return {"csrf_token": new_token, "note": "Token will be set in cookie"}
+    # No existing token — the CSRFMiddleware will set a new csrf_token cookie
+    # in this response. Frontend must read the cookie value, not this body field.
+    return {"csrf_token": None}

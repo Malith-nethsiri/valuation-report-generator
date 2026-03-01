@@ -19,7 +19,8 @@ import LandValuesSection from './LandValuesSection';
 import ValuationSection from './ValuationSection';
 import CertificationSection from './CertificationSection';
 import { LoadingOverlay } from './LoadingOverlay';
-import { FORM_STEPS } from '../constants/multiStepFormConstants';
+import { FORM_STEPS, PHASES, getFirstStepIndexInPhase } from '../constants/multiStepFormConstants';
+import PhaseTabBar from './steps/PhaseTabBar';
 import { PropertyPlanStep } from './steps/PropertyPlanStep';
 import { ExtentBoundariesStep } from './steps/ExtentBoundariesStep';
 import { PropertySearchStep } from './steps/PropertySearchStep';
@@ -523,8 +524,10 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
         e?.preventDefault(); // Prevent any form submission
         e?.stopPropagation(); // Prevent event bubbling
 
-        const isValid = await validateCurrentStep();
-        if (isValid && currentStep < maxStep) {
+        // Always run validation so errors appear in the error panel, but never block navigation
+        await validateCurrentStep();
+
+        if (currentStep < maxStep) {
             const nextStepNum = currentStep + 1;
             setCurrentStep(nextStepNum);
 
@@ -551,29 +554,19 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
         }
     };
 
-    // Handle click on progress bar step indicators for direct navigation
-    const handleStepClick = async (targetStepIndex: number) => {
-        // targetStepIndex is 1-based (like currentStep)
-
-        // In new report mode: only allow going back to completed steps (not forward)
-        if (!isEditMode && targetStepIndex > currentStep) {
-            return; // No feedback, just don't navigate (as per user requirement)
-        }
-
-        // Don't navigate if clicking current step
-        if (targetStepIndex === currentStep) {
-            return;
-        }
-
-        // Validate current step before navigating away
-        const isValid = await validateCurrentStep();
-        if (!isValid) {
-            return; // Stay on current step if validation fails
-        }
-
-        // Navigate to target step
+    // Handle click on phase step dots — free navigation, no validation gate
+    const handleStepClick = (targetStepIndex: number) => {
+        if (targetStepIndex === currentStep) return;
         setCurrentStep(targetStepIndex);
-        // Smooth scroll to top
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    // Handle click on a phase tab — jump to the first step of that phase
+    const handlePhaseClick = (phaseId: number) => {
+        const phase = PHASES.find(p => p.id === phaseId);
+        if (!phase) return;
+        const targetIndex = getFirstStepIndexInPhase(phase, activeSteps);
+        setCurrentStep(targetIndex);
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
@@ -960,47 +953,14 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
             <Toaster />
             <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50 py-12">
                 <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-                    {/* Progress Steps - Clickable navigation */}
-                    <div className="mb-12">
-                        <div className="flex items-center justify-between relative">
-                            <div className="absolute top-5 left-0 w-full h-1 bg-gray-200 rounded-full">
-                                <div
-                                    className="h-1 bg-gradient-to-r from-violet-500 to-purple-600 rounded-full transition-all duration-500"
-                                    style={{ width: `${((currentStep - 1) / (maxStep - 1)) * 100}%` }}
-                                />
-                            </div>
-
-                            {activeSteps.map((step, index) => {
-                                const stepNumber = index + 1; // 1-based step number
-                                const isCompleted = currentStep > stepNumber;
-                                const isCurrent = currentStep === stepNumber;
-                                // In edit mode: all steps clickable. In new mode: only completed steps + current
-                                const isClickable = isEditMode || stepNumber <= currentStep;
-
-                                return (
-                                    <div
-                                        key={step.id}
-                                        className="relative z-10"
-                                        onClick={() => handleStepClick(stepNumber)}
-                                    >
-                                        <div className={`w-10 h-10 rounded-full border-4 flex items-center justify-center transition-all duration-300 ${
-                                            isCompleted
-                                                ? 'bg-green-500 border-green-500 text-white'
-                                                : isCurrent
-                                                    ? 'bg-white border-violet-500 text-violet-500'
-                                                    : 'bg-white border-gray-300 text-gray-300'
-                                            } ${isClickable ? 'cursor-pointer hover:scale-110' : ''}`}>
-                                            {isCompleted ? (
-                                                <CheckCircle2 className="h-5 w-5" />
-                                            ) : (
-                                                <step.icon className="h-5 w-5" />
-                                            )}
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
+                    {/* Phase Tab Navigator */}
+                    <PhaseTabBar
+                        phases={PHASES}
+                        activeSteps={activeSteps}
+                        currentStep={currentStep}
+                        onPhaseClick={handlePhaseClick}
+                        onStepClick={handleStepClick}
+                    />
 
                     {/* Main Form */}
                     <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/20 p-8 lg:p-12">
@@ -1015,6 +975,11 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
                             <p className="text-gray-600 text-lg">
                                 {currentStepData.subtitle}
                             </p>
+                            {currentStepData.category && (
+                                <span className="inline-block mt-2 px-3 py-1 text-xs font-medium rounded-full bg-gray-100 text-gray-500 tracking-wide">
+                                    {currentStepData.category}
+                                </span>
+                            )}
                         </div>
 
                         {/* Step Content */}
@@ -1236,8 +1201,10 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
                     {/* Step Info */}
                     <div className="mt-8 text-center">
                         <p className="text-gray-500">
-                            Step {currentStep} of {maxStep} •
-                            <span className="ml-1">All information is securely stored and encrypted</span>
+                            {currentStepData?.category && (
+                                <span className="mr-1">{currentStepData.category} · </span>
+                            )}
+                            All information is securely stored and encrypted
                         </p>
                     </div>
                 </div>

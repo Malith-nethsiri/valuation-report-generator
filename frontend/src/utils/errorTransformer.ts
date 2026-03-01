@@ -12,15 +12,20 @@ interface ValidationError {
 }
 
 export class ValidationErrorTransformer {
-  // Map form fields to step indices
+  // Map form fields to step IDs (matches FORM_STEPS id values in multiStepFormConstants.ts)
   private static readonly fieldToStepMap: Record<string, number> = {
-    // Step 1: Property Plan
+    // Step ID 1: Property & Plan
     property_plan_no: 1,
-    land_registry_no: 1,
+    plan_number: 1,
+    plan_date: 1,
     deed_no: 1,
-    property_location: 1,
+    deed_number: 1,
+    deed_date: 1,
+    lot_number: 1,
+    certificate_number: 1,
+    certificate_date: 1,
 
-    // Step 2: Extent & Boundaries
+    // Step ID 2: Extent & Boundaries
     land_extent_acres: 2,
     land_extent_roods: 2,
     land_extent_perches: 2,
@@ -29,49 +34,79 @@ export class ValidationErrorTransformer {
     boundaries_east: 2,
     boundaries_west: 2,
 
-    // Step 3: Property Value
-    market_value: 3,
-    forced_sale_value: 3,
-    distress_value: 3,
-    land_value: 3,
+    // Step ID 3: Property Search
+    property_latitude: 3,
+    property_longitude: 3,
+    property_location: 3,
 
-    // Step 4: Ownership Details
-    owner_name: 4,
-    owner_nic: 4,
-    owner_contact: 4,
+    // Step ID 4: Property Details
+    property_village: 4,
+    property_district: 4,
+    grama_niladari_division: 4,
+    land_registry_no: 4,
 
-    // Step 5: Legal Status
-    ownership_type: 5,
-    encumbrances: 5,
-    legal_issues: 5,
+    // Step ID 5: Locality Information
+    electricity: 5,
+    water_supply: 5,
+    drainage: 5,
+    special_features: 5,
 
-    // Step 6: Property Description
+    // Step ID 6: Property Description
     buildings: 6,
     building_photos: 6,
     property_photos: 6,
     floors: 6,
     rooms: 6,
 
-    // Step 7: Utilities & Services
-    electricity: 7,
-    water_supply: 7,
-    drainage: 7,
+    // Step ID 7: Legal Aspects
+    ownership_type: 7,
+    encumbrances: 7,
+    legal_issues: 7,
 
-    // Step 8: Additional Information
-    remarks: 8,
-    special_features: 8,
+    // Step ID 8: Land Values
+    market_value: 8,
+    land_value: 8,
+
+    // Step ID 9: Applicant & Purpose
+    applicant_full_name: 9,
+    applicant_nic: 9,
+    owner_name: 9,
+    owner_nic: 9,
+    owner_contact: 9,
+    valuation_purpose: 9,
+
+    // Step ID 10: Additional Details
+    report_reference: 10,
+    report_date: 10,
+    inspection_date: 10,
+    remarks: 10,
+
+    // Step ID 11: Valuation
+    total_market_value: 11,
+    forced_sale_value: 11,
+    distress_value: 11,
+    building_value: 11,
+
+    // Step ID 13: Certification
+    certification_text: 13,
+    certificate_identity_confirmed: 13,
   };
 
-  // Step names for user-friendly display
+  // Step names for user-friendly display (keyed by step ID)
   private static readonly stepNames: Record<number, string> = {
-    1: 'Property Plan',
+    1: 'Property & Plan',
     2: 'Extent & Boundaries',
-    3: 'Property Value',
-    4: 'Ownership Details',
-    5: 'Legal Status',
+    3: 'Property Search',
+    4: 'Property Details',
+    5: 'Locality Information',
     6: 'Property Description',
-    7: 'Utilities & Services',
-    8: 'Additional Information',
+    7: 'Legal Aspects',
+    8: 'Land Values',
+    9: 'Applicant & Purpose',
+    10: 'Additional Details',
+    11: 'Valuation',
+    12: 'Invoice',
+    13: 'Certification',
   };
 
   /**

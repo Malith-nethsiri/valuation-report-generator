@@ -2,12 +2,12 @@
 Google Places API integration service for fetching nearby facilities and location data.
 """
 import os
-import requests
+import logging
+import httpx
 from typing import List, Dict, Optional, Tuple
-from dotenv import load_dotenv
 from fastapi import HTTPException, status
 
-load_dotenv()
+logger = logging.getLogger(__name__)
 
 GOOGLE_PLACES_API_KEY = os.getenv("GOOGLE_PLACES_API_KEY", "")
 
@@ -114,7 +114,7 @@ async def fetch_nearby_facilities(
         Dictionary mapping facility categories to lists of facility objects
     """
     if not GOOGLE_PLACES_API_KEY:
-        print("[PLACES_SERVICE] Error: GOOGLE_PLACES_API_KEY not set")
+        logger.error("GOOGLE_PLACES_API_KEY not set")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Google Places API is not configured. Please contact support."
@@ -125,56 +125,57 @@ async def fetch_nearby_facilities(
 
     results = {}
 
-    for facility_category in facility_types:
-        if facility_category not in FACILITY_TYPE_MAPPINGS:
-            continue
-
-        mapping = FACILITY_TYPE_MAPPINGS[facility_category]
-        category_results = []
-
-        # Search for each type within the category
-        for place_type in mapping["types"]:
-            try:
-                url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
-                params = {
-                    "location": f"{latitude},{longitude}",
-                    "radius": radius_meters,
-                    "type": place_type,
-                    "key": GOOGLE_PLACES_API_KEY
-                }
-
-                response = requests.get(url, params=params, timeout=10)
-                response.raise_for_status()
-                data = response.json()
-
-                if data.get("status") == "OK":
-                    places = data.get("results", [])
-
-                    # Process each place
-                    for place in places[:5]:  # Limit to top 5 per type
-                        place_lat = place["geometry"]["location"]["lat"]
-                        place_lng = place["geometry"]["location"]["lng"]
-
-                        # Calculate distance
-                        distance_km = haversine_distance(latitude, longitude, place_lat, place_lng)
-
-                        facility_obj = {
-                            "type": facility_category,
-                            "google_type": place_type,
-                            "name": format_place_name(place.get("name", "Unknown")),
-                            "address": format_place_name(place.get("vicinity", "")),
-                            "distance_km": round(distance_km, 2),
-                            "latitude": place_lat,
-                            "longitude": place_lng,
-                            "place_id": place.get("place_id", ""),
-                            "selected": True  # Default to selected
-                        }
-
-                        category_results.append(facility_obj)
-
-            except Exception as e:
-                print(f"[PLACES_SERVICE] Error fetching {place_type}: {str(e)}")
+    async with httpx.AsyncClient(timeout=10) as http_client:
+        for facility_category in facility_types:
+            if facility_category not in FACILITY_TYPE_MAPPINGS:
                 continue
+
+            mapping = FACILITY_TYPE_MAPPINGS[facility_category]
+            category_results = []
+
+            # Search for each type within the category
+            for place_type in mapping["types"]:
+                try:
+                    url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+                    params = {
+                        "location": f"{latitude},{longitude}",
+                        "radius": radius_meters,
+                        "type": place_type,
+                        "key": GOOGLE_PLACES_API_KEY
+                    }
+
+                    response = await http_client.get(url, params=params)
+                    response.raise_for_status()
+                    data = response.json()
+
+                    if data.get("status") == "OK":
+                        places = data.get("results", [])
+
+                        # Process each place
+                        for place in places[:5]:  # Limit to top 5 per type
+                            place_lat = place["geometry"]["location"]["lat"]
+                            place_lng = place["geometry"]["location"]["lng"]
+
+                            # Calculate distance
+                            distance_km = haversine_distance(latitude, longitude, place_lat, place_lng)
+
+                            facility_obj = {
+                                "type": facility_category,
+                                "google_type": place_type,
+                                "name": format_place_name(place.get("name", "Unknown")),
+                                "address": format_place_name(place.get("vicinity", "")),
+                                "distance_km": round(distance_km, 2),
+                                "latitude": place_lat,
+                                "longitude": place_lng,
+                                "place_id": place.get("place_id", ""),
+                                "selected": True  # Default to selected
+                            }
+
+                            category_results.append(facility_obj)
+
+                except Exception as e:
+                    logger.error("Error fetching %s: %s", place_type, e)
+                    continue
 
         # Sort by distance and remove duplicates
         category_results = sorted(category_results, key=lambda x: x["distance_km"])
@@ -191,8 +192,8 @@ async def fetch_nearby_facilities(
             if not is_duplicate:
                 unique_results.append(facility)
 
-        # Keep top 3 closest facilities per category
-        results[facility_category] = unique_results[:3]
+            # Keep top 3 closest facilities per category
+            results[facility_category] = unique_results[:3]
 
     return results
 
@@ -217,53 +218,54 @@ async def get_distance_to_major_town(
         return (None, None)
 
     try:
-        # If specific town provided, geocode it
-        if town_name:
-            geocode_url = "https://maps.googleapis.com/maps/api/geocode/json"
+        async with httpx.AsyncClient(timeout=10) as http_client:
+            # If specific town provided, geocode it
+            if town_name:
+                geocode_url = "https://maps.googleapis.com/maps/api/geocode/json"
+                params = {
+                    "address": f"{town_name}, Sri Lanka",
+                    "key": GOOGLE_PLACES_API_KEY
+                }
+                response = await http_client.get(geocode_url, params=params)
+                response.raise_for_status()
+                data = response.json()
+
+                if data.get("status") == "OK" and len(data.get("results", [])) > 0:
+                    location = data["results"][0]["geometry"]["location"]
+                    town_lat = location["lat"]
+                    town_lng = location["lng"]
+
+                    distance_km = haversine_distance(latitude, longitude, town_lat, town_lng)
+                    return (town_name, round(distance_km, 2))
+
+            # Otherwise, search for nearby localities
+            url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
             params = {
-                "address": f"{town_name}, Sri Lanka",
+                "location": f"{latitude},{longitude}",
+                "radius": 20000,  # 20km radius
+                "type": "locality",
                 "key": GOOGLE_PLACES_API_KEY
             }
-            response = requests.get(geocode_url, params=params, timeout=10)
+
+            response = await http_client.get(url, params=params)
             response.raise_for_status()
             data = response.json()
 
-            if data.get("status") == "OK" and len(data.get("results", [])) > 0:
-                location = data["results"][0]["geometry"]["location"]
-                town_lat = location["lat"]
-                town_lng = location["lng"]
+            if data.get("status") == "OK":
+                places = data.get("results", [])
 
-                distance_km = haversine_distance(latitude, longitude, town_lat, town_lng)
-                return (town_name, round(distance_km, 2))
+                # Find the nearest town (skip the immediate village)
+                for place in places:
+                    place_lat = place["geometry"]["location"]["lat"]
+                    place_lng = place["geometry"]["location"]["lng"]
+                    distance_km = haversine_distance(latitude, longitude, place_lat, place_lng)
 
-        # Otherwise, search for nearby localities
-        url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
-        params = {
-            "location": f"{latitude},{longitude}",
-            "radius": 20000,  # 20km radius
-            "type": "locality",
-            "key": GOOGLE_PLACES_API_KEY
-        }
-
-        response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-
-        if data.get("status") == "OK":
-            places = data.get("results", [])
-
-            # Find the nearest town (skip the immediate village)
-            for place in places:
-                place_lat = place["geometry"]["location"]["lat"]
-                place_lng = place["geometry"]["location"]["lng"]
-                distance_km = haversine_distance(latitude, longitude, place_lat, place_lng)
-
-                # Skip very close places (likely the village itself)
-                if distance_km > 0.5:
-                    return (format_place_name(place.get("name", "Unknown")), round(distance_km, 2))
+                    # Skip very close places (likely the village itself)
+                    if distance_km > 0.5:
+                        return (format_place_name(place.get("name", "Unknown")), round(distance_km, 2))
 
     except Exception as e:
-        print(f"[PLACES_SERVICE] Error getting distance to major town: {str(e)}")
+        logger.error("Error getting distance to major town: %s", e)
 
     return (None, None)
 
@@ -288,50 +290,50 @@ async def find_nearest_transport(
     result = {"bus_stop": None, "railway_station": None}
 
     try:
-        # Find nearest bus stop
-        url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
-        params = {
-            "location": f"{latitude},{longitude}",
-            "radius": 2000,  # 2km radius
-            "type": "bus_station",
-            "key": GOOGLE_PLACES_API_KEY
-        }
-
-        response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-
-        if data.get("status") == "OK" and len(data.get("results", [])) > 0:
-            place = data["results"][0]
-            place_lat = place["geometry"]["location"]["lat"]
-            place_lng = place["geometry"]["location"]["lng"]
-            distance_km = haversine_distance(latitude, longitude, place_lat, place_lng)
-
-            result["bus_stop"] = {
-                "name": format_place_name(place.get("name", "Bus Stop")),
-                "distance_km": round(distance_km, 2)
+        async with httpx.AsyncClient(timeout=10) as http_client:
+            url = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+            params = {
+                "location": f"{latitude},{longitude}",
+                "radius": 2000,  # 2km radius
+                "type": "bus_station",
+                "key": GOOGLE_PLACES_API_KEY
             }
 
-        # Find nearest railway station
-        params["type"] = "train_station"
-        params["radius"] = 10000  # 10km radius for railway
+            response = await http_client.get(url, params=params)
+            response.raise_for_status()
+            data = response.json()
 
-        response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()
-        data = response.json()
+            if data.get("status") == "OK" and len(data.get("results", [])) > 0:
+                place = data["results"][0]
+                place_lat = place["geometry"]["location"]["lat"]
+                place_lng = place["geometry"]["location"]["lng"]
+                distance_km = haversine_distance(latitude, longitude, place_lat, place_lng)
 
-        if data.get("status") == "OK" and len(data.get("results", [])) > 0:
-            place = data["results"][0]
-            place_lat = place["geometry"]["location"]["lat"]
-            place_lng = place["geometry"]["location"]["lng"]
-            distance_km = haversine_distance(latitude, longitude, place_lat, place_lng)
+                result["bus_stop"] = {
+                    "name": format_place_name(place.get("name", "Bus Stop")),
+                    "distance_km": round(distance_km, 2)
+                }
 
-            result["railway_station"] = {
-                "name": format_place_name(place.get("name", "Railway Station")),
-                "distance_km": round(distance_km, 2)
-            }
+            # Find nearest railway station
+            params["type"] = "train_station"
+            params["radius"] = 10000  # 10km radius for railway
+
+            response = await http_client.get(url, params=params)
+            response.raise_for_status()
+            data = response.json()
+
+            if data.get("status") == "OK" and len(data.get("results", [])) > 0:
+                place = data["results"][0]
+                place_lat = place["geometry"]["location"]["lat"]
+                place_lng = place["geometry"]["location"]["lng"]
+                distance_km = haversine_distance(latitude, longitude, place_lat, place_lng)
+
+                result["railway_station"] = {
+                    "name": format_place_name(place.get("name", "Railway Station")),
+                    "distance_km": round(distance_km, 2)
+                }
 
     except Exception as e:
-        print(f"[PLACES_SERVICE] Error finding nearest transport: {str(e)}")
+        logger.error("Error finding nearest transport: %s", e)
 
     return result

@@ -5,14 +5,7 @@ Centralizes client initialization, configuration, and connection management.
 
 import os
 from functools import lru_cache
-from pathlib import Path
 from anthropic import Anthropic
-from dotenv import load_dotenv
-
-# Load environment files: .env first, then .env.local overrides
-env_path = Path(__file__).parent.parent.parent
-load_dotenv(env_path / '.env')
-load_dotenv(env_path / '.env.local', override=True)
 
 # ---------------------------------------------------------------------------
 # Model configuration

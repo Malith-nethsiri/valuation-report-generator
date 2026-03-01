@@ -23,27 +23,46 @@ from ..utils.json_validators import (
 )
 
 
+# =============================================================================
+# FIELD-GROUP SCHEMAS
+# Each class maps to a data category in the four-stage valuation workflow.
+# See backend/app/utils/field_categories.py for the authoritative field→category map.
+#
+# Workflow: [P:C]/[P:O] Paper-Based → [I] Inspection → [CD] Computed → [VJ] Valuation Judgment
+# =============================================================================
+
+
 class IdentificationFields(BaseModel):
-    """Property identification and plan details."""
+    """
+    Property identification and plan details.
+    Category: [P:C] Paper-Based / Client Documents
+    All fields come from the licensed surveyor's plan, deed, or certificate of sale.
+    Exceptions: uploaded_documents and field_sources are [CD] Computed (system metadata).
+    """
+    # [P:C] Survey plan fields
     lot_number: Optional[str] = Field(None, max_length=200)
     plan_number: Optional[str] = Field(None, max_length=100)
     plan_date: Optional[str] = Field(None, max_length=50)
     licensed_surveyor_name: Optional[str] = Field(None, max_length=255)
     property_identification_type: Optional[str] = Field(None, max_length=50)
-    property_identification_documents: Optional[dict] = Field(None)
+    property_identification_documents: Optional[dict] = Field(None)  # [CD] file metadata
     has_deed_info: Optional[str] = Field(None, max_length=10)
-    deeds: Optional[List[DeedInfo]] = Field(None)
+    deeds: Optional[List[DeedInfo]] = Field(None)              # [P:C] deed documents
     has_multiple_lots: Optional[bool] = Field(None)
     lots_data: Optional[List[dict]] = Field(None)
-    uploaded_documents: Optional[List[dict]] = Field(None)
-    field_sources: Optional[dict] = Field(None)
+    uploaded_documents: Optional[List[dict]] = Field(None)     # [CD] system tracking
+    field_sources: Optional[dict] = Field(None)                # [CD] per-field source tracking
     survey_plan_scale: Optional[str] = Field(None, max_length=50)
     plan_reference_notes: Optional[str] = Field(None)
     land_traditional_name: Optional[str] = Field(None, max_length=300)
 
 
 class ApplicantFields(BaseModel):
-    """Applicant and request information."""
+    """
+    Applicant and request information.
+    Category: [P:C] Paper-Based / Client Documents
+    All fields come from the client-provided request letter, application form, or email.
+    """
     applicant_title: Optional[str] = Field(None, max_length=20)
     applicant_full_name: Optional[str] = Field(None, max_length=500)
     applicant_id_type: Optional[str] = Field(None, max_length=50)
@@ -63,52 +82,78 @@ class ApplicantFields(BaseModel):
 
 
 class LocationFields(BaseModel):
-    """Property location, access, and GPS fields."""
-    use_applicant_address_as_property: Optional[bool] = Field(None)
-    assessment_number: Optional[str] = Field(None, max_length=100)
-    property_village: Optional[str] = Field(None, max_length=200)
-    property_divisional_secretariat: Optional[str] = Field(None, max_length=200)
-    property_district: Optional[str] = Field(None, max_length=100)
-    property_province: Optional[str] = Field(None, max_length=100)
-    property_latitude: Optional[float] = Field(None)
-    property_longitude: Optional[float] = Field(None)
-    property_number: Optional[str] = Field(None, max_length=50)
-    grama_niladari_division: Optional[str] = Field(None, max_length=200)
-    hathpaththuwa: Optional[str] = Field(None, max_length=300)
-    korale: Optional[str] = Field(None, max_length=300)
-    pradeshiya_sabha: Optional[str] = Field(None, max_length=200)
-    ward_number: Optional[str] = Field(None, max_length=20)
-    is_municipal_limit: Optional[bool] = Field(None)
-    location_direction: Optional[str] = Field(None, max_length=50)
-    access_starting_point_name: Optional[str] = Field(None)
-    access_starting_point_latitude: Optional[float] = Field(None)
-    access_starting_point_longitude: Optional[float] = Field(None)
-    access_route_data: Optional[dict] = Field(None)
-    access_directions_text: Optional[str] = Field(None)
-    access_distance_km: Optional[float] = Field(None)
-    access_duration_minutes: Optional[int] = Field(None)
-    access_road_type: Optional[str] = Field(None, max_length=200)
-    property_road_position: Optional[str] = Field(None, max_length=100)
-    location_map_image_data: Optional[str] = Field(None)
-    access_road_conditions: Optional[List[RoadCondition]] = Field(None)
-    access_entry_mode: Optional[str] = Field('simple', max_length=20)
-    access_road_classes_detected: Optional[dict] = Field(None)
+    """
+    Property location, access, and GPS fields.
+    Mixed categories:
+      [P:O] Official Records: assessment_number, property_number, admin divisions,
+             is_municipal_limit
+      [I]   Inspection-Based: location_direction, access_starting_point_name,
+             access_road_type, property_road_position, access_road_conditions,
+             access_entry_mode
+      [CD]  Computed: property_lat/lng, access coordinates, route data, distances,
+             map image, access_road_classes_detected, use_applicant_address_as_property
+    """
+    use_applicant_address_as_property: Optional[bool] = Field(None)    # [CD]
+    assessment_number: Optional[str] = Field(None, max_length=100)     # [P:O]
+    property_village: Optional[str] = Field(None, max_length=200)      # [P:C]
+    property_divisional_secretariat: Optional[str] = Field(None, max_length=200)  # [P:O]
+    property_district: Optional[str] = Field(None, max_length=100)     # [P:O]
+    property_province: Optional[str] = Field(None, max_length=100)     # [P:O]
+    property_latitude: Optional[float] = Field(None)                   # [CD] Google Maps
+    property_longitude: Optional[float] = Field(None)                  # [CD] Google Maps
+    property_number: Optional[str] = Field(None, max_length=50)        # [P:O]
+    grama_niladari_division: Optional[str] = Field(None, max_length=200)  # [P:O]
+    hathpaththuwa: Optional[str] = Field(None, max_length=300)         # [P:O]
+    korale: Optional[str] = Field(None, max_length=300)                # [P:O]
+    pradeshiya_sabha: Optional[str] = Field(None, max_length=200)      # [P:O]
+    ward_number: Optional[str] = Field(None, max_length=20)            # [P:O]
+    is_municipal_limit: Optional[bool] = Field(None)                   # [P:O]
+    location_direction: Optional[str] = Field(None, max_length=50)     # [I]
+    access_starting_point_name: Optional[str] = Field(None)            # [I]
+    access_starting_point_latitude: Optional[float] = Field(None)      # [CD]
+    access_starting_point_longitude: Optional[float] = Field(None)     # [CD]
+    access_route_data: Optional[dict] = Field(None)                    # [CD] Google Maps
+    access_directions_text: Optional[str] = Field(None)                # [CD] Google Directions
+    access_distance_km: Optional[float] = Field(None)                  # [CD] Google Maps
+    access_duration_minutes: Optional[int] = Field(None)               # [CD] Google Maps
+    access_road_type: Optional[str] = Field(None, max_length=200)      # [I]
+    property_road_position: Optional[str] = Field(None, max_length=100)  # [I]
+    location_map_image_data: Optional[str] = Field(None)               # [CD] Google Maps Static
+    access_road_conditions: Optional[List[RoadCondition]] = Field(None)  # [I]
+    access_entry_mode: Optional[str] = Field('simple', max_length=20)  # [I]
+    access_road_classes_detected: Optional[dict] = Field(None)         # [CD]
 
 
 class LandFields(BaseModel):
-    """Land extent, boundaries, and physical characteristics."""
+    """
+    Land extent, boundaries, and physical characteristics.
+    Mixed categories:
+      [P:C] Client Documents: land_extent_acres/roods/perches (from survey plan),
+             boundaries (legal boundary from survey plan)
+      [I]   Inspection-Based: physical_boundaries_types/description, entrance_type,
+             boundary_types_per_direction, land_shape, land_type, land_level,
+             soil_type, flood_risk, etc. (all physically observed on-site)
+      [CD]  Computed: land_extent_hectares/sq_meters/formatted (extent_calculator),
+             boundaries_summary_text (auto-generated), land_description_text (AI)
+    """
+    # [P:C] Land extent from survey plan
     land_extent_acres: Optional[float] = Field(None, ge=0, le=99999.99)
     land_extent_roods: Optional[int] = Field(None, ge=0, le=3)
     land_extent_perches: Optional[float] = Field(None, ge=0, lt=40)
+    # [CD] Auto-calculated conversions
     land_extent_hectares: Optional[float] = Field(None, ge=0)
     land_extent_square_meters: Optional[float] = Field(None, ge=0)
     land_extent_formatted: Optional[str] = Field(None, max_length=50)
+    # [P:C] Legal boundary from survey plan
     boundaries: Optional[dict] = Field(None)
+    # [I] Physical boundary state — what actually exists on-site
     physical_boundaries_types: Optional[List[str]] = Field(None)
     physical_boundaries_description: Optional[str] = Field(None)
     boundary_types_per_direction: Optional[dict] = Field(None)
     entrance_type: Optional[str] = Field(None, max_length=100)
+    # [CD] Auto-generated summary
     boundaries_summary_text: Optional[str] = Field(None)
+    # [I] Land physical characteristics — all observed on-site
     land_shape: Optional[str] = Field(None, max_length=50)
     land_type: Optional[str] = Field(None, max_length=50)
     land_frontage_type: Optional[str] = Field(None, max_length=100)
@@ -123,8 +168,10 @@ class LandFields(BaseModel):
     earth_slip_risk: Optional[str] = Field(None, max_length=50)
     land_condition: Optional[str] = Field(None, max_length=50)
     land_condition_description: Optional[str] = Field(None)
+    # [CD] AI-generated from inspection data
     land_description_text: Optional[str] = Field(None)
-    ongoing_construction_notes: Optional[str] = Field(None)
+    ongoing_construction_notes: Optional[str] = Field(None)  # [I]
+    # [I] Topographical features — observed on-site
     elevation_changes: Optional[str] = Field(None, max_length=50)
     drainage_pattern: Optional[str] = Field(None, max_length=50)
     vegetation_type: Optional[str] = Field(None, max_length=50)
@@ -132,88 +179,115 @@ class LandFields(BaseModel):
 
 
 class BuildingFields(BaseModel):
-    """Building details and occupier information."""
-    buildings: Optional[List[Building]] = Field(None)
+    """
+    Building details and occupier information.
+    Category: [I] Inspection-Based
+    All fields physically observed and recorded during the on-site inspection.
+    property_photos are taken during the site visit (also [I]).
+    building_description_text (nested in buildings[]) is [CD] AI-generated.
+    """
+    buildings: Optional[List[Building]] = Field(None)          # [I] All sub-fields observed on-site
     occupier_name: Optional[str] = Field(None, max_length=300)
     occupier_relationship: Optional[str] = Field(None, max_length=50)
-    property_photos: Optional[List[BuildingPhoto]] = Field(None, max_items=20)
+    property_photos: Optional[List[BuildingPhoto]] = Field(None, max_items=20)  # [I] taken on-site
 
 
 class LocalityFields(BaseModel):
-    """Locality and infrastructure information."""
-    distance_to_major_town_km: Optional[float] = Field(None)
-    major_town_name: Optional[str] = Field(None, max_length=200)
-    nearby_facilities: Optional[List[dict]] = Field(None)
-    has_electricity: Optional[bool] = Field(None)
-    water_supply_type: Optional[List[str]] = Field(None)
-    telecommunication_types: Optional[List[str]] = Field(None)
-    internet_types: Optional[List[str]] = Field(None)
-    has_public_transport: Optional[bool] = Field(None)
-    public_transport_routes: Optional[str] = Field(None)
-    public_transport_frequency: Optional[str] = Field(None, max_length=200)
-    nearest_bus_stop_distance_km: Optional[float] = Field(None)
-    nearest_bus_stop_name: Optional[str] = Field(None, max_length=200)
-    nearest_railway_station: Optional[str] = Field(None, max_length=200)
-    nearest_railway_distance_km: Optional[float] = Field(None)
-    area_type: Optional[str] = Field(None, max_length=50)
-    development_level: Optional[str] = Field(None, max_length=50)
-    predominant_building_type: Optional[List[str]] = Field(None)
-    is_tourist_area: Optional[bool] = Field(None)
-    tourist_attractions_nearby: Optional[str] = Field(None)
-    locality_description_text: Optional[str] = Field(None)
+    """
+    Locality and infrastructure information.
+    Category: [I] Inspection-Based (all physically observed/assessed on-site)
+    Exception: nearby_facilities is [CD] Computed (Google Places API auto-fetch).
+               locality_description_text is [CD] Computed (AI-generated from inspection data).
+    """
+    distance_to_major_town_km: Optional[float] = Field(None)   # [I]
+    major_town_name: Optional[str] = Field(None, max_length=200)  # [I]
+    nearby_facilities: Optional[List[dict]] = Field(None)       # [CD] Google Places API
+    has_electricity: Optional[bool] = Field(None)               # [I]
+    water_supply_type: Optional[List[str]] = Field(None)        # [I]
+    telecommunication_types: Optional[List[str]] = Field(None)  # [I]
+    internet_types: Optional[List[str]] = Field(None)           # [I]
+    has_public_transport: Optional[bool] = Field(None)          # [I]
+    public_transport_routes: Optional[str] = Field(None)        # [I]
+    public_transport_frequency: Optional[str] = Field(None, max_length=200)  # [I]
+    nearest_bus_stop_distance_km: Optional[float] = Field(None)  # [I]
+    nearest_bus_stop_name: Optional[str] = Field(None, max_length=200)  # [I]
+    nearest_railway_station: Optional[str] = Field(None, max_length=200)  # [I]
+    nearest_railway_distance_km: Optional[float] = Field(None)  # [I]
+    area_type: Optional[str] = Field(None, max_length=50)       # [I]
+    development_level: Optional[str] = Field(None, max_length=50)  # [I]
+    predominant_building_type: Optional[List[str]] = Field(None)  # [I]
+    is_tourist_area: Optional[bool] = Field(None)               # [I]
+    tourist_attractions_nearby: Optional[str] = Field(None)     # [I]
+    locality_description_text: Optional[str] = Field(None)      # [CD] AI-generated
 
 
 class LegalFields(BaseModel):
-    """Legal aspects and title information."""
-    ownership_type: Optional[str] = Field(None, max_length=200)
-    street_lines_status: Optional[str] = Field(None, max_length=200)
-    building_limits_status: Optional[str] = Field(None, max_length=200)
-    local_authority_data: Optional[str] = Field(None)
-    rent_act_effectiveness: Optional[str] = Field(None, max_length=200)
-    title_search_conducted: Optional[str] = Field(None, max_length=3)
-    pedigree_search_conducted: Optional[str] = Field(None, max_length=3)
-    valuation_basis_note: Optional[str] = Field(None)
-    property_encumbered: Optional[str] = Field(None, max_length=3)
-    encumbrance_type: Optional[str] = Field(None, max_length=100)
-    encumbrance_details: Optional[str] = Field(None)
-    street_lines_gazette_ref: Optional[str] = Field(None, max_length=100)
-    street_lines_gazette_date: Optional[str] = Field(None, max_length=20)
-    street_lines_impact_description: Optional[str] = Field(None)
-    building_distance_from_road: Optional[str] = Field(None, max_length=50)
-    building_plan_approved: Optional[str] = Field(None, max_length=20)
-    building_plan_reference: Optional[str] = Field(None, max_length=200)
-    building_approval_authority: Optional[str] = Field(None, max_length=200)
-    building_within_limits: Optional[str] = Field(None, max_length=3)
-    local_authority_rated: Optional[str] = Field(None, max_length=3)
-    local_authority_tax_levy: Optional[str] = Field(None)
+    """
+    Legal aspects and title information.
+    Category: [P:O] Paper-Based / Official Records
+    All fields are sourced from gazette publications, municipal registers,
+    local-authority offices, and official approval documents.
+    """
+    ownership_type: Optional[str] = Field(None, max_length=200)      # [P:O]
+    street_lines_status: Optional[str] = Field(None, max_length=200) # [P:O]
+    building_limits_status: Optional[str] = Field(None, max_length=200)  # [P:O]
+    local_authority_data: Optional[str] = Field(None)                # [P:O]
+    rent_act_effectiveness: Optional[str] = Field(None, max_length=200)  # [P:O]
+    title_search_conducted: Optional[str] = Field(None, max_length=3)    # [P:O]
+    pedigree_search_conducted: Optional[str] = Field(None, max_length=3) # [P:O]
+    valuation_basis_note: Optional[str] = Field(None)                # [P:O]
+    property_encumbered: Optional[str] = Field(None, max_length=3)   # [P:O]
+    encumbrance_type: Optional[str] = Field(None, max_length=100)    # [P:O]
+    encumbrance_details: Optional[str] = Field(None)                 # [P:O]
+    street_lines_gazette_ref: Optional[str] = Field(None, max_length=100)  # [P:O]
+    street_lines_gazette_date: Optional[str] = Field(None, max_length=20)  # [P:O]
+    street_lines_impact_description: Optional[str] = Field(None)     # [P:O]
+    building_distance_from_road: Optional[str] = Field(None, max_length=50)  # [P:O]
+    building_plan_approved: Optional[str] = Field(None, max_length=20)   # [P:O]
+    building_plan_reference: Optional[str] = Field(None, max_length=200) # [P:O]
+    building_approval_authority: Optional[str] = Field(None, max_length=200)  # [P:O]
+    building_within_limits: Optional[str] = Field(None, max_length=3)   # [P:O]
+    local_authority_rated: Optional[str] = Field(None, max_length=3)    # [P:O]
+    local_authority_tax_levy: Optional[str] = Field(None)               # [P:O]
 
 
 class ValuationFields(BaseModel):
-    """Valuation calculations and comparable properties."""
-    comparable_properties: Optional[List[dict]] = Field(None)
-    land_market_analysis: Optional[str] = Field(None)
-    valuation_land_extent: Optional[float] = Field(None, ge=0)
-    valuation_rate_per_perch: Optional[float] = Field(None, ge=0)
-    valuation_total_land_value: Optional[float] = Field(None, ge=0)
-    valuation_buildings_data: Optional[List[dict]] = Field(None)
-    valuation_total_buildings_value: Optional[float] = Field(None, ge=0)
-    valuation_addons: Optional[List[dict]] = Field(None)
-    valuation_total_addons_value: Optional[float] = Field(None, ge=0)
-    valuation_market_value: Optional[float] = Field(None, ge=0)
-    valuation_forced_sale_percentage: Optional[float] = Field(None, ge=0, le=100)
-    valuation_forced_sale_value: Optional[float] = Field(None, ge=0)
-    valuation_insurance_value: Optional[float] = Field(None, ge=0)
-    valuation_manual_overrides: Optional[dict] = Field(None)
+    """
+    Valuation calculations and comparable properties.
+    Category: [VJ] Valuation Judgment
+    All fields represent the professional valuer's market analysis and opinion of value.
+    This is Stage 4 of the workflow — performed after paper review and on-site inspection.
+    """
+    comparable_properties: Optional[List[dict]] = Field(None)         # [VJ]
+    land_market_analysis: Optional[str] = Field(None)                 # [VJ]
+    valuation_land_extent: Optional[float] = Field(None, ge=0)        # [VJ]
+    valuation_rate_per_perch: Optional[float] = Field(None, ge=0)     # [VJ]
+    valuation_total_land_value: Optional[float] = Field(None, ge=0)   # [VJ]
+    valuation_buildings_data: Optional[List[dict]] = Field(None)      # [VJ]
+    valuation_total_buildings_value: Optional[float] = Field(None, ge=0)  # [VJ]
+    valuation_addons: Optional[List[dict]] = Field(None)              # [VJ]
+    valuation_total_addons_value: Optional[float] = Field(None, ge=0) # [VJ]
+    valuation_market_value: Optional[float] = Field(None, ge=0)       # [VJ]
+    valuation_forced_sale_percentage: Optional[float] = Field(None, ge=0, le=100)  # [VJ]
+    valuation_forced_sale_value: Optional[float] = Field(None, ge=0)  # [VJ]
+    valuation_insurance_value: Optional[float] = Field(None, ge=0)    # [VJ]
+    valuation_manual_overrides: Optional[dict] = Field(None)          # [VJ]
 
 
 class CertificationFields(BaseModel):
-    """Certification and invoice data."""
-    certification_text: Optional[str] = Field(None)
-    certificate_identity_confirmed: Optional[bool] = Field(None)
-    certification_valuer_name: Optional[str] = Field(None, max_length=255)
-    certification_valuer_designation: Optional[str] = Field(None, max_length=200)
-    certification_date: Optional[str] = Field(None, max_length=50)
-    invoice_data: Optional[InvoiceData] = Field(None)
+    """
+    Certification and invoice data.
+    Category: [CD] Computed / Derived
+    All certification fields are auto-populated from the User profile on report creation.
+    The valuer may edit them, but they are not collected from paper or inspection.
+    invoice_data totals are system-computed from user-entered line items.
+    """
+    certification_text: Optional[str] = Field(None)                   # [CD] pre-filled template
+    certificate_identity_confirmed: Optional[bool] = Field(None)      # [CD]
+    certification_valuer_name: Optional[str] = Field(None, max_length=255)   # [CD] ← User.full_name
+    certification_valuer_designation: Optional[str] = Field(None, max_length=200)  # [CD] ← User.professional_designation
+    certification_date: Optional[str] = Field(None, max_length=50)    # [CD] ← report_date / today
+    invoice_data: Optional[InvoiceData] = Field(None)                 # [CD]/[VJ] computed totals
 
 
 class ReportBase(BaseModel):
@@ -804,7 +878,7 @@ class ReportResponse(BaseModel):
     has_multiple_lots: Optional[bool] = None
     lots_data: Optional[List[dict]] = None
     uploaded_documents: Optional[List[dict]] = None
-    field_sources: Optional[str] = None
+    field_sources: Optional[dict] = None
     survey_plan_scale: Optional[str] = None
     plan_reference_notes: Optional[str] = None
     land_shape: Optional[str] = None

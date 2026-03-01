@@ -5,7 +5,7 @@ import uuid
 from sqlalchemy.orm import Session
 
 from .. import models, schemas
-from ..auth import get_password_hash
+from ..utils.password_utils import get_password_hash
 
 
 def create_user(db: Session, user: schemas.UserCreate):
