@@ -57,10 +57,60 @@ export interface VehicleFeatures {
   doors?: number;
 }
 
+export interface VehicleBookData {
+  owner_name?: string;
+  owner_nic?: string;
+  owner_address?: string;
+  revenue_license_valid_until?: string;
+  insurance_valid_until?: string;
+  last_transferred_date?: string;
+  unladen_weight?: number;
+  gross_weight?: number;
+  wheelbase?: number;
+  overall_length?: number;
+  overall_width?: number;
+  overall_height?: number;
+  number_of_axles?: number;
+  ocr_confidence?: number;
+  extraction_notes?: string;
+}
+
+export interface VehicleSpecStandardFeatures {
+  air_condition?: boolean;
+  dual_air_condition?: boolean;
+  power_window?: boolean;
+  power_steering?: boolean;
+  airbag_count?: number;
+  abs_standard?: boolean;
+}
+
+export interface VehicleSpecData {
+  engine_type?: string;
+  displacement_cc?: number;
+  transmission?: string;
+  wheel_drive?: string;
+  fuel_type?: string;
+  fuel_economy_kmpl?: number;
+  length_mm?: number;
+  width_mm?: number;
+  height_mm?: number;
+  wheelbase_mm?: number;
+  seating_capacity?: number;
+  doors?: number;
+  standard_features?: VehicleSpecStandardFeatures;
+  safety_rating?: string;
+  source?: string;
+  retrieved_at?: string;
+  confidence?: number;
+}
+
 export interface VehicleOfficeData {
   civil_no?: string;
   military_no?: string;
   approval_position?: string;
+  previous_reference?: string;
+  reported_value?: number;
+  reported_date?: string;
 }
 
 export interface VehiclePastValuation {
@@ -159,6 +209,17 @@ export interface Vehicle {
   vehicle_photos?: VehiclePhoto[];
   book_images?: VehiclePhoto[];
 
+  // Variant
+  variant?: string;
+
+  // Book Data (OCR-extracted CR Book fields)
+  book_data?: VehicleBookData;
+
+  // Spec Data (AI-enriched manufacturer specs)
+  spec_data?: VehicleSpecData;
+  spec_source?: 'ai_claude' | 'manual';
+  spec_confidence?: number;
+
   // Timestamps
   created_at: string;
   updated_at?: string;
@@ -246,6 +307,17 @@ export interface VehicleCreate {
   // Photos
   vehicle_photos?: VehiclePhoto[];
   book_images?: VehiclePhoto[];
+
+  // Variant
+  variant?: string;
+
+  // Book Data (OCR-extracted CR Book fields)
+  book_data?: VehicleBookData;
+
+  // Spec Data (AI-enriched manufacturer specs)
+  spec_data?: VehicleSpecData;
+  spec_source?: 'ai_claude' | 'manual';
+  spec_confidence?: number;
 }
 
 export type VehicleUpdate = Partial<VehicleCreate>;

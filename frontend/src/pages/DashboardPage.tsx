@@ -1,15 +1,16 @@
-import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import {
     Plus, FileText, User, Settings, LogOut, Search, Bell,
     Filter, MoreVertical, Calendar, TrendingUp, Award,
     ChevronDown, Menu, X, Home, BarChart3, Users,
     Shield, Zap, Clock, Download, Copy, AlertCircle, CheckCircle, Trash2, Edit, MapPin,
-    Car, Library
+    Car, Library, Loader2
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { reportApi } from '../services/api';
 import { Report } from '../types';
+import { useJobPolling } from '../hooks/useJobPolling';
 import { Button } from '../components/Button';
 import { DeleteConfirmDialog } from '../components/DeleteConfirmDialog';
 import { ReportsPagination } from '../components/ReportsPagination';
@@ -20,6 +21,7 @@ import toast from 'react-hot-toast';
 const DashboardPage: React.FC = () => {
     const { user, logout } = useAuth();
     const navigate = useNavigate();
+    const location = useLocation();
 
     // Use the pagination hook for reports management
     const {
@@ -43,6 +45,33 @@ const DashboardPage: React.FC = () => {
     const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [reportToDelete, setReportToDelete] = useState<Report | null>(null);
+    const [generatingReportId, setGeneratingReportId] = useState<number | null>(null);
+
+    const { startPolling } = useJobPolling({
+        onComplete: () => {
+            setGeneratingReportId(null);
+            toast.dismiss('auto-gen');
+            toast.success('Report downloaded successfully');
+        },
+        onError: (error) => {
+            setGeneratingReportId(null);
+            toast.dismiss('auto-gen');
+            toast.error(`Generation failed: ${error}`);
+        },
+        autoDownload: true,
+    });
+
+    // Auto-start polling when redirected from vehicle report completion
+    useEffect(() => {
+        const pendingJobId = (location.state as { pendingJobId?: string } | null)?.pendingJobId;
+        if (!pendingJobId) return;
+
+        // Clear nav state so a page refresh doesn't re-trigger
+        window.history.replaceState({}, document.title);
+
+        toast.loading('Generating report… please wait', { id: 'auto-gen' });
+        startPolling(pendingJobId);
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Check if professional profile is complete
     const isProfileComplete = () => {
@@ -100,6 +129,33 @@ const DashboardPage: React.FC = () => {
         } catch (error) {
             console.error('Failed to duplicate report:', error);
             toast.error('Failed to duplicate report');
+        }
+    };
+
+    const handleDownloadReport = async (report: Report, e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (report.status !== 'completed' || generatingReportId) return;
+
+        setGeneratingReportId(report.id);
+
+        if (report.report_type === 'vehicle') {
+            // Async for vehicles: large photos + AI generation take 5–15s
+            const toastId = toast.loading('Generating report...');
+            try {
+                const job = await reportApi.generateReportAsync(report.id);
+                toast.loading('Generating… please wait', { id: toastId });
+                startPolling(job.id);
+            } catch {
+                setGeneratingReportId(null);
+                toast.error('Failed to start generation', { id: toastId });
+            }
+        } else {
+            // Sync for property reports: fast, no large payloads
+            try {
+                await reportApi.generateReportDocx(report.id);
+            } finally {
+                setGeneratingReportId(null);
+            }
         }
     };
 
@@ -508,20 +564,21 @@ const DashboardPage: React.FC = () => {
                                                         <Edit className="h-5 w-5" />
                                                     </button>
                                                     <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            if (report.status === 'completed') {
-                                                                reportApi.generateReportDocx(report.id);
-                                                            }
-                                                        }}
-                                                        disabled={report.status !== 'completed'}
-                                                        className={`p-2 rounded-xl transition-all duration-200 ${report.status === 'completed'
-                                                            ? 'text-violet-600 hover:bg-violet-100'
-                                                            : 'text-gray-400 cursor-not-allowed'
-                                                            }`}
-                                                        title="Download Report"
+                                                        onClick={(e) => handleDownloadReport(report, e)}
+                                                        disabled={report.status !== 'completed' || !!generatingReportId}
+                                                        className={`p-2 rounded-xl transition-all duration-200 ${
+                                                            generatingReportId === report.id
+                                                                ? 'text-violet-400 cursor-wait'
+                                                                : report.status === 'completed'
+                                                                    ? 'text-violet-600 hover:bg-violet-100'
+                                                                    : 'text-gray-400 cursor-not-allowed'
+                                                        }`}
+                                                        title={generatingReportId === report.id ? 'Generating…' : 'Download Report'}
                                                     >
-                                                        <Download className="h-5 w-5" />
+                                                        {generatingReportId === report.id
+                                                            ? <Loader2 className="h-5 w-5 animate-spin" />
+                                                            : <Download className="h-5 w-5" />
+                                                        }
                                                     </button>
                                                     <button
                                                         onClick={(e) => handleDuplicateReport(report, e)}

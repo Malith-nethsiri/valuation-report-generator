@@ -49,9 +49,9 @@ const PhaseTabBar: React.FC<PhaseTabBarProps> = ({
     getPhaseSteps(phase).filter(({ globalIndex }) => globalIndex < currentStep).length;
 
   return (
-    <div className="mb-8">
+    <div className="mb-4 md:mb-6 md:sticky md:top-0 md:z-20 md:bg-white/95 md:backdrop-blur-sm md:py-3 md:rounded-2xl md:shadow-sm">
       {/* Phase tab row */}
-      <div className="flex gap-3 mb-6">
+      <div className="flex gap-1.5 md:gap-3 mb-4 md:mb-5">
         {phases.map((phase) => {
           const isActive = phase.id === activePhaseId;
           const phaseSteps = getPhaseSteps(phase);
@@ -66,24 +66,24 @@ const PhaseTabBar: React.FC<PhaseTabBarProps> = ({
               type="button"
               onClick={() => onPhaseClick(phase.id)}
               className={`
-                flex-1 flex flex-col items-center gap-1 px-4 py-3 rounded-2xl border-2 transition-all duration-200
+                flex-1 flex flex-col items-center gap-1 px-2 py-2 md:px-4 md:py-3 rounded-xl md:rounded-2xl border-2 transition-all duration-200
                 ${isActive
                   ? `bg-gradient-to-br ${phase.color} border-transparent text-white shadow-lg scale-[1.02]`
                   : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300 hover:shadow-sm'
                 }
               `}
             >
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 md:gap-2">
                 {allDone && !isActive ? (
                   <Check className="h-4 w-4 text-green-500" />
                 ) : (
                   <PhaseIcon className={`h-4 w-4 ${isActive ? 'text-white' : 'text-gray-400'}`} />
                 )}
-                <span className={`text-sm font-semibold ${isActive ? 'text-white' : 'text-gray-600'}`}>
+                <span className={`hidden md:inline text-xs md:text-sm font-semibold ${isActive ? 'text-white' : 'text-gray-600'}`}>
                   {phase.name}
                 </span>
               </div>
-              <span className={`text-xs ${isActive ? 'text-white/80' : 'text-gray-400'}`}>
+              <span className={`hidden md:block text-xs ${isActive ? 'text-white/80' : 'text-gray-400'}`}>
                 {total > 0 ? `${visited} / ${total} steps` : 'N/A'}
               </span>
             </button>
@@ -99,7 +99,7 @@ const PhaseTabBar: React.FC<PhaseTabBarProps> = ({
           if (phaseSteps.length === 0) return null;
 
           return (
-            <div key={phase.id} className="relative flex justify-center items-center gap-3">
+            <div key={phase.id} className="relative flex justify-center items-center gap-2 md:gap-3 overflow-x-auto pb-1">
               {/* Connecting line behind dots */}
               <div className="absolute top-5 left-0 w-full h-0.5 bg-gray-200 rounded-full">
                 <div

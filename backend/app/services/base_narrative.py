@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from typing import Optional, Dict, Any
 import logging
 
-from .anthropic_client import get_anthropic_client, is_anthropic_configured
+from .anthropic_client import get_anthropic_client, is_anthropic_configured, AI_DEFAULT_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -28,8 +28,8 @@ class BaseNarrativeService(ABC):
     - get_max_tokens(): Return max tokens for this narrative type
     """
 
-    # Default model for all narrative services
-    MODEL = "claude-3-5-haiku-20241022"
+    # Default model for all narrative services — sourced from central constant
+    MODEL = AI_DEFAULT_MODEL
 
     # Default temperature for narrative generation
     TEMPERATURE = 0.7

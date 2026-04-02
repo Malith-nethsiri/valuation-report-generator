@@ -18,6 +18,12 @@ const FIELDS_TO_FILTER_FROM_REPORT = [
   'deed_type', 'deed_number', 'deed_date', 'notary_name', 'notary_location',
   // Certificate fields - transformed to deed format
   'certificate_number', 'certificate_date', 'certificate_notary_name', 'certificate_notary_district',
+  // OCR staging field - frontend only, dispersed into building fields by the UI before submission
+  'ocr_building_plan_data',
+  // Advanced road mode field - not in backend model or Pydantic schema
+  'access_road_segments',
+  // Dead field with wrong name - backend field is `use_applicant_address_as_property`
+  'use_property_address_as_applicant',
 ];
 
 /**

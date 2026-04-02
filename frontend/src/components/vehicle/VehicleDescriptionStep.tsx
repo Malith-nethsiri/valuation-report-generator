@@ -209,6 +209,23 @@ export const VehicleDescriptionStep: React.FC = () => {
             />
           </div>
 
+          {/* Variant / Grade */}
+          <div className="space-y-2">
+            <Label htmlFor="variant">
+              Variant / Grade <span className="text-gray-400 font-normal text-xs">(optional)</span>
+            </Label>
+            <Input
+              id="variant"
+              type="text"
+              placeholder="e.g. G grade, X grade, S, Sport"
+              className="h-12"
+              {...register('variant')}
+            />
+            <p className="text-xs text-gray-500">
+              Specifying the trim level helps identify exact specifications.
+            </p>
+          </div>
+
           {/* Year of Manufacture */}
           <div className="space-y-2">
             <Label htmlFor="year_of_manufacture" className="text-gray-700 font-medium flex items-center gap-2">

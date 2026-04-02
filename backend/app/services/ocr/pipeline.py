@@ -10,8 +10,11 @@ from typing import Dict, List, Optional, Tuple
 
 from fastapi import UploadFile
 
+logger = logging.getLogger(__name__)
+
 from .vision_client import extract_text_from_image
 from .preprocessor import preprocess_ocr_text, validate_extracted_data
+from .pdf_handler import process_pdf_for_ocr
 from ..ai import parse_with_claude, merge_multi_document_results, parse_vehicle_book_with_claude
 from ...utils.field_categories import build_field_source_entry
 
@@ -372,6 +375,13 @@ async def extract_property_data_from_image(
         raise Exception(f"OCR extraction failed: {str(e)}")
 
 
+def _parse_text_with_ai(text: str, hint: Optional[str]) -> Dict:
+    """Call Claude directly on pre-extracted text (digital PDFs)."""
+    if hint == "vehicle_book":
+        return parse_vehicle_book_with_claude(text)
+    return parse_with_claude(text, hint)
+
+
 async def process_uploaded_document(
     file: UploadFile,
     document_type_hint: Optional[str] = None
@@ -395,25 +405,55 @@ async def process_uploaded_document(
 
         # Determine media type
         content_type = file.content_type or "image/jpeg"
-        if content_type not in ["image/jpeg", "image/jpg", "image/png", "image/webp"]:
-            # If PDF, we need to convert it to images first
-            # For now, raise error (PDF conversion can be added later)
-            if content_type == "application/pdf":
-                raise ValueError("PDF support coming soon. Please convert PDF pages to images first.")
+
+        ai_metadata: Dict = {}
+
+        if content_type == "application/pdf":
+            text, page_images = await process_pdf_for_ocr(content)
+            if text:
+                # Digital PDF: pass extracted text directly to Claude, skip Google Vision
+                raw_result = _parse_text_with_ai(text, document_type_hint)
+                extracted_data = raw_result.get("extracted_data", {})
+                confidence = raw_result.get("overall_confidence", 0.5)
+                confidence_scores = raw_result.get("confidence_scores", {})
+                detected_plans = raw_result.get("detected_plans", [])
+                ai_metadata = raw_result.get("metadata", {})
             else:
-                raise ValueError(f"Unsupported file type: {content_type}. Supported: JPEG, PNG, WEBP")
-
-        # Extract data using Google Vision
-        extracted_data, confidence = await extract_property_data_from_image(
-            content,
-            media_type=content_type,
-            document_hint=document_type_hint
-        )
-
-        # Extract AI-specific metadata
-        confidence_scores = extracted_data.pop('_confidence_scores', {})
-        detected_plans = extracted_data.pop('_detected_plans', [])
-        ai_metadata = extracted_data.pop('_ai_metadata', {})
+                # Scanned PDF: OCR each page image through Google Vision pipeline
+                page_results = []
+                for img_bytes in page_images:
+                    data, conf = await extract_property_data_from_image(
+                        img_bytes, media_type="image/jpeg", document_hint=document_type_hint
+                    )
+                    page_results.append({
+                        "extracted_data": data,
+                        "overall_confidence": conf,
+                        "confidence_scores": data.pop("_confidence_scores", {}),
+                        "detected_plans": data.pop("_detected_plans", []),
+                        "metadata": {}
+                    })
+                    # Clean internal keys so merge doesn't treat them as fields
+                    data.pop("_ai_metadata", None)
+                    data.pop("_raw_ocr_text", None)
+                merged = merge_multi_document_results(page_results)
+                extracted_data = merged.get("extracted_data", {})
+                confidence = merged.get("overall_confidence", 0.5)
+                confidence_scores = merged.get("confidence_scores", {})
+                detected_plans = merged.get("detected_plans", [])
+        elif content_type not in ["image/jpeg", "image/jpg", "image/png", "image/webp"]:
+            raise ValueError(
+                f"Unsupported file type: {content_type}. Supported: JPEG, PNG, WEBP, PDF"
+            )
+        else:
+            # Standard image path (unchanged)
+            extracted_data, confidence = await extract_property_data_from_image(
+                content,
+                media_type=content_type,
+                document_hint=document_type_hint
+            )
+            confidence_scores = extracted_data.pop('_confidence_scores', {})
+            detected_plans = extracted_data.pop('_detected_plans', [])
+            ai_metadata = extracted_data.pop('_ai_metadata', {})
 
         # Add metadata
         result = {
@@ -435,6 +475,8 @@ async def process_uploaded_document(
         return result
 
     except Exception as e:
+        logger.error(f"[OCR] process_uploaded_document failed for '{file.filename if file else 'unknown'}': {e}")
+        logger.error(f"[OCR] Full traceback:\n{traceback.format_exc()}")
         return {
             "success": False,
             "error": str(e),

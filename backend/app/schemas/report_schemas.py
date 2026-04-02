@@ -4,8 +4,6 @@ from typing import Optional, List, Dict
 
 from .validators import (
     sanitize_dangerous_characters,
-    validate_sri_lankan_nic,
-    validate_passport,
     validate_date_format,
     normalize_date_format,
     validate_id_number,
@@ -16,9 +14,7 @@ from ..utils.json_validators import (
     validate_boundaries,
     validate_buildings,
     validate_comparable_properties,
-    validate_deeds,
     validate_nearby_facilities,
-    validate_property_photos,
     validate_access_road_conditions,
 )
 
@@ -512,25 +508,6 @@ class ReportBase(BaseModel):
             return sanitize_dangerous_characters(v)
         return v
 
-    @field_validator('applicant_id_number')
-    @classmethod
-    def validate_id_number(cls, v, info):
-        if not v:
-            return v
-        id_type = info.data.get('applicant_id_type', '').lower() if hasattr(info, 'data') else ''
-        if not id_type:
-            return sanitize_dangerous_characters(v)
-        if 'nic' in id_type:
-            if not validate_sri_lankan_nic(v):
-                raise ValueError('Invalid Sri Lankan NIC format. Use old format (123456789V) or new format (200012345678)')
-        elif 'passport' in id_type:
-            if not validate_passport(v):
-                raise ValueError('Invalid passport format. Must be 6-12 alphanumeric characters (supports international passports)')
-        elif 'other' in id_type:
-            if len(v.strip()) < 3:
-                raise ValueError('ID number must be at least 3 characters')
-        return sanitize_dangerous_characters(v)
-
     @field_validator('valuation_purpose')
     @classmethod
     def validate_valuation_purpose(cls, v):
@@ -654,29 +631,11 @@ class ReportBase(BaseModel):
                 raise ValueError(error_msg)
         return v
 
-    @field_validator('deeds')
-    @classmethod
-    def validate_deeds_json(cls, v):
-        if v is not None:
-            is_valid, error_msg = validate_deeds(v)
-            if not is_valid:
-                raise ValueError(error_msg)
-        return v
-
     @field_validator('nearby_facilities')
     @classmethod
     def validate_nearby_facilities_json(cls, v):
         if v is not None:
             is_valid, error_msg = validate_nearby_facilities(v)
-            if not is_valid:
-                raise ValueError(error_msg)
-        return v
-
-    @field_validator('property_photos')
-    @classmethod
-    def validate_property_photos_json(cls, v):
-        if v is not None:
-            is_valid, error_msg = validate_property_photos(v)
             if not is_valid:
                 raise ValueError(error_msg)
         return v

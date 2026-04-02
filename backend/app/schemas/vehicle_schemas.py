@@ -67,11 +67,64 @@ class VehicleFeatures(BaseModel):
     doors: Optional[int] = Field(None, ge=1, description="Number of doors")
 
 
+class VehicleBookData(BaseModel):
+    """All fields extracted from CR Book via OCR (including fields not in flat columns)"""
+    owner_name: Optional[str] = Field(None, max_length=200)
+    owner_nic: Optional[str] = Field(None, max_length=50)
+    owner_address: Optional[str] = Field(None, max_length=500)
+    revenue_license_valid_until: Optional[str] = Field(None, max_length=50)
+    insurance_valid_until: Optional[str] = Field(None, max_length=50)
+    last_transferred_date: Optional[str] = Field(None, max_length=50)
+    unladen_weight: Optional[int] = Field(None, ge=0)
+    gross_weight: Optional[int] = Field(None, ge=0)
+    wheelbase: Optional[int] = Field(None, ge=0)
+    overall_length: Optional[int] = Field(None, ge=0)
+    overall_width: Optional[int] = Field(None, ge=0)
+    overall_height: Optional[int] = Field(None, ge=0)
+    number_of_axles: Optional[int] = Field(None, ge=0)
+    ocr_confidence: Optional[float] = Field(None, ge=0.0, le=1.0)
+    extraction_notes: Optional[str] = Field(None, max_length=1000)
+
+
+class VehicleSpecStandardFeatures(BaseModel):
+    """Standard equipment from manufacturer specs"""
+    air_condition: Optional[bool] = None
+    dual_air_condition: Optional[bool] = None
+    power_window: Optional[bool] = None
+    power_steering: Optional[bool] = None
+    airbag_count: Optional[int] = Field(None, ge=0)
+    abs_standard: Optional[bool] = None
+
+
+class VehicleSpecData(BaseModel):
+    """AI/internet-enriched manufacturer specifications"""
+    engine_type: Optional[str] = Field(None, max_length=100)
+    displacement_cc: Optional[int] = Field(None, ge=0)
+    transmission: Optional[str] = Field(None, max_length=50)
+    wheel_drive: Optional[str] = Field(None, max_length=20)
+    fuel_type: Optional[str] = Field(None, max_length=50)
+    fuel_economy_kmpl: Optional[float] = Field(None, ge=0)
+    length_mm: Optional[int] = Field(None, ge=0)
+    width_mm: Optional[int] = Field(None, ge=0)
+    height_mm: Optional[int] = Field(None, ge=0)
+    wheelbase_mm: Optional[int] = Field(None, ge=0)
+    seating_capacity: Optional[int] = Field(None, ge=1)
+    doors: Optional[int] = Field(None, ge=0)
+    standard_features: Optional[VehicleSpecStandardFeatures] = None
+    safety_rating: Optional[str] = Field(None, max_length=100)
+    source: Optional[str] = Field(None, max_length=100)
+    retrieved_at: Optional[str] = Field(None, max_length=50)
+    confidence: Optional[float] = Field(None, ge=0.0, le=1.0)
+
+
 class VehicleOfficeData(BaseModel):
     """Office use only fields (for government reports)"""
     civil_no: Optional[str] = Field(None, max_length=100, description="Civil number (government vehicles)")
     military_no: Optional[str] = Field(None, max_length=100, description="Military number (military vehicles)")
     approval_position: Optional[str] = Field(None, max_length=200, description="Approval position")
+    previous_reference: Optional[str] = Field(None, max_length=200)
+    reported_value: Optional[float] = Field(None, ge=0)
+    reported_date: Optional[str] = Field(None, max_length=50)
 
 
 class VehiclePastValuation(BaseModel):
@@ -179,6 +232,17 @@ class VehicleBase(BaseModel):
     # ===== PHOTOS =====
     vehicle_photos: Optional[List[VehiclePhoto]] = Field(None, max_items=5, description="Vehicle photos (max 5)")
     book_images: Optional[List[VehiclePhoto]] = Field(None, max_items=5, description="Vehicle book images for OCR (max 5)")
+
+    # ===== VARIANT =====
+    variant: Optional[str] = Field(None, max_length=100, description="Optional trim/grade (e.g., G grade, X grade)")
+
+    # ===== BOOK DATA =====
+    book_data: Optional[VehicleBookData] = Field(None, description="All OCR-extracted CR Book fields")
+
+    # ===== SPEC DATA =====
+    spec_data: Optional[VehicleSpecData] = Field(None, description="AI-enriched manufacturer specifications")
+    spec_source: Optional[str] = Field(None, max_length=50, description="Source of spec data: ai_claude or manual")
+    spec_confidence: Optional[float] = Field(None, ge=0.0, le=1.0, description="Confidence score for spec data")
 
     # ===== VALIDATORS =====
     @field_validator('date_of_first_registration')

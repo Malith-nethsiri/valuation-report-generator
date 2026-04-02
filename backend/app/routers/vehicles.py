@@ -200,6 +200,54 @@ async def suggest_vehicle_valuation(
         )
 
 
+@router.post("/api/vehicles/{vehicle_id}/enrich-specs")
+async def enrich_vehicle_specs(
+    vehicle_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get AI-enriched manufacturer specifications for a vehicle.
+
+    Uses the vehicle's make, model, year_of_manufacture, and variant (if set)
+    to retrieve standard manufacturer specs from Claude AI. Results are returned
+    for user review and must be confirmed before being saved via the standard
+    PUT /api/vehicles/{vehicle_id} endpoint.
+
+    Returns spec_data dict with confidence score. Requires make + model + year to be set.
+    """
+    logger.info(f"[ENRICH SPECS] Vehicle: {vehicle_id}")
+
+    db_vehicle = crud.get_vehicle(db, vehicle_id, current_user.id)
+    if not db_vehicle:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Vehicle with ID {vehicle_id} not found"
+        )
+
+    if not db_vehicle.make or not db_vehicle.model or not db_vehicle.year_of_manufacture:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Vehicle must have make, model, and year_of_manufacture set before spec enrichment"
+        )
+
+    try:
+        from ..services.vehicle_spec_enrichment import enrich_vehicle_specs as _enrich
+        spec_data = _enrich(
+            make=db_vehicle.make,
+            model=db_vehicle.model,
+            year=db_vehicle.year_of_manufacture,
+            variant=getattr(db_vehicle, 'variant', None),
+        )
+        logger.info(f"  Spec enrichment complete: confidence={spec_data.get('confidence')}")
+        return {"spec_data": spec_data}
+    except Exception as e:
+        logger.error(f"[ENRICH SPECS] Error: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error enriching vehicle specs: {str(e)}"
+        )
+
+
 # ===== REPORT-VEHICLE JUNCTION ENDPOINTS =====
 
 @router.post("/api/reports/{report_id}/vehicles/{vehicle_id}", response_model=schemas.ReportVehicleResponse, status_code=status.HTTP_201_CREATED)

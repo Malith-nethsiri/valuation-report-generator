@@ -730,6 +730,38 @@ export const VehicleFeaturesValuationStep: React.FC = () => {
             </div>
           </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <Label className="text-gray-700 font-medium">Previous Reference (File No)</Label>
+              <Input
+                type="text"
+                placeholder="Enter file number"
+                className="h-12"
+                {...register('office_data.previous_reference')}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-gray-700 font-medium">Reported Value (Rs.)</Label>
+              <Input
+                type="number"
+                placeholder="Enter reported value"
+                className="h-12"
+                {...register('office_data.reported_value', { valueAsNumber: true })}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-gray-700 font-medium">Reported Date</Label>
+              <Input
+                type="text"
+                placeholder="DD-MM-YYYY"
+                className="h-12"
+                {...register('office_data.reported_date')}
+              />
+            </div>
+          </div>
+
           {/* Past Valuations Table */}
           <div className="space-y-4">
             <div className="flex items-center justify-between">
@@ -754,6 +786,7 @@ export const VehicleFeaturesValuationStep: React.FC = () => {
                       <th className="px-3 py-2 text-left font-medium text-gray-700">Military No</th>
                       <th className="px-3 py-2 text-left font-medium text-gray-700">Year</th>
                       <th className="px-3 py-2 text-left font-medium text-gray-700">Value (Rs.)</th>
+                      <th className="px-3 py-2 text-left font-medium text-gray-700">Market Value (Rs.)</th>
                       <th className="px-3 py-2 text-left font-medium text-gray-700"></th>
                     </tr>
                   </thead>
@@ -790,6 +823,14 @@ export const VehicleFeaturesValuationStep: React.FC = () => {
                             type="number"
                             value={row.value || ''}
                             onChange={(e) => updatePastValuation(index, 'value', e.target.value)}
+                            className="h-8 text-sm"
+                          />
+                        </td>
+                        <td className="px-3 py-2">
+                          <Input
+                            type="number"
+                            value={row.market_value || ''}
+                            onChange={(e) => updatePastValuation(index, 'market_value', e.target.value)}
                             className="h-8 text-sm"
                           />
                         </td>

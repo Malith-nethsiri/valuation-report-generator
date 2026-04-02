@@ -27,11 +27,34 @@ export const VehiclePhotosStep: React.FC = () => {
   // Generate unique ID
   const generateId = () => `photo-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
-  // Process file to base64
+  // Process file to base64, resized to max 827px (7cm at 300 DPI) before storing
+  const MAX_PHOTO_DIM = 827;
+
   const processFile = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          let { width, height } = img;
+          if (width > MAX_PHOTO_DIM || height > MAX_PHOTO_DIM) {
+            if (width >= height) {
+              height = Math.round(height * MAX_PHOTO_DIM / width);
+              width = MAX_PHOTO_DIM;
+            } else {
+              width = Math.round(width * MAX_PHOTO_DIM / height);
+              height = MAX_PHOTO_DIM;
+            }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', 0.85));
+        };
+        img.onerror = reject;
+        img.src = e.target?.result as string;
+      };
       reader.onerror = reject;
       reader.readAsDataURL(file);
     });

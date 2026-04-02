@@ -22,13 +22,21 @@ import {
   Image as ImageIcon,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { ocrApi } from '../../services/api';
+import { ocrApi, vehicleApi } from '../../services/api';
 import type { VehiclePhoto } from '../../types';
 
 const MAX_BOOK_IMAGES = 5;
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
-export const VehicleBookOCRStep: React.FC = () => {
+interface VehicleBookOCRStepProps {
+  onEnrichmentStart?: () => void;
+  onEnrichmentComplete?: () => void;
+}
+
+export const VehicleBookOCRStep: React.FC<VehicleBookOCRStepProps> = ({
+  onEnrichmentStart,
+  onEnrichmentComplete,
+}) => {
   const { watch, setValue, getValues } = useFormContext();
   const [isUploading, setIsUploading] = useState(false);
   const [isExtracting, setIsExtracting] = useState(false);
@@ -179,8 +187,8 @@ export const VehicleBookOCRStep: React.FC = () => {
       // Call OCR API with vehicle_book type
       const result = await ocrApi.extractData(files, 'vehicle_book');
 
-      if (result && result.extracted_data) {
-        const data = result.extracted_data;
+      if (result && result.data && result.data.extracted_data) {
+        const data = result.data.extracted_data;
         const fieldsSet: string[] = [];
 
         // Map extracted fields to form fields
@@ -214,6 +222,80 @@ export const VehicleBookOCRStep: React.FC = () => {
             }
           }
         });
+
+        // Save full OCR output as book_data (preserves owner info, weights, dimensions, license dates)
+        const bookDataFields = [
+          'owner_name', 'owner_nic', 'owner_address',
+          'revenue_license_valid_until', 'insurance_valid_until', 'last_transferred_date',
+          'unladen_weight', 'gross_weight', 'wheelbase',
+          'overall_length', 'overall_width', 'overall_height', 'number_of_axles',
+        ];
+        const bookData: Record<string, unknown> = {};
+        bookDataFields.forEach(field => {
+          if (data[field] != null) bookData[field] = data[field];
+        });
+        if (result.data.overall_confidence != null) {
+          bookData.ocr_confidence = result.data.overall_confidence;
+        }
+        if (result.data.metadata?.parsing_notes) {
+          bookData.extraction_notes = result.data.metadata.parsing_notes;
+        }
+        if (Object.keys(bookData).length > 0) {
+          setValue('book_data', bookData);
+        }
+
+        // Auto-enrich manufacturer specs in background using OCR-extracted identity
+        const vehicleId = getValues('id');
+        const make = data['make'] || getValues('make');
+        const model = data['model'] || getValues('model');
+        const year = data['year_of_manufacture'] || getValues('year_of_manufacture');
+
+        if (vehicleId && make && model && year) {
+          onEnrichmentStart?.();
+          vehicleApi.enrichSpecs(vehicleId)
+            .then((enrichResult) => {
+              const spec = enrichResult.spec_data;
+              if (!spec || spec.confidence === 0.0) {
+                toast.error('Could not auto-load manufacturer specs — please enter manually');
+                return;
+              }
+              // Fill only empty fields — OCR values take priority
+              if (!getValues('engine_type') && spec.engine_type) setValue('engine_type', spec.engine_type);
+              if (!getValues('transmission') && spec.transmission) setValue('transmission', spec.transmission);
+              if (!getValues('wheel_drive') && spec.wheel_drive) setValue('wheel_drive', spec.wheel_drive);
+              if (!getValues('fuel_type') && spec.fuel_type) setValue('fuel_type', spec.fuel_type);
+              if (!getValues('cylinder_capacity') && spec.displacement_cc) setValue('cylinder_capacity', spec.displacement_cc);
+              if (!getValues('fuel_consumption') && spec.fuel_economy_kmpl) {
+                setValue('fuel_consumption', spec.fuel_economy_kmpl);
+                setValue('fuel_consumption_unit', 'km/L');
+              }
+              if (spec.standard_features) {
+                const sf = spec.standard_features;
+                const cf = getValues('features') || {};
+                setValue('features', {
+                  ...cf,
+                  air_condition: cf.air_condition || sf.air_condition || false,
+                  dual_air_condition: cf.dual_air_condition || sf.dual_air_condition || false,
+                  power_window: cf.power_window || sf.power_window || false,
+                  power_steering: cf.power_steering || sf.power_steering || false,
+                  airbag: cf.airbag || (sf.airbag_count != null && sf.airbag_count > 0) || false,
+                  num_airbags: cf.num_airbags || sf.airbag_count || 0,
+                });
+                if (!getValues('abs_available') && sf.abs_standard) setValue('abs_available', true);
+                if (!getValues('features.seats') && spec.seating_capacity) setValue('features.seats', spec.seating_capacity);
+                if (!getValues('features.doors') && spec.doors) setValue('features.doors', spec.doors);
+              }
+              setValue('spec_data', spec);
+              setValue('spec_source', 'ai_claude');
+              setValue('spec_confidence', spec.confidence);
+            })
+            .catch(() => {
+              toast.error('Could not auto-load manufacturer specs — please enter manually');
+            })
+            .finally(() => {
+              onEnrichmentComplete?.();
+            });
+        }
 
         setExtractedFields(fieldsSet);
         setExtractionStatus('success');

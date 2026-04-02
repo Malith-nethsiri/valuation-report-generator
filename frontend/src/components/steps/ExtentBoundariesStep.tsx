@@ -3,7 +3,7 @@ import { LandExtentInput } from '../LandExtentInput';
 import { BoundaryInformationSection } from '../BoundaryInformationSection';
 import type { StepComponentProps } from '../../types/multiStepForm';
 
-const ExtentBoundariesStep: React.FC<StepComponentProps> = ({ setValue, watch }) => {
+const ExtentBoundariesStep: React.FC<StepComponentProps> = ({ setValue, watch, ocrFilledFields }) => {
     const handleExtentChange = (extentData: any) => {
         if (setValue) {
             setValue('land_extent_acres', extentData.land_extent_acres);
@@ -32,6 +32,7 @@ const ExtentBoundariesStep: React.FC<StepComponentProps> = ({ setValue, watch })
                 roods={watch?.('land_extent_roods') || 0}
                 perches={watch?.('land_extent_perches') || 0}
                 onChange={handleExtentChange}
+                ocrFilledFields={ocrFilledFields}
             />
 
             <div className="border-t border-gray-200 my-6"></div>

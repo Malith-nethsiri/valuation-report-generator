@@ -181,6 +181,21 @@ async def suggest_vehicle_valuation(vehicle) -> Dict[str, Any]:
     condition_summary = _format_condition_summary(vehicle_data)
     features_summary = _format_features_summary(vehicle_data)
 
+    # Include AI-enriched manufacturer spec data if available
+    spec_data = vehicle_data.get("spec_data") or {}
+    spec_lines = []
+    if spec_data:
+        if spec_data.get("fuel_economy_kmpl"):
+            spec_lines.append(f"- Manufacturer Rated Fuel Economy: {spec_data['fuel_economy_kmpl']} km/L")
+        if spec_data.get("safety_rating"):
+            spec_lines.append(f"- Safety Rating: {spec_data['safety_rating']}")
+        std_features = spec_data.get("standard_features") or {}
+        if std_features.get("airbag_count") is not None:
+            spec_lines.append(f"- Factory Airbags: {std_features['airbag_count']}")
+        if std_features.get("abs_standard"):
+            spec_lines.append("- ABS: Standard equipment")
+    spec_section = "\n".join(spec_lines) if spec_lines else "Not available"
+
     # Existing values (for reference)
     existing_purchase_price = vehicle_data.get("purchase_price")
     existing_market_value = vehicle_data.get("market_value")
@@ -199,6 +214,9 @@ VEHICLE INFORMATION:
 - Engine Capacity: {f'{engine_capacity} cc' if engine_capacity else 'Unknown'}
 - Vehicle Class: {vehicle_class}
 - Country of Origin: {country_of_origin}
+
+MANUFACTURER SPECIFICATIONS (verified data):
+{spec_section}
 
 CONDITION ASSESSMENT:
 {condition_summary}

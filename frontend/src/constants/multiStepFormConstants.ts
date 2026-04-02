@@ -62,6 +62,15 @@ export interface FormStep {
 export const FORM_STEPS: FormStep[] = [
   // ─── DOCUMENTS PHASE (1-5) ───────────────────────────────────────────────
   {
+    id: 1,
+    title: 'Property & Plan',
+    subtitle: 'Property and plan information',
+    category: 'Paper-Based · Client Documents',
+    icon: Home,
+    color: 'from-blue-500 to-indigo-600',
+    bgColor: 'from-blue-50 to-indigo-100',
+  },
+  {
     id: 9,
     title: 'Applicant & Purpose',
     subtitle: 'Applicant details and valuation purpose',
@@ -78,15 +87,6 @@ export const FORM_STEPS: FormStep[] = [
     icon: FileText,
     color: 'from-purple-500 to-violet-600',
     bgColor: 'from-purple-50 to-violet-100',
-  },
-  {
-    id: 1,
-    title: 'Property & Plan',
-    subtitle: 'Property and plan information',
-    category: 'Paper-Based · Client Documents',
-    icon: Home,
-    color: 'from-blue-500 to-indigo-600',
-    bgColor: 'from-blue-50 to-indigo-100',
   },
   {
     id: 2,
@@ -223,7 +223,7 @@ export const PHASES: Phase[] = [
   {
     id: 1,
     name: 'Documents',
-    stepIds: [9, 10, 1, 2, 7],
+    stepIds: [1, 9, 10, 2, 7],
     icon: FileText,
     color: 'from-blue-500 to-indigo-600',
     bgColor: 'from-blue-50 to-indigo-100',

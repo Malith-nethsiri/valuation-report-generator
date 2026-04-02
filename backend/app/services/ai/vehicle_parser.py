@@ -125,6 +125,8 @@ IMPORTANT: Return ONLY valid JSON. No markdown formatting, no code blocks, just 
         )
 
         # Extract response text
+        if not message.content:
+            raise ValueError("Claude returned an empty response for vehicle book parsing")
         response_text = message.content[0].text.strip()
 
         # Clean up response - remove markdown if present

@@ -34,7 +34,7 @@ class Job(Base):
     report_id = Column(Integer, ForeignKey("reports.id", ondelete="SET NULL"), nullable=True)
 
     job_type = Column(String(50), nullable=False)  # 'docx_generation', 'pdf_generation'
-    status = Column(String(20), nullable=False, default="pending")  # 'pending', 'processing', 'completed', 'failed'
+    status  = Column(String(20), nullable=False, default="pending")  # 'pending', 'processing', 'completed', 'failed'
 
     # Result data
     result_url = Column(String(500), nullable=True)  # Path to generated file
@@ -627,6 +627,26 @@ class Vehicle(Base):
     # ===== PHOTOS (JSONB) =====
     vehicle_photos = Column(JSON, nullable=True)  # [{id, image_data, caption, order}]
     book_images = Column(JSON, nullable=True)  # [{id, image_data, order}] - for OCR
+
+    # ===== VARIANT =====
+    variant = Column(String(100), nullable=True)  # Optional trim/grade (e.g., "G grade", "X grade")
+
+    # ===== BOOK DATA (JSONB) =====
+    book_data = Column(JSON, nullable=True)
+    # All fields extracted from CR Book via OCR — including fields not stored in flat columns:
+    # owner_name, owner_nic, owner_address, revenue_license_valid_until,
+    # insurance_valid_until, last_transferred_date, unladen_weight, gross_weight,
+    # wheelbase, overall_length, overall_width, overall_height, number_of_axles,
+    # ocr_confidence, extraction_notes
+
+    # ===== SPEC DATA (JSONB) =====
+    spec_data = Column(JSON, nullable=True)
+    # AI/internet-enriched manufacturer specifications:
+    # engine_type, displacement_cc, transmission, wheel_drive, fuel_type,
+    # fuel_economy_kmpl, dimensions, seating_capacity, doors,
+    # standard_features, safety_rating, source, retrieved_at, confidence
+    spec_source = Column(String(50), nullable=True)  # 'ai_claude' or 'manual'
+    spec_confidence = Column(Numeric(3, 2), nullable=True)  # 0.0-1.0
 
     # ===== TIMESTAMPS =====
     created_at = Column(DateTime(timezone=True), server_default=func.now())

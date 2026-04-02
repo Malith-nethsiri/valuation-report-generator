@@ -22,6 +22,7 @@ interface LandExtentInputProps {
   }) => void;
   disabled?: boolean;
   showMetric?: boolean;
+  ocrFilledFields?: Set<string>;
 }
 
 export function LandExtentInput({
@@ -31,7 +32,10 @@ export function LandExtentInput({
   onChange,
   disabled = false,
   showMetric = true,
+  ocrFilledFields,
 }: LandExtentInputProps) {
+  const ocr = (field: string) =>
+    ocrFilledFields?.has(field) ? ' bg-blue-50 border-blue-200' : '';
   const [localAcres, setLocalAcres] = useState<string>(acres?.toString() || '0');
   const [localRoods, setLocalRoods] = useState<string>(roods?.toString() || '0');
   const [localPerches, setLocalPerches] = useState<string>(
@@ -157,7 +161,7 @@ export function LandExtentInput({
             onChange={handleAcresChange}
             disabled={disabled}
             placeholder="0"
-            className="mt-1"
+            className={`mt-1${ocr('land_extent_acres')}`}
           />
           <p className="text-xs text-gray-500 mt-1">
             1 Acre = 4 Roods = 160 Perches
@@ -177,7 +181,7 @@ export function LandExtentInput({
             onChange={handleRoodsChange}
             disabled={disabled}
             placeholder="0"
-            className="mt-1"
+            className={`mt-1${ocr('land_extent_roods')}`}
           />
           <p className="text-xs text-gray-500 mt-1">
             0-3 (auto-converts to acres)
@@ -197,7 +201,7 @@ export function LandExtentInput({
             onChange={handlePerchesChange}
             disabled={disabled}
             placeholder="0.00"
-            className="mt-1"
+            className={`mt-1${ocr('land_extent_perches')}`}
           />
           <p className="text-xs text-gray-500 mt-1">
             0-39.99 (auto-converts to roods)

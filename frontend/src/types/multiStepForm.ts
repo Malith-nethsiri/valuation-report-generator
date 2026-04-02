@@ -17,7 +17,6 @@ export type FormData = z.infer<typeof completeFormSchema> & {
     notary_name?: string;
     notary_location?: string;
     // Location & Access fields (not validated by Zod)
-    use_property_address_as_applicant?: boolean; // Reversed: applicant uses property address
     assessment_number?: string;
     property_village?: string;
     property_divisional_secretariat?: string;
@@ -101,6 +100,18 @@ export type FormData = z.infer<typeof completeFormSchema> & {
     is_tourist_area?: boolean;
     tourist_attractions_nearby?: string;
     locality_description_text?: string;
+    // OCR staging field for building plan data extracted from uploaded plans
+    ocr_building_plan_data?: {
+        total_floors?: number;
+        total_bedrooms?: number;
+        total_bathrooms?: number;
+        other_rooms?: string[];
+        building_type?: string;
+        roof_type?: string;
+        wall_type?: string;
+        architect_name?: string;
+        plan_approval_date?: string;
+    };
 };
 
 /**
@@ -111,6 +122,10 @@ export interface StepComponentProps {
     errors: any;
     watch: any;
     setValue?: any;
+    getValues?: any;
+    ocrFilledFields?: Set<string>;
+    onMarkOCRFilled?: (field: string) => void;
+    isBareLand?: boolean;
 }
 
 /**

@@ -13,6 +13,7 @@ export interface Report {
   user_id: number;
   report_type: string;
   status: string;
+  primary_vehicle_id?: number;
 
   // Property & Plan Information
   lot_number?: string;  // e.g., "Lot 15", "Lots 1 & 2"
@@ -172,6 +173,8 @@ export interface Report {
   soil_type?: string;
   water_table_depth?: number;
   flood_risk?: string;
+  inundation_risk?: string;
+  earth_slip_risk?: string;
   land_condition?: string;
   land_description_text?: string;
 
@@ -207,6 +210,7 @@ export interface Report {
   // Public Transport
   has_public_transport?: boolean;
   public_transport_routes?: string;
+  public_transport_frequency?: string;
   nearest_bus_stop_distance_km?: number;
   nearest_bus_stop_name?: string;
   nearest_railway_station?: string;
@@ -446,6 +450,8 @@ export interface ReportCreate {
   soil_type?: string;
   water_table_depth?: number;
   flood_risk?: string;
+  inundation_risk?: string;
+  earth_slip_risk?: string;
   land_condition?: string;
   land_description_text?: string;
 
@@ -481,6 +487,7 @@ export interface ReportCreate {
   // Public Transport
   has_public_transport?: boolean;
   public_transport_routes?: string;
+  public_transport_frequency?: string;
   nearest_bus_stop_distance_km?: number;
   nearest_bus_stop_name?: string;
   nearest_railway_station?: string;

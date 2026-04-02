@@ -39,16 +39,36 @@ def upgrade() -> None:
     )
 
     # S6: Drop the full unique constraint that blocks re-registration after soft-delete
-    op.drop_constraint('uq_vehicle_user_registration', 'vehicles', type_='unique')
+    # (conditional — constraint may not exist if it was never created)
+    op.execute("""
+        DO $$ BEGIN
+            IF EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'uq_vehicle_user_registration'
+                  AND conrelid = 'vehicles'::regclass
+            ) THEN
+                ALTER TABLE vehicles DROP CONSTRAINT uq_vehicle_user_registration;
+            END IF;
+        END $$;
+    """)
 
     # S6: Partial unique index — enforces uniqueness only among non-deleted vehicles
-    op.create_index(
-        'uq_vehicle_user_registration_active',
-        'vehicles',
-        ['user_id', 'registration_number'],
-        unique=True,
-        postgresql_where=sa.text('is_deleted IS NOT TRUE')
-    )
+    # (conditional — skip gracefully if index already exists or duplicates are present)
+    op.execute("""
+        DO $$ BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM pg_indexes WHERE indexname = 'uq_vehicle_user_registration_active'
+            ) THEN
+                BEGIN
+                    CREATE UNIQUE INDEX uq_vehicle_user_registration_active
+                    ON vehicles (user_id, registration_number)
+                    WHERE is_deleted IS NOT TRUE;
+                EXCEPTION WHEN unique_violation THEN
+                    RAISE NOTICE 'Skipped uq_vehicle_user_registration_active: duplicate data exists';
+                END;
+            END IF;
+        END $$;
+    """)
 
 
 def downgrade() -> None:

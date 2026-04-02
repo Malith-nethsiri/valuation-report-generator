@@ -43,6 +43,10 @@ Pillow==11.3.0
 reportlab==4.4.3
 weasyprint==66.0
 
+# PDF processing — PyMuPDF handles both text extraction and scanned page rendering natively
+# No Poppler or system binaries required
+PyMuPDF==1.24.9
+
 # Data Processing
 pandas==2.3.1
 numpy==2.3.2

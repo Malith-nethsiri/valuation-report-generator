@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { MapPin, Navigation2, Route as RouteIcon, Loader2, MousePointer, Navigation, Info, AlertTriangle, RefreshCw } from 'lucide-react';
+import { MapPin, Navigation2, Route as RouteIcon, Loader2, MousePointer, Navigation, Info, AlertTriangle, RefreshCw, Crosshair } from 'lucide-react';
+import { useGeolocation } from '../hooks/useGeolocation';
+import type { GeolocationResult } from '../hooks/useGeolocation';
 import toast from 'react-hot-toast';
 import * as Sentry from '@sentry/react';
 import type { RoadSegment, RoadCondition } from '../types';
@@ -100,6 +102,19 @@ export function InteractivePropertyMap({
   // Google Maps error state for fallback
   const [mapsError, setMapsError] = useState<string | null>(null);
   const [useFallbackMode, setUseFallbackMode] = useState(false);
+
+  // GPS autofill — pass an inline (unstable) callback so useGeolocation's
+  // callbackRef is updated each render, always capturing the latest
+  // handleManualCoordinateChange closure. requestLocation itself stays stable.
+  const { status: geoStatus, error: geoError, accuracy: geoAccuracy, requestLocation } =
+    useGeolocation(({ latitude, longitude }: GeolocationResult) => {
+      const lat = latitude.toFixed(6);
+      const lng = longitude.toFixed(6);
+      setManualLatitude(lat);
+      setManualLongitude(lng);
+      setCoordinateInputMode('manual');
+      handleManualCoordinateChange(lat, lng);
+    });
 
   // Restore state when props change (navigation back to this step)
   useEffect(() => {
@@ -1030,6 +1045,39 @@ export function InteractivePropertyMap({
             </button>
           </div>
 
+          {/* GPS Quick Capture */}
+          <button
+            type="button"
+            onClick={requestLocation}
+            disabled={geoStatus === 'requesting' || !googleMapsLoaded}
+            className={`w-full flex items-center justify-center gap-2 px-3 py-2 mb-3 text-sm font-medium rounded-lg transition-colors ${
+              geoStatus === 'requesting'
+                ? 'bg-blue-400 text-white cursor-not-allowed'
+                : 'bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800 disabled:bg-gray-300 disabled:cursor-not-allowed'
+            }`}
+          >
+            {geoStatus === 'requesting' ? (
+              <><Loader2 className="w-4 h-4 animate-spin" /> Fetching location…</>
+            ) : (
+              <><Crosshair className="w-4 h-4" /> Use My Location</>
+            )}
+          </button>
+
+          {geoStatus === 'success' && geoAccuracy !== null && (
+            <p className={`text-xs flex items-center gap-1 mb-3 ${geoAccuracy > 100 ? 'text-amber-700' : 'text-green-700'}`}>
+              <Crosshair className="w-3 h-3" />
+              GPS captured · ~{Math.round(geoAccuracy)} m accuracy
+              {geoAccuracy > 100 && ' — move outdoors for better signal'}
+            </p>
+          )}
+
+          {geoError && (
+            <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-700 mb-3">
+              <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+              <span>{geoError}</span>
+            </div>
+          )}
+
           {coordinateInputMode === 'map' ? (
             <>
               <input
@@ -1159,7 +1207,7 @@ export function InteractivePropertyMap({
       <div className="relative">
         <div
           ref={mapRef}
-          className="w-full h-[500px] rounded-xl border-4 border-gray-300 shadow-2xl"
+          className="w-full h-[260px] sm:h-[360px] md:h-[440px] lg:h-[500px] rounded-xl border-4 border-gray-300 shadow-2xl"
         />
         {isLoading && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-100 rounded-xl">
@@ -1221,7 +1269,7 @@ export function InteractivePropertyMap({
               <img
                 src={mapImageUrl}
                 alt="Route Map"
-                className="w-full h-80 object-cover"
+                className="w-full h-44 md:h-64 lg:h-80 object-cover"
               />
             </div>
           )}

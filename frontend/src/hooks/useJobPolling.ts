@@ -39,7 +39,7 @@ const DEFAULT_OPTIONS: Required<UseJobPollingOptions> = {
   onError: () => {},
   autoDownload: true,
   maxAttempts: 60,
-  initialInterval: 2000,
+  initialInterval: 500,
   maxInterval: 5000,
 };
 
@@ -98,10 +98,12 @@ export function useJobPolling(options: UseJobPollingOptions = {}): UseJobPolling
         stopPolling();
         opts.onComplete(jobStatus);
 
-        // Auto-download if enabled
-        if (opts.autoDownload && jobStatus.download_ready) {
+        // Auto-download if enabled — use jobStatus directly to avoid stale closure on status state
+        if (opts.autoDownload && jobStatus.download_ready && jobStatus.download_url) {
           try {
-            await downloadResult();
+            const response = await api.get(jobStatus.download_url, { responseType: 'blob' });
+            const blob = new Blob([response.data], { type: DOCX_MIME_TYPE });
+            downloadBlobFile(blob, jobStatus.filename || 'document.docx');
           } catch (err) {
             console.error('Auto-download failed:', err);
           }

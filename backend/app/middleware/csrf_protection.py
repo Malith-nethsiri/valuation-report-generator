@@ -14,11 +14,10 @@ For SPA applications, the frontend should:
 import os
 import secrets
 import logging
-from typing import Optional
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
-from fastapi import HTTPException, status
+from fastapi import  status
 
 logger = logging.getLogger(__name__)
 

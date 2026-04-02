@@ -4,8 +4,8 @@
  * Steps:
  * 1. Basic Info (Purpose, Requested By, Dates, Folio, Inspection Place)
  * 2. Vehicle Photos (Max 5, drag-drop + click upload)
- * 3. Book Images + OCR (Max 5, "Extract Data" button)
- * 4. Vehicle Description (OCR auto-fills here)
+ * 3. Book Images + OCR (Max 5, "Extract Data" button — auto-triggers spec enrichment)
+ * 4. Book Data Review (OCR auto-fills here; AI specs auto-fill gaps; variant field)
  * 5. Features/Assessment + Valuation (Office/Private question before valuation)
  */
 
@@ -51,9 +51,11 @@ const STEPS = [
   { id: 1, title: 'Basic Info', icon: FileText },
   { id: 2, title: 'Vehicle Photos', icon: Camera },
   { id: 3, title: 'Book Images & OCR', icon: BookOpen },
-  { id: 4, title: 'Vehicle Description', icon: ClipboardList },
+  { id: 4, title: 'Book Data Review', icon: ClipboardList },
   { id: 5, title: 'Features & Valuation', icon: DollarSign },
 ];
+
+const TOTAL_STEPS = 5;
 
 export const VehicleStepForm: React.FC<VehicleStepFormProps> = ({
   mode,
@@ -69,6 +71,7 @@ export const VehicleStepForm: React.FC<VehicleStepFormProps> = ({
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(isMultiPropertyContext ? 2 : 1);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSpecEnriching, setIsSpecEnriching] = useState(false);
   const [isLoading, setIsLoading] = useState(mode === 'edit');
   const [existingReport, setExistingReport] = useState<Report | null>(null);
   const [existingVehicle, setExistingVehicle] = useState<Vehicle | null>(null);
@@ -210,6 +213,13 @@ export const VehicleStepForm: React.FC<VehicleStepFormProps> = ({
       // Photos
       vehicle_photos: [] as any[],
       book_images: [] as any[],
+
+      // Variant & enrichment data
+      variant: '',
+      book_data: undefined as any,
+      spec_data: undefined as any,
+      spec_source: undefined as any,
+      spec_confidence: undefined as any,
     },
   });
 
@@ -254,9 +264,10 @@ export const VehicleStepForm: React.FC<VehicleStepFormProps> = ({
             is_office_use: report.is_office_use || false,
           });
 
-          // Load vehicle data if available
-          if (vehicleId) {
-            const vehicle = await vehicleApi.getVehicle(vehicleId);
+          // Load vehicle data if available — fall back to primary_vehicle_id from report
+          const resolvedVehicleId = vehicleId ?? report.primary_vehicle_id;
+          if (resolvedVehicleId) {
+            const vehicle = await vehicleApi.getVehicle(resolvedVehicleId);
             setExistingVehicle(vehicle);
 
             // Merge vehicle data into form
@@ -281,8 +292,7 @@ export const VehicleStepForm: React.FC<VehicleStepFormProps> = ({
   // Handle step navigation
   const goToStep = (step: number) => {
     const minStep = isMultiPropertyContext ? 2 : 1;
-    const maxStep = 5;
-    if (step >= minStep && step <= maxStep) {
+    if (step >= minStep && step <= TOTAL_STEPS) {
       setCurrentStep(step);
     }
   };
@@ -355,6 +365,11 @@ export const VehicleStepForm: React.FC<VehicleStepFormProps> = ({
         past_valuations: data.is_office_use ? data.past_valuations : undefined,
         vehicle_photos: data.vehicle_photos,
         book_images: [], // Clear book images after OCR
+        variant: data.variant || undefined,
+        book_data: data.book_data || undefined,
+        spec_data: data.spec_data || undefined,
+        spec_source: data.spec_source || undefined,
+        spec_confidence: data.spec_confidence || undefined,
       };
 
       // In multi-property context, call the parent callbacks instead of API
@@ -421,12 +436,18 @@ export const VehicleStepForm: React.FC<VehicleStepFormProps> = ({
         await vehicleApi.addToReport(report.id, vehicle.id);
       }
 
-      // Navigate to report details or dashboard
+      // If completing, start async DOCX generation and pass job ID to dashboard
+      let pendingJobId: string | undefined;
       if (status === 'completed') {
-        navigate(`/reports/${report!.id}`);
-      } else {
-        navigate('/dashboard');
+        try {
+          const job = await reportApi.generateReportAsync(report.id);
+          pendingJobId = job.id;
+        } catch {
+          // Generation start failed — still navigate, user can download manually
+        }
       }
+
+      navigate('/dashboard', pendingJobId ? { state: { pendingJobId } } : undefined);
 
       // Legacy callback support
       if (onSaveComplete) {
@@ -448,7 +469,12 @@ export const VehicleStepForm: React.FC<VehicleStepFormProps> = ({
       case 2:
         return <VehiclePhotosStep />;
       case 3:
-        return <VehicleBookOCRStep />;
+        return (
+          <VehicleBookOCRStep
+            onEnrichmentStart={() => setIsSpecEnriching(true)}
+            onEnrichmentComplete={() => setIsSpecEnriching(false)}
+          />
+        );
       case 4:
         return <VehicleDescriptionStep />;
       case 5:
@@ -501,7 +527,11 @@ export const VehicleStepForm: React.FC<VehicleStepFormProps> = ({
                             : 'border-gray-300 bg-white'
                         }`}
                       >
-                        <StepIcon className="w-5 h-5" />
+                        {isSpecEnriching && step.id === 4 ? (
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                        ) : (
+                          <StepIcon className="w-5 h-5" />
+                        )}
                       </div>
                       <span className="text-xs font-medium hidden sm:block">{step.title}</span>
                     </button>
@@ -520,7 +550,7 @@ export const VehicleStepForm: React.FC<VehicleStepFormProps> = ({
         </div>
 
         {/* Form Content */}
-        <div className="max-w-4xl mx-auto px-4 py-6">
+        <div className="max-w-4xl mx-auto px-4 md:px-6 py-4 md:py-6">
           <form onSubmit={handleSubmit((data) => onSubmit(data, 'draft'))}>
             {/* Step Header */}
             <div className="flex items-center gap-3 mb-6">
@@ -535,18 +565,18 @@ export const VehicleStepForm: React.FC<VehicleStepFormProps> = ({
                   {currentStep === 1 && 'Enter basic information about the valuation request'}
                   {currentStep === 2 && 'Upload up to 5 photos of the vehicle'}
                   {currentStep === 3 && 'Upload vehicle book images for OCR extraction'}
-                  {currentStep === 4 && 'Review and edit vehicle identification details'}
+                  {currentStep === 4 && 'Review and edit vehicle identification and registration details'}
                   {currentStep === 5 && 'Complete features assessment and valuation'}
                 </p>
               </div>
             </div>
 
             {/* Step Content */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200/50 p-6 mb-6">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200/50 p-4 md:p-6 mb-4 md:mb-6">
               {renderStepContent()}
             </div>
 
-            {/* Save to Library Option (Step 5 only, not in multi-property context) */}
+            {/* Save to Library Option (Step 6 only, not in multi-property context) */}
             {currentStep === 5 && !isMultiPropertyContext && (
               <div className="bg-cyan-50 border border-cyan-200 rounded-xl p-4 mb-6">
                 <label className="flex items-center gap-3 cursor-pointer">
@@ -600,7 +630,7 @@ export const VehicleStepForm: React.FC<VehicleStepFormProps> = ({
                 </button>
 
                 {/* Next/Complete Button */}
-                {currentStep < 5 ? (
+                {currentStep < TOTAL_STEPS ? (
                   <button
                     type="button"
                     onClick={nextStep}

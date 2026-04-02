@@ -12,6 +12,8 @@ from .helpers import  to_float
 
 from ..utils.text_helpers import format_list_with_grammar
 
+from .styling import FONT_SIZE_BODY, BODY_PARA_SPACE_AFTER
+
 logger = logging.getLogger(__name__)
 Deed_Type = Union[Dict[str, Any], Any]
 

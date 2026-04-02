@@ -29,10 +29,18 @@ def parse_with_claude(ocr_text: str, document_type: Optional[str] = None) -> Dic
     client = get_anthropic_client()
 
     # Construct the parsing prompt
-    prompt = f"""You are an expert at extracting structured data from Sri Lankan property documents (deeds, survey plans, certificates).
+    prompt = f"""You are an expert at extracting structured data from Sri Lankan property documents (deeds, survey plans, certificates, building plans).
 
 DOCUMENT TEXT:
 {ocr_text}
+
+STEP 0 — DETECT DOCUMENT TYPE:
+Identify what type of document this is:
+  - "survey_plan"       → contains plan numbers, surveyor name, lot descriptions, scale
+  - "deed"              → contains deed number, notary name, parties to the transaction
+  - "building_plan"     → contains floor areas, room counts, architect name, plan approval
+  - "title_certificate" → contains certificate number, land registry references
+Set "detected_document_type" in the returned metadata.
 
 TASK: Extract ALL available property information and return it as a JSON object with the following structure:
 
@@ -104,7 +112,25 @@ TASK: Extract ALL available property information and return it as a JSON object 
     "land_registry_location": "string or null",
 
     // OWNERSHIP (current owners mentioned in deed)
-    "current_owners": ["name1", "name2"] or null
+    "current_owners": ["name1", "name2"] or null,
+
+    // BUILDING PLAN — populate ONLY when detected_document_type == "building_plan", else null
+    "building_plan": {{
+      "total_floors": 2,
+      "total_bedrooms": 3,
+      "total_bathrooms": 2,
+      "other_rooms": ["Living Room", "Kitchen", "Store Room"],
+      "floor_areas": [
+        {{"floor_name": "Ground Floor", "area_sqft": 1200, "area_sqm": 111.5}}
+      ],
+      "building_type": "Two Storey Residential",
+      "roof_type": "Tiled / Flat Concrete / Asbestos",
+      "wall_type": "Brick / Timber",
+      "foundation_type": "Strip / Pad",
+      "architect_name": null,
+      "plan_approval_date": "DD-MM-YYYY or null",
+      "plan_reference_number": null
+    }}
   }},
 
   "confidence_scores": {{
@@ -126,7 +152,8 @@ TASK: Extract ALL available property information and return it as a JSON object 
   ],
 
   "metadata": {{
-    "document_appears_to_be": "Certificate of Sale / Deed / Survey Plan",
+    "document_appears_to_be": "Certificate of Sale / Deed / Survey Plan / Building Plan",
+    "detected_document_type": "survey_plan / deed / building_plan / title_certificate",
     "multiple_plans_detected": true or false,
     "language_detected": "English / Sinhala / Mixed",
     "parsing_notes": "Any important observations about the document"
@@ -149,6 +176,7 @@ IMPORTANT INSTRUCTIONS:
    - Below 0.40: Don't include the field
 9. **Null Values**: If a field is not found or confidence is below 0.40, set it to null
 10. **Return ONLY valid JSON** - no markdown, no code blocks, just the JSON object
+11. **Building Plan**: Populate the "building_plan" object ONLY when detected_document_type is "building_plan". Set building_plan to null for all other document types.
 
 Extract as much data as possible from the provided text. Be thorough and accurate."""
 
@@ -298,6 +326,8 @@ def merge_multi_document_results(results: List[Dict[str, Any]]) -> Dict[str, Any
                     merged_data["_deeds_confidences"] = []
 
                 for deed in value:
+                    if not isinstance(deed, dict):
+                        continue  # skip null or malformed deed entries from Claude
                     # Check if this deed is already in merged results
                     is_duplicate = False
                     for existing_deed in merged_data["deeds"]:
@@ -319,16 +349,29 @@ def merge_multi_document_results(results: List[Dict[str, Any]]) -> Dict[str, Any
                     merged_confidence["boundaries"] = 0.0
 
                 for direction, boundary_info in value.items():
-                    if direction not in merged_data["boundaries"]:
+                    if not isinstance(boundary_info, dict):
+                        continue  # skip null or malformed boundary entries from Claude
+                    if direction not in merged_data["boundaries"] or not isinstance(merged_data["boundaries"].get(direction), dict):
                         merged_data["boundaries"][direction] = boundary_info
                     else:
                         # Use more detailed description
-                        existing_desc = merged_data["boundaries"][direction].get("description", "")
-                        new_desc = boundary_info.get("description", "")
+                        existing_desc = merged_data["boundaries"][direction].get("description") or ""
+                        new_desc = boundary_info.get("description") or ""
                         if len(new_desc) > len(existing_desc):
                             merged_data["boundaries"][direction] = boundary_info
 
                 merged_confidence["boundaries"] = max(merged_confidence["boundaries"], field_confidence)
+                continue
+
+            # Special handling for building_plan (dict - prefer most non-null fields)
+            if field == "building_plan" and isinstance(value, dict):
+                if field not in merged_data:
+                    merged_data[field] = value
+                else:
+                    existing_count = sum(1 for v in merged_data[field].values() if v is not None)
+                    new_count = sum(1 for v in value.values() if v is not None)
+                    if new_count > existing_count:
+                        merged_data[field] = value
                 continue
 
             # For all other fields: Use value with highest confidence
@@ -346,6 +389,8 @@ def merge_multi_document_results(results: List[Dict[str, Any]]) -> Dict[str, Any
 
         # Collect all detected plans
         for plan in result.get("detected_plans", []):
+            if not isinstance(plan, dict):
+                continue  # skip null or malformed plan entries from Claude
             # Check for duplicates
             is_duplicate = False
             for existing_plan in all_detected_plans:
@@ -360,10 +405,10 @@ def merge_multi_document_results(results: List[Dict[str, Any]]) -> Dict[str, Any
             if not is_duplicate:
                 all_detected_plans.append(plan)
 
-    # Calculate deeds confidence from temporary list
-    if "_deeds_confidences" in merged_data and merged_data["_deeds_confidences"]:
-        merged_confidence["deeds"] = sum(merged_data["_deeds_confidences"]) / len(merged_data["_deeds_confidences"])
-        del merged_data["_deeds_confidences"]  # Remove temporary tracking list
+    # Calculate deeds confidence from temporary list and always clean up the key
+    deeds_confs = merged_data.pop("_deeds_confidences", [])
+    if deeds_confs:
+        merged_confidence["deeds"] = sum(deeds_confs) / len(deeds_confs)
 
     # Calculate overall confidence (only from numeric values)
     if merged_confidence:

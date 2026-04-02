@@ -8,16 +8,14 @@ Handles:
 - Cleanup of old jobs
 """
 
-import os
 import uuid
 import logging
-import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 
-from ..models import Job, JobStatus, JobType, Report, User
+from ..models import Job, JobStatus, Report, User
 from ..database import SessionLocal
 from .file_storage import FileStorage
 
@@ -214,7 +212,8 @@ class JobService:
             )
 
             # Generate the DOCX
-            docx_bytes = generate_user_data_docx(report, user)
+            result = generate_user_data_docx(report, user)
+            docx_bytes = result.getvalue() if hasattr(result, 'getvalue') else result
             filename = get_filename_for_user(report)
 
             # Update progress

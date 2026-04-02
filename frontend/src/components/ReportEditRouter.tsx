@@ -46,10 +46,14 @@ const ReportEditRouter: React.FC = () => {
     fetchReport();
   }, [reportId, navigate]);
 
-  // Handle multi-property report navigation
+  // Handle multi-property and vehicle report navigation
   useEffect(() => {
-    if (reportData && reportData.report_type === 'multi_property') {
+    if (!reportData) return;
+    if (reportData.report_type === 'multi_property') {
       navigate(`/reports/multi-property/${reportId}`);
+    }
+    if (reportData.report_type === 'vehicle') {
+      navigate(`/reports/vehicle/${reportId}`);
     }
   }, [reportData, reportId, navigate]);
 
@@ -92,6 +96,17 @@ const ReportEditRouter: React.FC = () => {
           <div className="text-center">
             <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-violet-600 mx-auto mb-4" />
             <p className="text-gray-600">Loading multi-property report...</p>
+          </div>
+        </div>
+      );
+
+    case 'vehicle':
+      // Navigation to /reports/vehicle/:id handled in useEffect above
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-white to-cyan-50">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-cyan-600 mx-auto mb-4" />
+            <p className="text-gray-600">Loading vehicle report...</p>
           </div>
         </div>
       );

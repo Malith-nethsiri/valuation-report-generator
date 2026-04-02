@@ -543,10 +543,15 @@ export const MultiPropertyRedesignedStepForm: React.FC<MultiPropertyRedesignedSt
             const formData = getValues();
             console.log('[handleSaveDraft] Form data:', formData);
 
-            // Fields to filter out - these should only exist in the `deeds` array, not at root level
+            // Fields to filter out before API submission
             const fieldsToRemove = [
+                // Deed fields - must be in `deeds` array only
                 'deed_type', 'deed_number', 'deed_date', 'notary_name', 'notary_location',
                 'certificate_number', 'certificate_date', 'certificate_notary_name', 'certificate_notary_district',
+                // Frontend-only staging/UI fields - not in backend schema
+                'ocr_building_plan_data',
+                'access_road_segments',
+                'use_property_address_as_applicant',
             ];
 
             // Helper to filter extra deed fields from an object
@@ -736,7 +741,7 @@ export const MultiPropertyRedesignedStepForm: React.FC<MultiPropertyRedesignedSt
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 py-8 px-4">
+        <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 py-6 px-4 md:py-8 md:px-6">
             <div className="max-w-6xl mx-auto">
                 {/* Header */}
                 <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
@@ -747,7 +752,7 @@ export const MultiPropertyRedesignedStepForm: React.FC<MultiPropertyRedesignedSt
                 </div>
 
                 {/* Progress Bar */}
-                <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
+                <div className="bg-white rounded-2xl shadow-lg p-4 md:p-6 mb-4 md:mb-6">
                     <div className="flex items-center justify-between">
                         {steps.map((step, index) => {
                             const StepIcon = step.icon;
@@ -758,7 +763,7 @@ export const MultiPropertyRedesignedStepForm: React.FC<MultiPropertyRedesignedSt
                                 <div key={step.id} className="flex items-center flex-1">
                                     <div className="flex flex-col items-center flex-1">
                                         <div
-                                            className={`w-12 h-12 rounded-full flex items-center justify-center transition-all ${
+                                            className={`w-9 h-9 md:w-12 md:h-12 rounded-full flex items-center justify-center transition-all ${
                                                 isCompleted
                                                     ? 'bg-green-500 text-white'
                                                     : isActive
@@ -766,9 +771,9 @@ export const MultiPropertyRedesignedStepForm: React.FC<MultiPropertyRedesignedSt
                                                         : 'bg-gray-200 text-gray-500'
                                             }`}
                                         >
-                                            <StepIcon className="h-6 w-6" />
+                                            <StepIcon className="h-5 w-5 md:h-6 md:w-6" />
                                         </div>
-                                        <span className={`text-xs mt-2 text-center ${isActive ? 'font-bold' : ''}`}>
+                                        <span className={`hidden sm:block text-xs mt-1 md:mt-2 text-center ${isActive ? 'font-bold' : ''}`}>
                                             {step.title}
                                         </span>
                                     </div>
@@ -786,12 +791,12 @@ export const MultiPropertyRedesignedStepForm: React.FC<MultiPropertyRedesignedSt
                 </div>
 
                 {/* Content */}
-                <div className="bg-white rounded-2xl shadow-lg p-8 mb-6">
+                <div className="bg-white rounded-2xl shadow-lg p-5 md:p-8 mb-4 md:mb-6">
                     {renderStepContent()}
                 </div>
 
                 {/* Navigation */}
-                <div className="bg-white rounded-2xl shadow-lg p-6">
+                <div className="bg-white rounded-2xl shadow-lg p-4 md:p-6">
                     <div className="flex justify-between items-center">
                         {/* Left side: Previous button */}
                         <div>

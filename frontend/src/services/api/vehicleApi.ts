@@ -5,6 +5,7 @@ import type {
   VehicleTemplate,
   ReportVehicle,
   VehicleValuationSuggestion,
+  VehicleSpecData,
 } from '../../types';
 import { api } from './client';
 
@@ -53,6 +54,12 @@ export const vehicleApi = {
   // Get AI valuation suggestion
   getValuationSuggestion: async (id: number): Promise<VehicleValuationSuggestion> => {
     const response = await api.post<VehicleValuationSuggestion>(`/api/vehicles/${id}/suggest-valuation`);
+    return response.data;
+  },
+
+  // Get AI-enriched manufacturer specifications
+  enrichSpecs: async (id: number): Promise<{ spec_data: VehicleSpecData }> => {
+    const response = await api.post<{ spec_data: VehicleSpecData }>(`/api/vehicles/${id}/enrich-specs`);
     return response.data;
   },
 

@@ -11,8 +11,8 @@ from anthropic import Anthropic
 # Model configuration
 # Override via environment variables so model changes do not require redeployment.
 # ---------------------------------------------------------------------------
-AI_DEFAULT_MODEL: str = os.getenv("AI_DEFAULT_MODEL", "claude-3-5-haiku-20241022")
-AI_VEHICLE_MODEL: str = os.getenv("AI_VEHICLE_MODEL", "claude-3-5-haiku-20241022")
+AI_DEFAULT_MODEL: str = os.getenv("AI_DEFAULT_MODEL", "claude-haiku-4-5")
+AI_VEHICLE_MODEL: str = os.getenv("AI_VEHICLE_MODEL", "claude-haiku-4-5")
 
 
 @lru_cache(maxsize=1)

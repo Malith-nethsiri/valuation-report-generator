@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Upload, FileImage, X, Loader2, CheckCircle2, AlertCircle, Eye } from 'lucide-react';
+import { Upload, FileImage, FileText, X, Loader2, CheckCircle2, AlertCircle, Eye } from 'lucide-react';
 import { Button } from './Button';
 import { Label } from './Label';
 import { cleanOCRText, formatBoundaryDescription, smartTitleCase } from '../utils/textFormatter';
@@ -38,12 +38,14 @@ export function DocumentUploadOCR({
     const files = Array.from(event.target.files || []);
     if (files.length === 0) return;
 
-    // Validate each file
-    const imageExtensions = ['.jpg', '.jpeg', '.jfif', '.png', '.webp'];
+    // Validate each file — accept images and PDFs
+    const allowedExtensions = ['.jpg', '.jpeg', '.jfif', '.png', '.webp', '.pdf'];
     for (const file of files) {
       const ext = file.name.toLowerCase().slice(file.name.lastIndexOf('.'));
-      if (!file.type.startsWith('image/') && !imageExtensions.includes(ext)) {
-        onError?.(`File "${file.name}" is not an image. Please select only image files (JPEG, PNG, WEBP)`);
+      const isImage = file.type.startsWith('image/');
+      const isPdf = file.type === 'application/pdf' || ext === '.pdf';
+      if (!isImage && !isPdf && !allowedExtensions.includes(ext)) {
+        onError?.(`File "${file.name}" is not supported. Please select images (JPEG, PNG, WEBP) or PDF files.`);
         return;
       }
 
@@ -56,21 +58,25 @@ export function DocumentUploadOCR({
     setSelectedFiles(files);
     setProcessedResult(null);
 
-    // Create preview URLs for all files
-    const urls: string[] = [];
+    // Create preview URLs — images get DataURL for preview, PDFs get a sentinel marker
+    const urls: string[] = new Array(files.length).fill('');
     let loadedCount = 0;
 
     files.forEach((file, index) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        urls[index] = reader.result as string;
+      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+      if (isPdf) {
+        urls[index] = '[pdf]';
         loadedCount++;
-
-        if (loadedCount === files.length) {
-          setPreviewUrls(urls);
-        }
-      };
-      reader.readAsDataURL(file);
+        if (loadedCount === files.length) setPreviewUrls([...urls]);
+      } else {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          urls[index] = reader.result as string;
+          loadedCount++;
+          if (loadedCount === files.length) setPreviewUrls([...urls]);
+        };
+        reader.readAsDataURL(file);
+      }
     });
   };
 
@@ -272,7 +278,7 @@ export function DocumentUploadOCR({
       <div>
         <Label className="text-lg font-semibold">Document Upload & Auto-Fill</Label>
         <p className="text-sm text-gray-600 mt-1">
-          Upload a survey plan or deed image to automatically extract property data
+          Upload a survey plan or deed (images or PDF) to automatically extract property data
         </p>
       </div>
 
@@ -284,18 +290,18 @@ export function DocumentUploadOCR({
         >
           <Upload className="h-12 w-12 text-gray-400 mx-auto mb-4" />
           <p className="text-sm font-medium text-gray-700 mb-1">
-            Click to upload multiple images
+            Click to upload documents
           </p>
           <p className="text-xs text-gray-500 mb-2">
-            Select deed pages (3-5 images) + plan pages (1-2 images)
+            Images: deed pages (3-5) + plan pages (1-2) — or upload a PDF
           </p>
           <p className="text-xs text-gray-500">
-            JPEG, PNG, or WEBP (max 10MB each)
+            JPEG, PNG, WEBP, or PDF (max 10MB each)
           </p>
           <input
             ref={fileInputRef}
             type="file"
-            accept="image/jpeg,image/jpg,image/png,image/webp,.jfif"
+            accept="image/jpeg,image/jpg,image/png,image/webp,.jfif,application/pdf,.pdf"
             onChange={handleFileSelect}
             disabled={disabled}
             multiple
@@ -346,12 +352,23 @@ export function DocumentUploadOCR({
                 <div className="mt-3 grid grid-cols-2 md:grid-cols-3 gap-3">
                   {previewUrls.map((url, index) => (
                     <div key={`preview-${index}-${url.substring(0, 20)}`} className="border border-gray-300 rounded-lg p-2 bg-gray-50">
-                      <p className="text-xs text-gray-600 mb-1">Page {index + 1}</p>
-                      <img
-                        src={url}
-                        alt={`Document page ${index + 1}`}
-                        className="w-full h-32 object-cover rounded"
-                      />
+                      <p className="text-xs text-gray-600 mb-1">
+                        {url === '[pdf]' ? 'PDF' : `Page ${index + 1}`}
+                      </p>
+                      {url === '[pdf]' ? (
+                        <div className="w-full h-32 flex flex-col items-center justify-center gap-2 bg-red-50 rounded border border-red-100">
+                          <FileText className="h-10 w-10 text-red-400" />
+                          <p className="text-xs text-gray-600 text-center truncate w-full px-1">
+                            {selectedFiles[index]?.name}
+                          </p>
+                        </div>
+                      ) : (
+                        <img
+                          src={url}
+                          alt={`Document page ${index + 1}`}
+                          className="w-full h-32 object-cover rounded"
+                        />
+                      )}
                     </div>
                   ))}
                 </div>
@@ -449,9 +466,9 @@ export function DocumentUploadOCR({
       {/* Help Text */}
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
         <p className="text-xs text-blue-800">
-          <strong>Tip:</strong> Upload all pages of your deed (usually 3-5 pages) and survey plan (usually 1-2 pages).
-          For best results, use clear, well-lit images. The system will automatically detect and extract plan
-          numbers, dates, land extent, boundaries, and other property details from all pages.
+          <strong>Tip:</strong> Upload a PDF (scanned or digital) or individual image pages of your deed (3-5 pages) and survey plan (1-2 pages).
+          Digital PDFs are processed directly; scanned PDFs and images go through Google Vision OCR.
+          The system automatically detects and extracts plan numbers, dates, land extent, boundaries, and other property details.
         </p>
       </div>
     </div>

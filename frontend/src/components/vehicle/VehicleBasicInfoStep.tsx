@@ -94,8 +94,18 @@ export const VehicleBasicInfoStep: React.FC = () => {
           <Input
             id="report_date"
             type="date"
+            min="1900-01-01"
+            max="2100-12-31"
             className="h-12"
-            {...register('report_date', { required: 'Report date is required' })}
+            {...register('report_date', {
+              required: 'Report date is required',
+              validate: (value) => {
+                if (!value) return true;
+                const year = parseInt(value.split('-')[0], 10);
+                if (isNaN(year) || year < 1900 || year > 2100) return 'Year must be between 1900 and 2100';
+                return true;
+              },
+            })}
           />
           {errors.report_date && (
             <p className="text-red-500 text-sm">{errors.report_date.message as string}</p>
@@ -110,8 +120,18 @@ export const VehicleBasicInfoStep: React.FC = () => {
           <Input
             id="inspection_date"
             type="date"
+            min="1900-01-01"
+            max="2100-12-31"
             className="h-12"
-            {...register('inspection_date', { required: 'Inspection date is required' })}
+            {...register('inspection_date', {
+              required: 'Inspection date is required',
+              validate: (value) => {
+                if (!value) return true;
+                const year = parseInt(value.split('-')[0], 10);
+                if (isNaN(year) || year < 1900 || year > 2100) return 'Year must be between 1900 and 2100';
+                return true;
+              },
+            })}
           />
           {errors.inspection_date && (
             <p className="text-red-500 text-sm">{errors.inspection_date.message as string}</p>

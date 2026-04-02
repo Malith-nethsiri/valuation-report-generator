@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -150,6 +150,10 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
     const [dataQualityWarnings, setDataQualityWarnings] = useState<DataQualityWarning[]>([]);
     const [showWarningsPanel, setShowWarningsPanel] = useState(false);
     const [loadingMessage, setLoadingMessage] = useState<string>('');
+    const [ocrFilledFields, setOcrFilledFields] = useState<Set<string>>(new Set());
+    const markOCRFilled = useCallback((field: string) => {
+        setOcrFilledFields(prev => new Set(prev).add(field));
+    }, []);
 
 
     const formMethods = useForm<FormData>({
@@ -182,7 +186,6 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
             access_route_data: undefined,
             access_road_type: undefined,
             location_map_image_data: undefined,
-            use_property_address_as_applicant: false,
             // DEED DATA FIX: Register deed fields in defaultValues so react-hook-form tracks them
             deed_type: '',
             deed_number: '',
@@ -791,10 +794,15 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
             transformedComparableProperties = validComparableProps.length > 0 ? validComparableProps : undefined;
         }
 
-        // Fields to filter out - these should only exist in the `deeds` array, not at root level
+        // Fields to filter out before API submission
         const fieldsToRemove = [
+            // Deed fields - must be in `deeds` array only
             'deed_type', 'deed_number', 'deed_date', 'notary_name', 'notary_location',
             'certificate_number', 'certificate_date', 'certificate_notary_name', 'certificate_notary_district',
+            // Frontend-only staging/UI fields - not in backend schema
+            'ocr_building_plan_data',
+            'access_road_segments',
+            'use_property_address_as_applicant',
         ];
 
         // Merge validated data with ALL form data to ensure nothing is lost
@@ -854,10 +862,15 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
         const actualStepId = currentStepConfig?.originalId || currentStepConfig?.id || currentStep;
 
         switch (actualStepId) {
-            case 1: return <PropertyPlanStep {...stepProps} />;
-            case 2: return <ExtentBoundariesStep {...stepProps} />;
+            case 1: return <PropertyPlanStep
+                {...stepProps}
+                ocrFilledFields={ocrFilledFields}
+                onMarkOCRFilled={markOCRFilled}
+                isBareLand={isBareLand}
+            />;
+            case 2: return <ExtentBoundariesStep {...stepProps} ocrFilledFields={ocrFilledFields} />;
             case 3: return <PropertySearchStep {...stepProps} />;
-            case 4: return <PropertyLocationNewStep {...stepProps} />;
+            case 4: return <PropertyLocationNewStep {...stepProps} ocrFilledFields={ocrFilledFields} />;
             case 5: return (
                 <LocalityInformationSection
                     data={{
@@ -963,7 +976,7 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
                     />
 
                     {/* Main Form */}
-                    <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/20 p-8 lg:p-12">
+                    <div className="bg-white/80 backdrop-blur-xl rounded-3xl shadow-2xl border border-white/20 p-5 md:p-8 lg:p-12">
                         {/* Step Header */}
                         <div className="text-center mb-8">
                             <div className={`inline-flex p-4 rounded-3xl bg-gradient-to-br ${currentStepData.color} shadow-2xl mb-6 animate-float`}>
@@ -1082,7 +1095,7 @@ const MultiStepForm: React.FC<MultiStepFormProps> = ({
                             </div>
 
                             {/* Navigation Buttons */}
-                            <div className="flex justify-between items-center pt-6 border-t border-gray-200/50">
+                            <div className="flex flex-wrap justify-between items-center gap-y-3 pt-6 border-t border-gray-200/50">
                                 <div className="flex gap-3">
                                     {/* Previous button */}
                                     {currentStep > 1 && (

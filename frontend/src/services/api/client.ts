@@ -91,6 +91,28 @@ const navigateTo = (path: string): void => {
   }
 };
 
+// ===== TOKEN REFRESH MUTEX =====
+// Prevents concurrent token refresh calls when multiple requests fail with 401 simultaneously.
+// Pattern: first 401 acquires the mutex and performs the refresh; all subsequent concurrent
+// 401s queue their requests as promises and are resolved/rejected once the single refresh settles.
+let _isRefreshing = false;
+let _refreshSubscribers: Array<(token: string) => void> = [];
+let _refreshFailSubscribers: Array<(error: unknown) => void> = [];
+
+const onRefreshSuccess = (newToken: string): void => {
+  _refreshSubscribers.forEach((cb) => cb(newToken));
+  _refreshSubscribers = [];
+  _refreshFailSubscribers = [];
+  _isRefreshing = false;
+};
+
+const onRefreshFailure = (error: unknown): void => {
+  _refreshFailSubscribers.forEach((cb) => cb(error));
+  _refreshSubscribers = [];
+  _refreshFailSubscribers = [];
+  _isRefreshing = false;
+};
+
 // Initialize CSRF token by making a GET request to set the cookie
 export const initializeCSRF = async (): Promise<void> => {
   try {
@@ -142,7 +164,7 @@ api.interceptors.response.use(
 
     // Handle specific HTTP error codes
     switch (status) {
-      case 401: // Unauthorized
+      case 401: { // Unauthorized
         // Skip retry for auth endpoints - let them handle their own errors
         const requestUrl = originalRequest.url || '';
         const isAuthEndpoint = requestUrl.includes('/api/auth/login') ||
@@ -153,27 +175,46 @@ api.interceptors.response.use(
           throw new Error(responseData?.detail || 'Authentication failed');
         }
 
+        // No stored token — nothing to refresh, redirect immediately
+        const token = authTokenStorage.getToken();
+        if (!token) {
+          navigateTo('/login');
+          return Promise.reject(error);
+        }
+
         if (!originalRequest._retry) {
           originalRequest._retry = true;
 
-          const token = authTokenStorage.getToken();
-          if (!token) {
-            navigateTo('/login');
-            return Promise.reject(error);
+          if (_isRefreshing) {
+            // A refresh is already in-flight — queue this request to retry once it settles
+            return new Promise((resolve, reject) => {
+              _refreshSubscribers.push((newToken: string) => {
+                if (originalRequest.headers) {
+                  originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
+                }
+                resolve(api.request(originalRequest));
+              });
+              _refreshFailSubscribers.push((err: unknown) => {
+                reject(err);
+              });
+            });
           }
 
-          // Attempt token refresh before giving up
+          // First 401 to arrive — acquire mutex and perform the single refresh
+          _isRefreshing = true;
+
           try {
             const refreshResponse = await api.post<{ access_token: string }>('/api/auth/refresh');
             const newToken = refreshResponse.data.access_token;
             authTokenStorage.setToken(newToken);
             setAuthToken(newToken);
+            onRefreshSuccess(newToken); // notify all queued requests
             if (originalRequest.headers) {
               originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
             }
             return api.request(originalRequest);
-          } catch {
-            // Refresh failed - session cannot be recovered
+          } catch (refreshError) {
+            onRefreshFailure(refreshError); // reject all queued requests
             clearAuthToken();
             authTokenStorage.clearAll();
             navigateTo('/login');
@@ -181,6 +222,7 @@ api.interceptors.response.use(
           }
         }
         break;
+      }
 
       case 403: // Forbidden
         // Check if this is a CSRF error - retry once after token refresh
